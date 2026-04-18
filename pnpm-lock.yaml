@@ -26,6 +26,9 @@ importers:
       '@rxwf/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rxwf/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       hono:
         specifier: ^4.12.14
         version: 4.12.14

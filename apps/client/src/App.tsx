@@ -20,7 +20,7 @@ import { WorkflowCodeSheet } from "@/components/workflow-code-sheet"
 import { defaultForSchema } from "@/components/zod-schema-form"
 import { useWorkflow } from "@/hooks/use-workflow"
 import { loadWorkflowSourceIntoGlobalRegistry } from "@/lib/evaluate-workflow-source"
-import { LocalRuntime } from "@/lib/workflow-runtimes"
+import { BackendRuntime } from "@/lib/workflow-runtimes"
 
 import workflowRaw from "./workflow.ts?raw"
 
@@ -101,7 +101,7 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
 
   const runtime = useMemo(
-    () => new LocalRuntime({ registry: globalRegistry, autoDrain: false }),
+    () => new BackendRuntime(),
     [],
   )
   const workflow = useWorkflow(runtime)

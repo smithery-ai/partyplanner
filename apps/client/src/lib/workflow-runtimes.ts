@@ -1,4 +1,3 @@
-import { hc } from "hono/client"
 import { globalRegistry, type Registry, type RunState } from "@rxwf/core"
 import {
   LocalScheduler,
@@ -14,9 +13,9 @@ import {
 } from "@rxwf/runtime"
 
 import type {
-  AppType,
-  GraphRequest,
-  GraphResponse,
+  RunStateDocument,
+  StartBackendRunRequest,
+  SubmitBackendInputRequest,
 } from "../../../backend/src/rpc"
 
 export type WorkflowRuntimeResult = {
@@ -44,54 +43,88 @@ export type AdvanceWorkflowArgs = {
   state?: RunState
 }
 
+export type PollWorkflowStateArgs = {
+  runId: string
+}
+
 export interface WorkflowRuntime {
   start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult>
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>
+  getState?(args: PollWorkflowStateArgs): Promise<WorkflowRuntimeResult>
   reset?(): void
 }
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8787"
-const backendClient = hc<AppType>(backendUrl)
 
 export class BackendRuntime implements WorkflowRuntime {
   async start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult> {
-    return this.graph({
+    const document = await this.post<StartBackendRunRequest, RunStateDocument>("/runs", {
       workflowSource: args.workflowSource,
-      inputs: {
-        [args.inputId]: args.payload,
-      },
+      inputId: args.inputId,
+      payload: args.payload,
     })
+    return documentResult(document)
   }
 
   async submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult> {
-    return this.graph({
-      workflowSource: args.workflowSource,
-      state: args.state,
-      inputs: {
-        [args.inputId]: args.payload,
+    if (!args.state) throw new Error("Cannot submit input before a run exists.")
+    const document = await this.post<SubmitBackendInputRequest, RunStateDocument>(
+      `/runs/${encodeURIComponent(args.state.runId)}/inputs`,
+      {
+        inputId: args.inputId,
+        payload: args.payload,
       },
-    })
+    )
+    return documentResult(document)
   }
 
   async advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult> {
-    return this.graph({
-      workflowSource: args.workflowSource,
-      state: args.state,
-    })
+    if (!args.state) throw new Error("Cannot advance before a run exists.")
+    const document = await this.post<Record<string, never>, RunStateDocument>(
+      `/runs/${encodeURIComponent(args.state.runId)}/advance`,
+      {},
+    )
+    return documentResult(document)
   }
 
-  private async graph(json: GraphRequest): Promise<WorkflowRuntimeResult> {
-    const response = await backendClient.graph.$post({ json })
-    if (!response.ok) {
-      const message = await response.text()
-      throw new Error(message || `Graph request failed: ${response.status}`)
-    }
+  async getState(args: PollWorkflowStateArgs): Promise<WorkflowRuntimeResult> {
+    const document = await this.get<RunStateDocument>(
+      `/state/${encodeURIComponent(args.runId)}`,
+    )
+    return documentResult(document)
+  }
 
-    const result: GraphResponse = await response.json()
-    return {
-      state: result.state,
-    }
+  private async post<TRequest, TResponse>(path: string, json: TRequest): Promise<TResponse> {
+    const response = await fetch(`${backendUrl}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(json),
+    })
+    return readJsonResponse<TResponse>(response)
+  }
+
+  private async get<TResponse>(path: string): Promise<TResponse> {
+    const response = await fetch(`${backendUrl}${path}`)
+    return readJsonResponse<TResponse>(response)
+  }
+}
+
+async function readJsonResponse<TResponse>(response: Response): Promise<TResponse> {
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(message || `Workflow request failed: ${response.status}`)
+  }
+
+  return response.json() as Promise<TResponse>
+}
+
+function documentResult(document: RunStateDocument): WorkflowRuntimeResult {
+  return {
+    state: document.state,
+    snapshot: document,
+    queue: document.queue,
+    events: document.events,
   }
 }
 

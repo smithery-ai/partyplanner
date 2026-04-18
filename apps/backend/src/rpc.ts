@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import type { NodeStatus, RunState } from "@rxwf/core";
+import type { RunEvent, RunSnapshot } from "@rxwf/runtime";
 
 export type GraphPhase =
   | "resolved_previously"
@@ -52,6 +53,23 @@ export type GraphResponse = {
     edges: GraphEdge[];
   };
   state: RunState;
+};
+
+export type StartBackendRunRequest = {
+  workflowSource: string;
+  inputId: string;
+  payload: unknown;
+  runId?: string;
+};
+
+export type SubmitBackendInputRequest = {
+  inputId: string;
+  payload: unknown;
+};
+
+export type RunStateDocument = RunSnapshot & {
+  events: RunEvent[];
+  publishedAt: number;
 };
 
 type GraphSchema = {
