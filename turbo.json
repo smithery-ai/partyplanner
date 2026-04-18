@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": ["PORTLESS", "PORTLESS_*", "VITE_BACKEND_URL"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

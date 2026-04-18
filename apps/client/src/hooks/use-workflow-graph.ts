@@ -7,7 +7,7 @@ import type {
   GraphResponse,
 } from "../../../backend/src/rpc";
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8787";
+const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "";
 const client = hc<AppType>(backendUrl);
 
 export function useWorkflowGraphMutation() {

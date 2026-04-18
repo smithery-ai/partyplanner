@@ -70,7 +70,7 @@ export interface WorkflowRuntime {
   reset?(): void;
 }
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8787";
+const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "";
 
 export class BackendRuntime implements WorkflowRuntime {
   async listRuns(): Promise<RunSummary[]> {
