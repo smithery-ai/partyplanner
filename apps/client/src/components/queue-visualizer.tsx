@@ -62,11 +62,6 @@ const STATUS_LEGEND: {
     label: "Errored",
     hint: "Step failed",
   },
-  {
-    key: "not_reached",
-    label: "Not reached",
-    hint: "Not executed in this run yet",
-  },
 ]
 
 type WorkflowNodeData = {
@@ -74,7 +69,6 @@ type WorkflowNodeData = {
   kind: "input" | "atom"
   deferred?: boolean
   status?: NodeRecord["status"]
-  detail?: string
   handles: { target: boolean; source: boolean }
   /** Inline approve/reject when a downstream step is blocked on this deferred input */
   inlineActions?: { approve: () => void; reject: () => void }
@@ -257,11 +251,6 @@ function WorkflowNode({
             </Button>
           </NodeFooter>
         </>
-      )}
-      {!pendingInline && data.detail && (
-        <NodeContent className="break-words pt-0 text-[11px] leading-snug text-muted-foreground p-2!">
-          {data.detail}
-        </NodeContent>
       )}
     </WorkflowCard>
   )
@@ -461,32 +450,28 @@ function animatedEdgesFromState(state: RunState | undefined): Set<string> {
   return s
 }
 
-function statusDetail(rec: NodeRecord | undefined): string | undefined {
-  if (!rec) return undefined
-  if (rec.status === "waiting" && rec.waitingOn) {
-    if (rec.deps.includes(rec.waitingOn)) return undefined
-    return `Waiting on “${rec.waitingOn}”`
-  }
-  if (rec.status === "resolved" && rec.value !== undefined) {
-    const v = rec.value
-    const s = typeof v === "string" ? v : JSON.stringify(v)
-    return s.length > 120 ? `${s.slice(0, 117)}…` : s
-  }
-  if (rec.status === "errored" && rec.error) {
-    return rec.error.message
-  }
-  return undefined
+/** Nodes that have been evaluated in this run (excludes never-touched registry entries). */
+function visibleWorkflowNodeIds(
+  registry: Registry,
+  runState: RunState | undefined,
+): string[] {
+  if (!runState) return []
+  return registry.allIds().filter((id) => {
+    const rec = runState.nodes[id]
+    return rec && rec.status !== "not_reached"
+  })
 }
 
 function buildFlow(
   registry: Registry,
+  visibleIds: readonly string[],
   graphEdges: readonly { id: string; source: string; target: string }[],
   layout: Record<string, { x: number; y: number }>,
   topology: ReturnType<typeof flowTopology>,
   runState: RunState | undefined,
   nodeInlineActions: Record<string, { approve: () => void; reject: () => void }> | undefined,
 ): { nodes: Node[]; edges: Edge[] } {
-  const ids = registry.allIds()
+  const ids = visibleIds
   const animate = animatedEdgesFromState(runState)
 
   const nodes: Node[] = ids.map((id) => {
@@ -499,7 +484,6 @@ function buildFlow(
       kind,
       deferred,
       status: rec?.status ?? "not_reached",
-      detail: statusDetail(rec),
       handles: dagHandleSides(id, topology),
     }
     const actions = nodeInlineActions?.[id]
@@ -524,18 +508,26 @@ function FlowInner({
   runState,
   registry,
   nodeInlineActions,
+  onNodeClick,
 }: {
   runState: RunState | undefined
   registry: Registry
   nodeInlineActions?: Record<string, { approve: () => void; reject: () => void }>
+  onNodeClick?: (nodeId: string) => void
 }) {
   const [legendOpen, setLegendOpen] = useState(false)
   const prevEdgeSigRef = useRef<string | null>(null)
 
-  const graphEdges = useMemo(
-    () => edgesFromObservedDeps(registry, runState),
+  const visibleIds = useMemo(
+    () => visibleWorkflowNodeIds(registry, runState),
     [registry, runState],
   )
+
+  const graphEdges = useMemo(() => {
+    const raw = edgesFromObservedDeps(registry, runState)
+    const vis = new Set(visibleIds)
+    return raw.filter((e) => vis.has(e.source) && vis.has(e.target))
+  }, [registry, runState, visibleIds])
 
   const edgeSig = useMemo(
     () => graphEdges.map((e) => e.id).sort().join("|"),
@@ -544,25 +536,26 @@ function FlowInner({
 
   const cmp = useMemo(() => compareIdsByRegistry(registry), [registry])
   const layout = useMemo(
-    () => computeWorkflowLayout(registry.allIds(), graphEdges, cmp),
-    [registry, graphEdges, cmp],
+    () => computeWorkflowLayout(visibleIds, graphEdges, cmp),
+    [visibleIds, graphEdges, cmp],
   )
   const topology = useMemo(
-    () => flowTopology(registry.allIds(), graphEdges),
-    [registry, graphEdges],
+    () => flowTopology(visibleIds, graphEdges),
+    [visibleIds, graphEdges],
   )
 
   const { nodes: nextNodes, edges: nextEdges } = useMemo(
     () =>
       buildFlow(
         registry,
+        visibleIds,
         graphEdges,
         layout,
         topology,
         runState,
         nodeInlineActions,
       ),
-    [registry, graphEdges, layout, topology, runState, nodeInlineActions],
+    [registry, visibleIds, graphEdges, layout, topology, runState, nodeInlineActions],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(nextNodes)
@@ -601,6 +594,9 @@ function FlowInner({
       proOptions={{ hideAttribution: true }}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
+      onNodeClick={(_, node) => {
+        onNodeClick?.(node.id)
+      }}
     >
       <Controls
         className={cn(
@@ -614,7 +610,7 @@ function FlowInner({
         className="rounded-md border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
         position="top-left"
       >
-        Observed deps (from runtime) · drag to pan · scroll to zoom
+        Reached steps only · click a node for full result · drag to pan · scroll to zoom
       </Panel>
       <Panel
         className="mb-2 mr-2 flex max-w-[min(19rem,calc(100vw-1rem))] flex-col items-end gap-2"
@@ -669,6 +665,8 @@ export type QueueVisualizerProps = {
   registry: Registry
   /** Optional: inline actions on a node (e.g. approve/reject on a deferred input). */
   nodeInlineActions?: Record<string, { approve: () => void; reject: () => void }>
+  /** When set, clicking a workflow node opens details (e.g. sheet in parent). */
+  onNodeClick?: (nodeId: string) => void
   className?: string
 }
 
@@ -676,6 +674,7 @@ export function QueueVisualizer({
   runState,
   registry,
   nodeInlineActions,
+  onNodeClick,
   className,
 }: QueueVisualizerProps) {
   return (
@@ -690,6 +689,7 @@ export function QueueVisualizer({
           runState={runState}
           registry={registry}
           nodeInlineActions={nodeInlineActions}
+          onNodeClick={onNodeClick}
         />
       </ReactFlowProvider>
     </div>

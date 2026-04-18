@@ -1,13 +1,12 @@
 import { useState, useRef, useEffect, useMemo } from "react"
 import { createRuntime, globalRegistry } from "@rxwf/core"
-import type { QueueEvent, RunState, NodeRecord } from "@rxwf/core"
+import type { QueueEvent, RunState } from "@rxwf/core"
 import { X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { QueueVisualizer } from "@/components/queue-visualizer"
+import { NodeDetailSheet } from "@/components/node-detail-sheet"
 
 import workflowRaw from "./workflow.ts?raw"
 
@@ -18,27 +17,18 @@ const runtime = createRuntime()
 async function runToIdle(
   seed: QueueEvent,
   state?: RunState,
-): Promise<{ state: RunState; log: string[] }> {
+): Promise<{ state: RunState }> {
   const queue = [seed]
-  const log: string[] = []
   let current = state
 
   while (queue.length > 0) {
     const event = queue.shift()!
     const result = await runtime.process(event, current)
     current = result.state
-
-    if (event.kind === "input") {
-      log.push(`Processed input "${event.inputId}"`)
-    } else {
-      const node = result.trace.nodes[event.stepId]
-      if (node) log.push(`Step "${event.stepId}" → ${node.status}`)
-    }
-
     queue.push(...result.emitted)
   }
 
-  return { state: current!, log }
+  return { state: current! }
 }
 
 /** Default seed: DCR proxy path — shortest run before prod approval */
@@ -75,7 +65,7 @@ function findDeferredWait(
   return undefined
 }
 
-type SidePanel = "code" | "payload" | "activity" | null
+type SidePanel = "code" | "payload" | null
 
 export default function App() {
   const [panel, setPanel] = useState<SidePanel>(null)
@@ -85,10 +75,8 @@ export default function App() {
   const [payloadError, setPayloadError] = useState("")
 
   const [runState, setRunState] = useState<RunState | undefined>()
-  const [log, setLog] = useState<string[]>([])
-  const [idempotencyMsg, setIdempotencyMsg] = useState("")
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
 
-  const lastSeedEvent = useRef<QueueEvent | null>(null)
   const eventCounter = useRef(0)
 
   const wait = findDeferredWait(runState)
@@ -109,8 +97,22 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey)
   }, [panel])
 
+  useEffect(() => {
+    if (!selectedNodeId) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedNodeId(null)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [selectedNodeId])
+
   function openPanel(id: Exclude<SidePanel, null>) {
     setPanel((p) => (p === id ? null : id))
+  }
+
+  function clearRun() {
+    setRunState(undefined)
+    setSelectedNodeId(null)
   }
 
   async function runProvider() {
@@ -132,13 +134,9 @@ export default function App() {
       inputId: "provider",
       payload,
     }
-    lastSeedEvent.current = event
-    setIdempotencyMsg("")
-
     try {
       const result = await runToIdle(event)
       setRunState(result.state)
-      setLog(result.log)
     } catch (e) {
       setPayloadError(
         e instanceof Error ? e.message : "Processing failed — check payload shape.",
@@ -171,7 +169,6 @@ export default function App() {
     try {
       const result = await runToIdle(event, runState)
       setRunState(result.state)
-      setLog((prev) => [...prev, "", `── Deferred: ${pendingDeferredId} ──`, ...result.log])
     } catch (e) {
       setPayloadError(
         e instanceof Error ? e.message : "Processing failed — check deferred payload shape.",
@@ -196,27 +193,6 @@ export default function App() {
 
     const result = await runToIdle(event, runState)
     setRunState(result.state)
-    setLog((prev) => [...prev, "", "── Overlay review ──", ...result.log])
-  }
-
-  async function replayLastSeedEvent() {
-    if (!lastSeedEvent.current || !runState) return
-
-    const result = await runToIdle(lastSeedEvent.current, runState)
-
-    const changed = JSON.stringify(result.state) !== JSON.stringify(runState)
-    setIdempotencyMsg(
-      changed
-        ? "State changed (unexpected!)"
-        : "No effect — event was already processed. State is identical.",
-    )
-    setLog((prev) => [
-      ...prev,
-      "",
-      "── Replayed same seed event ──",
-      ...result.log,
-      changed ? "⚠ State changed" : "State unchanged (idempotent)",
-    ])
   }
 
   const nodes = runState?.nodes ?? {}
@@ -232,9 +208,7 @@ export default function App() {
     }
   }, [blockedOnOverlay, runState])
 
-  const deployProdNode = nodes.deployProd
-  const isComplete =
-    deployProdNode?.status === "resolved" || deployProdNode?.status === "skipped"
+  const selectedRecord = selectedNodeId ? nodes[selectedNodeId] : undefined
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background">
@@ -269,13 +243,6 @@ export default function App() {
               />
             ) : null}
           </Button>
-          <Button
-            size="sm"
-            variant={panel === "activity" ? "secondary" : "outline"}
-            onClick={() => openPanel("activity")}
-          >
-            Activity
-          </Button>
           <Button size="sm" onClick={runProvider}>
             Run
           </Button>
@@ -284,9 +251,9 @@ export default function App() {
               Submit “{pendingDeferredId}”
             </Button>
           )}
-          {runState && lastSeedEvent.current && (
-            <Button size="sm" variant="outline" onClick={replayLastSeedEvent}>
-              Replay
+          {runState && (
+            <Button size="sm" variant="outline" onClick={clearRun}>
+              Clear
             </Button>
           )}
         </div>
@@ -301,6 +268,16 @@ export default function App() {
               ? { overlayReview: overlayReviewActions }
               : undefined
           }
+          onNodeClick={(id) => setSelectedNodeId(id)}
+        />
+
+        <NodeDetailSheet
+          nodeId={selectedNodeId}
+          record={selectedRecord}
+          open={selectedNodeId !== null}
+          onOpenChange={(open) => {
+            if (!open) setSelectedNodeId(null)
+          }}
         />
 
         {panel && (
@@ -316,7 +293,6 @@ export default function App() {
                 <h2 className="font-semibold text-sm">
                   {panel === "code" && "Workflow code"}
                   {panel === "payload" && "Payloads"}
-                  {panel === "activity" && "Activity"}
                 </h2>
                 <Button
                   size="icon"
@@ -386,122 +362,6 @@ export default function App() {
                     )}
                   </div>
                 )}
-                {panel === "activity" && (
-                  <div className="flex flex-col gap-4">
-                    {runState && (
-                      <Card>
-                        <CardHeader className="py-3">
-                          <CardTitle className="text-sm">Node records</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-2 pt-0">
-                          <div className="space-y-2 font-mono text-xs">
-                            {Object.entries(nodes).map(([id, node]) => (
-                              <NodeRow key={id} id={id} node={node} />
-                            ))}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                    {pendingDeferredId === "overlayReview" && blockedOnOverlay && (
-                      <Card>
-                        <CardHeader className="py-3">
-                          <CardTitle className="text-sm">Overlay review</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3 pt-0">
-                          <p className="text-muted-foreground text-xs">
-                            <code className="text-foreground">applyOverlay</code>{" "}
-                            is waiting on{" "}
-                            <code className="text-foreground">overlayReview</code>.
-                            Use the graph or buttons below.
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              size="sm"
-                              onClick={() => handleOverlayReview(true)}
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleOverlayReview(false)}
-                            >
-                              Reject
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                    {pendingDeferredId &&
-                      pendingDeferredId !== "overlayReview" &&
-                      !blockedOnOverlay && (
-                        <Card>
-                          <CardHeader className="py-3">
-                            <CardTitle className="text-sm">
-                              Deferred: {pendingDeferredId}
-                            </CardTitle>
-                          </CardHeader>
-                          <CardContent className="space-y-3 pt-0">
-                            <p className="text-muted-foreground text-xs">
-                              Open <strong className="text-foreground">Payload</strong>{" "}
-                              to edit JSON, then use{" "}
-                              <strong className="text-foreground">
-                                Submit “{pendingDeferredId}”
-                              </strong>{" "}
-                              in the header.
-                            </p>
-                          </CardContent>
-                        </Card>
-                      )}
-                    {runState && lastSeedEvent.current && (
-                      <Card>
-                        <CardHeader className="py-3">
-                          <CardTitle className="text-sm">
-                            {isComplete ? "Idempotency" : "Idempotency (replay)"}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3 pt-0">
-                          <p className="text-muted-foreground text-xs">
-                            Re-process the seed provider event{" "}
-                            {lastSeedEvent.current.eventId}. If it is already in{" "}
-                            <code className="rounded bg-muted px-1 py-0.5">
-                              processedEventIds
-                            </code>
-                            , the runtime skips it.
-                          </p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={replayLastSeedEvent}
-                          >
-                            Replay {lastSeedEvent.current.eventId}
-                          </Button>
-                          {idempotencyMsg && (
-                            <p className="text-sm font-medium">{idempotencyMsg}</p>
-                          )}
-                        </CardContent>
-                      </Card>
-                    )}
-                    {log.length > 0 && (
-                      <Card>
-                        <CardHeader className="py-3">
-                          <CardTitle className="text-sm">Event log</CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-0">
-                          <pre className="text-muted-foreground max-h-[50vh] overflow-auto font-mono text-[11px] whitespace-pre-wrap">
-                            {log.join("\n")}
-                          </pre>
-                        </CardContent>
-                      </Card>
-                    )}
-                    {!runState && log.length === 0 && (
-                      <p className="text-muted-foreground text-sm">
-                        Run the workflow or open Payload / Workflow code to get
-                        started.
-                      </p>
-                    )}
-                  </div>
-                )}
               </div>
             </aside>
           </>
@@ -509,40 +369,4 @@ export default function App() {
       </div>
     </div>
   )
-}
-
-function NodeRow({ id, node }: { id: string; node: NodeRecord }) {
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="w-28 shrink-0 text-right text-muted-foreground sm:w-32">
-        {id}
-      </span>
-      <StatusBadge status={node.status} />
-      {"value" in node && node.value !== undefined && (
-        <span className="text-foreground">
-          {typeof node.value === "string"
-            ? node.value
-            : JSON.stringify(node.value)}
-        </span>
-      )}
-      {node.waitingOn && (
-        <span className="text-muted-foreground">
-          waiting on &quot;{node.waitingOn}&quot;
-        </span>
-      )}
-    </div>
-  )
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const variant =
-    status === "resolved"
-      ? "default"
-      : status === "waiting"
-        ? "secondary"
-        : status === "skipped"
-          ? "outline"
-          : "destructive"
-
-  return <Badge variant={variant}>{status}</Badge>
 }
