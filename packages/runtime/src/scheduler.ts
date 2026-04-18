@@ -49,7 +49,11 @@ export class LocalScheduler implements Scheduler {
     const saved = await this.opts.stateStore.save(runId, state, 0);
     if (!saved.ok) throw new Error(`Unable to create run: ${saved.reason}`);
 
-    await this.opts.events.publish({ type: "run_started", runId, at: Date.now() });
+    await this.opts.events.publish({
+      type: "run_started",
+      runId,
+      at: Date.now(),
+    });
 
     if (request.input) {
       await this.enqueueAndPublish({
@@ -61,7 +65,13 @@ export class LocalScheduler implements Scheduler {
       });
     }
 
-    return this.buildSnapshot(runId, request.workflow, definition, state, saved.version);
+    return this.buildSnapshot(
+      runId,
+      request.workflow,
+      definition,
+      state,
+      saved.version,
+    );
   }
 
   async submitInput(request: SubmitInputRequest): Promise<RunSnapshot> {
@@ -123,7 +133,11 @@ export class LocalScheduler implements Scheduler {
     await this.publishStateDelta(event, previous, result.state);
     await this.enqueueAndPublishMany(result.emitted);
 
-    const saved = await this.opts.stateStore.save(event.runId, result.state, previousVersion);
+    const saved = await this.opts.stateStore.save(
+      event.runId,
+      result.state,
+      previousVersion,
+    );
     if (!saved.ok) throw new Error(`Unable to save run: ${saved.reason}`);
 
     await this.publishRunStatus(event.runId, result.state);
@@ -134,7 +148,13 @@ export class LocalScheduler implements Scheduler {
     const definition = await this.opts.loader.load(workflow);
     const stored = await this.opts.stateStore.load(runId);
     if (!stored) throw new Error(`Unknown run: ${runId}`);
-    return this.buildSnapshot(runId, workflow, definition, stored.state, stored.version);
+    return this.buildSnapshot(
+      runId,
+      workflow,
+      definition,
+      stored.state,
+      stored.version,
+    );
   }
 
   private async enqueueAndPublish(event: QueueEvent): Promise<void> {
@@ -145,7 +165,9 @@ export class LocalScheduler implements Scheduler {
   private async enqueueAndPublishMany(events: QueueEvent[]): Promise<void> {
     await this.opts.queue.enqueueMany(events);
     await this.opts.events.publishMany(
-      events.map((event) => queuedEvent(event)).filter((event): event is RunEvent => Boolean(event)),
+      events
+        .map((event) => queuedEvent(event))
+        .filter((event): event is RunEvent => Boolean(event)),
     );
   }
 
@@ -184,7 +206,8 @@ export class LocalScheduler implements Scheduler {
         }
       }
 
-      if (prev?.status === record.status && prev?.attempts === record.attempts) continue;
+      if (prev?.status === record.status && prev?.attempts === record.attempts)
+        continue;
       const nodeEvent = recordEvent(next.runId, nodeId, record);
       if (nodeEvent) events.push(nodeEvent);
     }
@@ -192,7 +215,10 @@ export class LocalScheduler implements Scheduler {
     await this.opts.events.publishMany(events);
   }
 
-  private async publishRunStatus(runId: string, state: RunState): Promise<void> {
+  private async publishRunStatus(
+    runId: string,
+    state: RunState,
+  ): Promise<void> {
     const waitingOn = unresolvedWaitingInputs(state);
     if (waitingOn.length > 0 && (await this.opts.queue.size()) === 0) {
       await this.opts.events.publish({
@@ -205,7 +231,11 @@ export class LocalScheduler implements Scheduler {
     }
 
     if (isComplete(state) && (await this.opts.queue.size()) === 0) {
-      await this.opts.events.publish({ type: "run_completed", runId, at: Date.now() });
+      await this.opts.events.publish({
+        type: "run_completed",
+        runId,
+        at: Date.now(),
+      });
     }
   }
 
@@ -264,26 +294,42 @@ function queuedEvent(event: QueueEvent): RunEvent | undefined {
   };
 }
 
-function recordEvent(runId: string, nodeId: string, record: NodeRecord): RunEvent | undefined {
+function recordEvent(
+  runId: string,
+  nodeId: string,
+  record: NodeRecord,
+): RunEvent | undefined {
   switch (record.status) {
     case "resolved":
       return { type: "node_resolved", runId, nodeId, at: Date.now() };
     case "skipped":
-      return { type: "node_skipped", runId, nodeId, reason: record.skipReason, at: Date.now() };
+      return {
+        type: "node_skipped",
+        runId,
+        nodeId,
+        reason: record.skipReason,
+        at: Date.now(),
+      };
     case "waiting":
+      if (record.waitingOn === undefined) {
+        throw new Error(`Waiting node "${nodeId}" is missing waitingOn`);
+      }
       return {
         type: "node_waiting",
         runId,
         nodeId,
-        waitingOn: record.waitingOn!,
+        waitingOn: record.waitingOn,
         at: Date.now(),
       };
     case "blocked":
+      if (record.blockedOn === undefined) {
+        throw new Error(`Blocked node "${nodeId}" is missing blockedOn`);
+      }
       return {
         type: "node_blocked",
         runId,
         nodeId,
-        blockedOn: record.blockedOn!,
+        blockedOn: record.blockedOn,
         at: Date.now(),
       };
     case "errored":
@@ -315,7 +361,11 @@ function buildGraphNodes(
       id,
       kind: inputDef?.kind ?? "atom",
       description: inputDef?.description ?? atomDef?.description,
-      status: running.has(id) ? "running" : pending.has(id) ? "queued" : rec.status,
+      status: running.has(id)
+        ? "running"
+        : pending.has(id)
+          ? "queued"
+          : rec.status,
       value: rec.value,
       deps: rec.deps,
       blockedOn: rec.blockedOn,
@@ -326,7 +376,9 @@ function buildGraphNodes(
   });
 }
 
-function fallbackRecord(kind: "input" | "deferred_input" | undefined): NodeRecord {
+function fallbackRecord(
+  kind: "input" | "deferred_input" | undefined,
+): NodeRecord {
   if (kind === "input") {
     return {
       status: "skipped",
@@ -361,8 +413,12 @@ function queueNodeId(event: QueueEvent): string {
   return event.kind === "input" ? event.inputId : event.stepId;
 }
 
-function runStatus(state: RunState, activeQueueItems: number): RunSnapshot["status"] {
-  if (Object.values(state.nodes).some((record) => record.status === "errored")) return "failed";
+function runStatus(
+  state: RunState,
+  activeQueueItems: number,
+): RunSnapshot["status"] {
+  if (Object.values(state.nodes).some((record) => record.status === "errored"))
+    return "failed";
   if (activeQueueItems > 0) return "running";
   if (unresolvedWaitingInputs(state).length > 0) return "waiting";
   if (isComplete(state)) return "completed";
@@ -372,7 +428,8 @@ function runStatus(state: RunState, activeQueueItems: number): RunSnapshot["stat
 function unresolvedWaitingInputs(state: RunState): string[] {
   const waiting = new Set<string>();
   for (const record of Object.values(state.nodes)) {
-    if (record.status === "waiting" && record.waitingOn) waiting.add(record.waitingOn);
+    if (record.status === "waiting" && record.waitingOn)
+      waiting.add(record.waitingOn);
   }
   return [...waiting];
 }
@@ -388,5 +445,7 @@ function isTerminal(status: NodeStatus): boolean {
 }
 
 function randomId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return (
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+  );
 }

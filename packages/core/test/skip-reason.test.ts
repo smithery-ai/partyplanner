@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { input } from "../src/input";
 import { atom } from "../src/atom";
+import { input } from "../src/input";
 import { createRuntime } from "../src/runtime";
 import type { StepSkippedEvent } from "../src/types";
 import { resetRegistry, runToIdle } from "./helpers";

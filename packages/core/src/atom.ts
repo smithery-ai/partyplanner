@@ -1,6 +1,6 @@
-import { globalRegistry } from "./registry";
-import { makeHandle, type Atom } from "./handles";
+import { type Atom, makeHandle } from "./handles";
 import { hashString } from "./hash";
+import { globalRegistry } from "./registry";
 import type { Get } from "./types";
 
 export type AtomOpts = {
@@ -10,7 +10,7 @@ export type AtomOpts = {
 
 export function atom<T>(
   fn: (get: Get) => Promise<T> | T,
-  opts?: AtomOpts
+  opts?: AtomOpts,
 ): Atom<T> {
   const id = opts?.name ?? `atom_${hashString(fn.toString())}`;
   globalRegistry.registerAtom({

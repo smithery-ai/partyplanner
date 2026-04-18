@@ -1,9 +1,14 @@
 import { describe, it } from "vitest";
 import { z } from "zod";
-import { input } from "../src/input";
 import { atom } from "../src/atom";
+import { input } from "../src/input";
 import { createRuntime } from "../src/runtime";
-import { resetRegistry, runToIdle, assertResolved, assertSkipped } from "./helpers";
+import {
+  assertResolved,
+  assertSkipped,
+  resetRegistry,
+  runToIdle,
+} from "./helpers";
 
 describe("Example 2 — Multi-input with get.maybe", () => {
   resetRegistry();
@@ -12,16 +17,26 @@ describe("Example 2 — Multi-input with get.maybe", () => {
     const slack = input("slack", z.object({ text: z.string() }));
     const email = input("email", z.object({ body: z.string() }));
 
-    const extractText = atom((get) => {
-      const s = get.maybe(slack);
-      const e = get.maybe(email);
-      return s?.text ?? e?.body ?? get.skip("No Slack or email input was available");
-    }, { name: "extractText" });
+    const extractText = atom(
+      (get) => {
+        const s = get.maybe(slack);
+        const e = get.maybe(email);
+        return (
+          s?.text ??
+          e?.body ??
+          get.skip("No Slack or email input was available")
+        );
+      },
+      { name: "extractText" },
+    );
 
-    const wordCount = atom((get) => {
-      const text = get(extractText);
-      return text.split(/\s+/).length;
-    }, { name: "wordCount" });
+    const _wordCount = atom(
+      (get) => {
+        const text = get(extractText);
+        return text.split(/\s+/).length;
+      },
+      { name: "wordCount" },
+    );
 
     const runtime = createRuntime();
     const { trace } = await runToIdle(runtime, {
@@ -42,16 +57,26 @@ describe("Example 2 — Multi-input with get.maybe", () => {
     const slack = input("slack", z.object({ text: z.string() }));
     const email = input("email", z.object({ body: z.string() }));
 
-    const extractText = atom((get) => {
-      const s = get.maybe(slack);
-      const e = get.maybe(email);
-      return s?.text ?? e?.body ?? get.skip("No Slack or email input was available");
-    }, { name: "extractText" });
+    const extractText = atom(
+      (get) => {
+        const s = get.maybe(slack);
+        const e = get.maybe(email);
+        return (
+          s?.text ??
+          e?.body ??
+          get.skip("No Slack or email input was available")
+        );
+      },
+      { name: "extractText" },
+    );
 
-    const wordCount = atom((get) => {
-      const text = get(extractText);
-      return text.split(/\s+/).length;
-    }, { name: "wordCount" });
+    const _wordCount = atom(
+      (get) => {
+        const text = get(extractText);
+        return text.split(/\s+/).length;
+      },
+      { name: "wordCount" },
+    );
 
     const runtime = createRuntime();
     const { trace } = await runToIdle(runtime, {

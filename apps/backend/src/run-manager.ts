@@ -1,4 +1,13 @@
 import type { QueueEvent } from "@rxwf/core";
+import type {
+  ExecuteRequest,
+  ExecuteResult,
+  Executor,
+  QueueSnapshot,
+  RunEvent,
+  RunSnapshot,
+  WorkflowRef,
+} from "@rxwf/runtime";
 import {
   LocalScheduler,
   MemoryEventSink,
@@ -6,15 +15,6 @@ import {
   MemoryWorkQueue,
   RuntimeExecutor,
   StaticWorkflowLoader,
-} from "@rxwf/runtime";
-import type {
-  Executor,
-  ExecuteRequest,
-  ExecuteResult,
-  QueueSnapshot,
-  RunEvent,
-  RunSnapshot,
-  WorkflowRef,
 } from "@rxwf/runtime";
 import { evaluateWorkflowSource } from "./workflow-source";
 
@@ -162,22 +162,30 @@ export class BackendRunManager {
         await this.publishSnapshot(controller);
       } finally {
         controller.processing = false;
-        if ((await controller.queue.size()) > 0) this.kickProcessing(controller);
+        if ((await controller.queue.size()) > 0)
+          this.kickProcessing(controller);
       }
     })();
   }
 
-  private async publishSnapshot(runId: string): Promise<RunStateDocument | undefined>;
-  private async publishSnapshot(controller: RunController): Promise<RunStateDocument>;
+  private async publishSnapshot(
+    runId: string,
+  ): Promise<RunStateDocument | undefined>;
+  private async publishSnapshot(
+    controller: RunController,
+  ): Promise<RunStateDocument>;
   private async publishSnapshot(
     target: string | RunController,
   ): Promise<RunStateDocument | undefined> {
-    const controller = typeof target === "string" ? this.runs.get(target) : target;
+    const controller =
+      typeof target === "string" ? this.runs.get(target) : target;
     if (!controller) return undefined;
     const snapshot = await controller.scheduler.snapshot(controller.runId);
     return this.stateManager.publish(
       withFailedStatus(snapshot, controller.lastError),
-      controller.events.events.filter((event) => event.runId === controller.runId),
+      controller.events.events.filter(
+        (event) => event.runId === controller.runId,
+      ),
     );
   }
 }
@@ -185,7 +193,9 @@ export class BackendRunManager {
 type DelayedExecutorOptions = {
   minMs?: number;
   maxMs?: number;
-  onStepStarted?: (event: Extract<QueueEvent, { kind: "step" }>) => void | Promise<void>;
+  onStepStarted?: (
+    event: Extract<QueueEvent, { kind: "step" }>,
+  ) => void | Promise<void>;
 };
 
 class DelayedExecutor implements Executor {
@@ -217,11 +227,17 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function withFailedStatus(snapshot: RunSnapshot, message: string | undefined): RunSnapshot {
+function withFailedStatus(
+  snapshot: RunSnapshot,
+  message: string | undefined,
+): RunSnapshot {
   if (!message) return snapshot;
   const failedQueue: QueueSnapshot = {
     ...snapshot.queue,
-    failed: snapshot.queue.failed.map((item) => ({ ...item, error: item.error ?? message })),
+    failed: snapshot.queue.failed.map((item) => ({
+      ...item,
+      error: item.error ?? message,
+    })),
   };
   return {
     ...snapshot,

@@ -1,23 +1,21 @@
-import { X } from "lucide-react"
-import type { ZodTypeAny } from "zod"
-
-import { Button } from "@/components/ui/button"
-import type { NodeRecord } from "@rxwf/core"
-import { cn } from "@/lib/utils"
-
-import { ZodSchemaForm } from "@/components/zod-schema-form"
+import type { NodeRecord } from "@rxwf/core";
+import { X } from "lucide-react";
+import type { ZodTypeAny } from "zod";
+import { Button } from "@/components/ui/button";
+import { ZodSchemaForm } from "@/components/zod-schema-form";
+import { cn } from "@/lib/utils";
 
 export type NodeDetailEditor = {
   /** From `input(..., { description })` in the workflow registry. */
-  inputDescription?: string
-  description: string
-  schema: ZodTypeAny
-  value: unknown
-  onChange: (value: unknown) => void
-  onSubmit: () => void | Promise<void>
-  submitLabel: string
-  error?: string
-}
+  inputDescription?: string;
+  description: string;
+  schema: ZodTypeAny;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  onSubmit: () => void | Promise<void>;
+  submitLabel: string;
+  error?: string;
+};
 
 export function NodeDetailSheet({
   nodeId,
@@ -26,15 +24,15 @@ export function NodeDetailSheet({
   open,
   onOpenChange,
 }: {
-  nodeId: string | null
-  record: NodeRecord | undefined
-  editor?: NodeDetailEditor | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  nodeId: string | null;
+  record: NodeRecord | undefined;
+  editor?: NodeDetailEditor | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  if (!open || !nodeId) return null
+  if (!open || !nodeId) return null;
 
-  const showEmpty = !record && !editor
+  const showEmpty = !record && !editor;
 
   return (
     <>
@@ -68,7 +66,9 @@ export function NodeDetailSheet({
                   {editor.inputDescription}
                 </p>
               ) : null}
-              <p className="text-muted-foreground text-xs leading-snug">{editor.description}</p>
+              <p className="text-muted-foreground text-xs leading-snug">
+                {editor.description}
+              </p>
               <ZodSchemaForm
                 schema={editor.schema}
                 value={editor.value}
@@ -91,7 +91,9 @@ export function NodeDetailSheet({
             <div className="space-y-4 text-xs">
               <div>
                 <div className="mb-1 font-medium text-foreground">Status</div>
-                <code className="rounded bg-muted px-1.5 py-0.5">{record.status}</code>
+                <code className="rounded bg-muted px-1.5 py-0.5">
+                  {record.status}
+                </code>
               </div>
               {record.value !== undefined && (
                 <div>
@@ -116,12 +118,15 @@ export function NodeDetailSheet({
               )}
               {record.waitingOn && (
                 <p className="text-muted-foreground">
-                  Waiting on <code className="text-foreground">{record.waitingOn}</code>
+                  Waiting on{" "}
+                  <code className="text-foreground">{record.waitingOn}</code>
                 </p>
               )}
               {record.status === "skipped" && record.skipReason && (
                 <div>
-                  <div className="mb-1 font-medium text-foreground">Skip Reason</div>
+                  <div className="mb-1 font-medium text-foreground">
+                    Skip Reason
+                  </div>
                   <p className="rounded-md border border-border bg-muted/40 p-3 text-muted-foreground whitespace-pre-wrap">
                     {record.skipReason}
                   </p>
@@ -129,7 +134,8 @@ export function NodeDetailSheet({
               )}
               {record.blockedOn && (
                 <p className="text-muted-foreground">
-                  Blocked on <code className="text-foreground">{record.blockedOn}</code>
+                  Blocked on{" "}
+                  <code className="text-foreground">{record.blockedOn}</code>
                 </p>
               )}
               <div>
@@ -140,19 +146,25 @@ export function NodeDetailSheet({
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
                 <span>
-                  duration: <span className="text-foreground">{record.duration_ms}ms</span>
+                  duration:{" "}
+                  <span className="text-foreground">
+                    {record.duration_ms}ms
+                  </span>
                 </span>
                 <span>
-                  attempts: <span className="text-foreground">{record.attempts}</span>
+                  attempts:{" "}
+                  <span className="text-foreground">{record.attempts}</span>
                 </span>
               </div>
             </div>
           ) : null}
           {showEmpty ? (
-            <p className="text-muted-foreground text-sm">No record for this node.</p>
+            <p className="text-muted-foreground text-sm">
+              No record for this node.
+            </p>
           ) : null}
         </div>
       </aside>
     </>
-  )
+  );
 }

@@ -33,12 +33,22 @@ export class Registry {
     this._atoms.set(def.id, def);
   }
 
-  getInput(id: string): InputDef | undefined { return this._inputs.get(id); }
-  getAtom(id: string): AtomDef | undefined { return this._atoms.get(id); }
+  getInput(id: string): InputDef | undefined {
+    return this._inputs.get(id);
+  }
+  getAtom(id: string): AtomDef | undefined {
+    return this._atoms.get(id);
+  }
 
-  allInputs(): InputDef[] { return [...this._inputs.values()]; }
-  allAtoms(): AtomDef[] { return [...this._atoms.values()]; }
-  allIds(): string[] { return [...this._inputs.keys(), ...this._atoms.keys()]; }
+  allInputs(): InputDef[] {
+    return [...this._inputs.values()];
+  }
+  allAtoms(): AtomDef[] {
+    return [...this._atoms.values()];
+  }
+  allIds(): string[] {
+    return [...this._inputs.keys(), ...this._atoms.keys()];
+  }
 
   clear(): void {
     this._inputs.clear();

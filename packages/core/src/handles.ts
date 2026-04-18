@@ -10,7 +10,9 @@ export interface Handle<T = unknown> {
 }
 
 export type Input<T> = Handle<T> & { readonly __kind: "input" };
-export type DeferredInput<T> = Handle<T> & { readonly __kind: "deferred_input" };
+export type DeferredInput<T> = Handle<T> & {
+  readonly __kind: "deferred_input";
+};
 export type Atom<T> = Handle<T> & { readonly __kind: "atom" };
 
 export function makeHandle<T>(kind: HandleKind, id: string): Handle<T> {
@@ -18,5 +20,9 @@ export function makeHandle<T>(kind: HandleKind, id: string): Handle<T> {
 }
 
 export function isHandle(x: unknown): x is Handle {
-  return typeof x === "object" && x !== null && (x as any)[HANDLE] === true;
+  return (
+    typeof x === "object" &&
+    x !== null &&
+    (x as { readonly [HANDLE]?: unknown })[HANDLE] === true
+  );
 }

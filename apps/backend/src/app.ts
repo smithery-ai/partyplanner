@@ -1,12 +1,4 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { cors } from "hono/cors";
-import {
-  globalRegistry,
-  isHandle,
-  NotReadyError,
-  SkipError,
-  WaitError,
-} from "@rxwf/core";
 import type {
   AtomDef,
   Get,
@@ -15,6 +7,14 @@ import type {
   NodeStatus,
   RunState,
 } from "@rxwf/core";
+import {
+  globalRegistry,
+  isHandle,
+  NotReadyError,
+  SkipError,
+  WaitError,
+} from "@rxwf/core";
+import { cors } from "hono/cors";
 import { BackendRunManager, JsonStateManager } from "./run-manager";
 import { evaluateWorkflowSource } from "./workflow-source";
 
@@ -345,7 +345,10 @@ function normalizeState(state: RunState | undefined): RunState {
   );
 }
 
-function mergeNodeOutputs(state: RunState, nodeOutputs: Record<string, unknown> | undefined): void {
+function mergeNodeOutputs(
+  state: RunState,
+  nodeOutputs: Record<string, unknown> | undefined,
+): void {
   if (!nodeOutputs) return;
   for (const [id, value] of Object.entries(nodeOutputs)) {
     if (state.nodes[id]) continue;
@@ -405,7 +408,11 @@ async function runImmediateAtoms(
     if (!def) throw new Error(`Unknown atom: ${stepId}`);
 
     const prev = previousState.nodes[stepId];
-    if (prev?.status === "resolved" || prev?.status === "skipped" || prev?.status === "errored") {
+    if (
+      prev?.status === "resolved" ||
+      prev?.status === "skipped" ||
+      prev?.status === "errored"
+    ) {
       continue;
     }
 
@@ -416,7 +423,10 @@ async function runImmediateAtoms(
   return evaluated;
 }
 
-function immediateStepIds(previousState: RunState, newInputIds: Set<string>): string[] {
+function immediateStepIds(
+  previousState: RunState,
+  newInputIds: Set<string>,
+): string[] {
   const targeted = new Set<string>();
   for (const inputId of newInputIds) {
     for (const stepId of previousState.waiters[inputId] ?? []) {
@@ -451,7 +461,8 @@ async function runAtomShallow(
         try {
           return readValueShallow(readState, state, source.__id, def.id) as T;
         } catch (e) {
-          if (e instanceof SkipError || e instanceof WaitError) return undefined;
+          if (e instanceof SkipError || e instanceof WaitError)
+            return undefined;
           throw e;
         }
       },
@@ -471,10 +482,14 @@ async function runAtomShallow(
       });
     } else if (e instanceof WaitError) {
       registerWaiter(state, e.inputId, def.id);
-      state.nodes[def.id] = nodeRecord("waiting", deps, start, prev, { waitingOn: e.inputId });
+      state.nodes[def.id] = nodeRecord("waiting", deps, start, prev, {
+        waitingOn: e.inputId,
+      });
     } else if (e instanceof NotReadyError) {
       registerWaiter(state, e.dependencyId, def.id);
-      state.nodes[def.id] = nodeRecord("blocked", deps, start, prev, { blockedOn: e.dependencyId });
+      state.nodes[def.id] = nodeRecord("blocked", deps, start, prev, {
+        blockedOn: e.dependencyId,
+      });
     } else {
       const err = e as Error;
       state.nodes[def.id] = nodeRecord("errored", deps, start, prev, {
@@ -486,7 +501,10 @@ async function runAtomShallow(
   touched.add(def.id);
 }
 
-function assertHandle(source: unknown, method: string): asserts source is Handle {
+function assertHandle(
+  source: unknown,
+  method: string,
+): asserts source is Handle {
   if (!isHandle(source)) {
     throw new Error(`${method}() called with non-handle value`);
   }
@@ -500,11 +518,24 @@ function readValueShallow(
 ): unknown {
   const existing = readState.nodes[depId];
   if (existing?.status === "resolved") return existing.value;
-  if (existing?.status === "skipped") throw new SkipError(depId, existing.skipReason);
-  if (existing?.status === "waiting") throw new WaitError(existing.waitingOn!);
-  if (existing?.status === "blocked") throw new NotReadyError(existing.blockedOn!);
+  if (existing?.status === "skipped")
+    throw new SkipError(depId, existing.skipReason);
+  if (existing?.status === "waiting") {
+    if (existing.waitingOn === undefined) {
+      throw new Error(`Waiting node "${depId}" is missing waitingOn`);
+    }
+    throw new WaitError(existing.waitingOn);
+  }
+  if (existing?.status === "blocked") {
+    if (existing.blockedOn === undefined) {
+      throw new Error(`Blocked node "${depId}" is missing blockedOn`);
+    }
+    throw new NotReadyError(existing.blockedOn);
+  }
   if (existing?.status === "errored") {
-    throw Object.assign(new Error(existing.error!.message), { stack: existing.error!.stack });
+    throw Object.assign(new Error(existing.error?.message), {
+      stack: existing.error?.stack,
+    });
   }
 
   const inputDef = globalRegistry.getInput(depId);
@@ -589,7 +620,11 @@ function fallbackRecord(id: string): NodeRecord {
   };
 }
 
-function phaseFor(id: string, rec: NodeRecord, touched: Set<string>): GraphPhase {
+function phaseFor(
+  id: string,
+  rec: NodeRecord,
+  touched: Set<string>,
+): GraphPhase {
   if (rec.status === "not_reached") return "not_reached";
   if (rec.status === "skipped" && rec.attempts === 0) return "skipped";
   if (touched.has(id)) return `${rec.status}_in_this_run` as GraphPhase;

@@ -1,17 +1,12 @@
 import { z } from "@hono/zod-openapi";
-import {
-  atom,
-  globalRegistry,
-  input,
-  Registry,
-} from "@rxwf/core";
+import { atom, globalRegistry, input, Registry } from "@rxwf/core";
 
 export function evaluateWorkflowSource(source: string): Registry {
   globalRegistry.clear();
 
-  const exportNames = [...source.matchAll(/\bexport\s+const\s+([A-Za-z_$][\w$]*)\s*=/g)].map(
-    (match) => match[1]!,
-  );
+  const exportNames = [
+    ...source.matchAll(/\bexport\s+const\s+([A-Za-z_$][\w$]*)\s*=/g),
+  ].flatMap((match) => (match[1] === undefined ? [] : [match[1]]));
   const body = source
     .replace(/^\s*import\s+.*;?\s*$/gm, "")
     .replace(/\bexport\s+const\s+/g, "const ")

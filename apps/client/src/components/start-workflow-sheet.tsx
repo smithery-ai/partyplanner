@@ -1,10 +1,8 @@
-import { X } from "lucide-react"
-
-import { Button } from "@/components/ui/button"
-import type { Registry } from "@rxwf/core"
-import { cn } from "@/lib/utils"
-
-import { ZodSchemaForm } from "@/components/zod-schema-form"
+import type { Registry } from "@rxwf/core";
+import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ZodSchemaForm } from "@/components/zod-schema-form";
+import { cn } from "@/lib/utils";
 
 /**
  * Seed / immediate inputs only. Per SPEC, deferred inputs are separate queue events
@@ -22,20 +20,20 @@ export function StartWorkflowSheet({
   onSubmitSeed,
   error,
 }: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  registry: Registry
-  inputValues: Record<string, unknown>
-  onInputValuesChange: (id: string, value: unknown) => void
-  seedInputId: string
-  onSeedInputIdChange: (id: string) => void
-  canSubmitSeed: boolean
-  onSubmitSeed: () => void
-  error?: string
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  registry: Registry;
+  inputValues: Record<string, unknown>;
+  onInputValuesChange: (id: string, value: unknown) => void;
+  seedInputId: string;
+  onSeedInputIdChange: (id: string) => void;
+  canSubmitSeed: boolean;
+  onSubmitSeed: () => void;
+  error?: string;
 }) {
-  if (!open) return null
+  if (!open) return null;
 
-  const immediate = registry.allInputs().filter((i) => i.kind === "input")
+  const immediate = registry.allInputs().filter((i) => i.kind === "input");
 
   return (
     <>
@@ -64,27 +62,36 @@ export function StartWorkflowSheet({
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
           <p className="text-muted-foreground text-[11px] leading-snug">
             Submit an{" "}
-            <span className="font-medium text-foreground">immediate</span> input to enqueue the
-            first <code className="rounded bg-muted px-1 py-0.5">input</code> event. Per the SDK
-            model, the queue is external: deferred inputs are separate validated events when a step
-            waits on them—they can be supplied from a webhook, job, or DB as long as they are
-            processed through <code className="rounded bg-muted px-1 py-0.5">runtime.process</code>
+            <span className="font-medium text-foreground">immediate</span> input
+            to enqueue the first{" "}
+            <code className="rounded bg-muted px-1 py-0.5">input</code> event.
+            Per the SDK model, the queue is external: deferred inputs are
+            separate validated events when a step waits on them—they can be
+            supplied from a webhook, job, or DB as long as they are processed
+            through{" "}
+            <code className="rounded bg-muted px-1 py-0.5">
+              runtime.process
+            </code>
             .
           </p>
 
           {immediate.length === 0 ? (
             <p className="text-muted-foreground text-sm">
-              This workflow has no registered immediate <code>input()</code>—add one in code to
-              seed a run.
+              This workflow has no registered immediate <code>input()</code>—add
+              one in code to seed a run.
             </p>
           ) : (
             <>
               {immediate.length > 1 && (
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-foreground">
+                  <label
+                    className="text-[11px] font-medium text-foreground"
+                    htmlFor="seed-input-id"
+                  >
                     Which input seeds the run?
                   </label>
                   <select
+                    id="seed-input-id"
                     className="flex h-8 w-full max-w-xs rounded-lg border border-input bg-background px-2 text-xs"
                     value={seedInputId}
                     onChange={(e) => onSeedInputIdChange(e.target.value)}
@@ -98,11 +105,13 @@ export function StartWorkflowSheet({
                 </div>
               )}
               {immediate.map((inp) => {
-                if (inp.id !== seedInputId && immediate.length > 1) return null
+                if (inp.id !== seedInputId && immediate.length > 1) return null;
                 return (
                   <div key={inp.id} className="space-y-2">
                     <div className="space-y-1">
-                      <code className="block text-[11px] text-foreground">{inp.id}</code>
+                      <code className="block text-[11px] text-foreground">
+                        {inp.id}
+                      </code>
                       {inp.description ? (
                         <p className="text-muted-foreground text-[11px] leading-snug">
                           {inp.description}
@@ -126,7 +135,7 @@ export function StartWorkflowSheet({
                       </Button>
                     ) : null}
                   </div>
-                )
+                );
               })}
             </>
           )}
@@ -135,5 +144,5 @@ export function StartWorkflowSheet({
         </div>
       </aside>
     </>
-  )
+  );
 }

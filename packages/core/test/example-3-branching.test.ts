@@ -1,31 +1,48 @@
 import { describe, it } from "vitest";
 import { z } from "zod";
-import { input } from "../src/input";
 import { atom } from "../src/atom";
+import { input } from "../src/input";
 import { createRuntime } from "../src/runtime";
-import { resetRegistry, runToIdle, assertResolved, assertSkipped } from "./helpers";
+import {
+  assertResolved,
+  assertSkipped,
+  resetRegistry,
+  runToIdle,
+} from "./helpers";
 
 describe("Example 3 — Branching with skip propagation", () => {
   resetRegistry();
 
   it("github input resolves code review branch, skips echo", async () => {
-    const github = input("github", z.object({ repo: z.string(), diff: z.string() }));
+    const github = input(
+      "github",
+      z.object({ repo: z.string(), diff: z.string() }),
+    );
     const slack = input("slack", z.object({ message: z.string() }));
 
-    const codeReview = atom((get) => {
-      const pr = get(github);
-      return { suggestions: pr.diff.split("\n").length };
-    }, { name: "codeReview" });
+    const codeReview = atom(
+      (get) => {
+        const pr = get(github);
+        return { suggestions: pr.diff.split("\n").length };
+      },
+      { name: "codeReview" },
+    );
 
-    const postReview = atom((get) => {
-      const review = get(codeReview);
-      return `Posted review with ${review.suggestions} suggestions`;
-    }, { name: "postReview" });
+    const _postReview = atom(
+      (get) => {
+        const review = get(codeReview);
+        return `Posted review with ${review.suggestions} suggestions`;
+      },
+      { name: "postReview" },
+    );
 
-    const echo = atom((get) => {
-      const msg = get(slack);
-      return `echo: ${msg.message}`;
-    }, { name: "echo" });
+    const _echo = atom(
+      (get) => {
+        const msg = get(slack);
+        return `echo: ${msg.message}`;
+      },
+      { name: "echo" },
+    );
 
     const runtime = createRuntime();
     const { trace } = await runToIdle(runtime, {
@@ -43,23 +60,35 @@ describe("Example 3 — Branching with skip propagation", () => {
   });
 
   it("slack input resolves echo, skips code review branch", async () => {
-    const github = input("github", z.object({ repo: z.string(), diff: z.string() }));
+    const github = input(
+      "github",
+      z.object({ repo: z.string(), diff: z.string() }),
+    );
     const slack = input("slack", z.object({ message: z.string() }));
 
-    const codeReview = atom((get) => {
-      const pr = get(github);
-      return { suggestions: pr.diff.split("\n").length };
-    }, { name: "codeReview" });
+    const codeReview = atom(
+      (get) => {
+        const pr = get(github);
+        return { suggestions: pr.diff.split("\n").length };
+      },
+      { name: "codeReview" },
+    );
 
-    const postReview = atom((get) => {
-      const review = get(codeReview);
-      return `Posted review with ${review.suggestions} suggestions`;
-    }, { name: "postReview" });
+    const _postReview = atom(
+      (get) => {
+        const review = get(codeReview);
+        return `Posted review with ${review.suggestions} suggestions`;
+      },
+      { name: "postReview" },
+    );
 
-    const echo = atom((get) => {
-      const msg = get(slack);
-      return `echo: ${msg.message}`;
-    }, { name: "echo" });
+    const _echo = atom(
+      (get) => {
+        const msg = get(slack);
+        return `echo: ${msg.message}`;
+      },
+      { name: "echo" },
+    );
 
     const runtime = createRuntime();
     const { trace } = await runToIdle(runtime, {

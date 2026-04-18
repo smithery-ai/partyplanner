@@ -1,31 +1,31 @@
-import { useState } from "react"
-import type { RunState } from "@rxwf/core"
-import { Check, Copy, X } from "lucide-react"
+import type { RunState } from "@rxwf/core";
+import { Check, Copy, X } from "lucide-react";
+import { useState } from "react";
 
-import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function RunStateJsonSheet({
   open,
   onOpenChange,
   runState,
 }: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  runState: RunState | undefined
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  runState: RunState | undefined;
 }) {
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState(false);
 
-  if (!open) return null
+  if (!open) return null;
 
-  const jsonText = runState ? JSON.stringify(runState, null, 2) : ""
+  const jsonText = runState ? JSON.stringify(runState, null, 2) : "";
 
   async function copy() {
-    if (!jsonText) return
+    if (!jsonText) return;
     try {
-      await navigator.clipboard.writeText(jsonText)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 2000)
+      await navigator.clipboard.writeText(jsonText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
     } catch {
       /* ignore */
     }
@@ -48,8 +48,14 @@ export function RunStateJsonSheet({
           <div className="min-w-0">
             <h2 className="font-semibold text-sm">Run state (JSON)</h2>
             {runState ? (
-              <p className="truncate text-muted-foreground text-[11px]" title={runState.runId}>
-                Run <code className="rounded bg-muted px-1 py-0.5">{runState.runId}</code>
+              <p
+                className="truncate text-muted-foreground text-[11px]"
+                title={runState.runId}
+              >
+                Run{" "}
+                <code className="rounded bg-muted px-1 py-0.5">
+                  {runState.runId}
+                </code>
               </p>
             ) : (
               <p className="text-muted-foreground text-[11px]">No active run</p>
@@ -68,7 +74,9 @@ export function RunStateJsonSheet({
               ) : (
                 <Copy className="size-4" aria-hidden />
               )}
-              <span className="ml-1.5 hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+              <span className="ml-1.5 hidden sm:inline">
+                {copied ? "Copied" : "Copy"}
+              </span>
             </Button>
             <Button
               size="icon"
@@ -87,13 +95,14 @@ export function RunStateJsonSheet({
             </pre>
           ) : (
             <p className="text-muted-foreground text-sm leading-relaxed">
-              Submit a seed input to create a run. Node records (status, values, deps, waits, etc.)
-              appear under <code className="rounded bg-muted px-1 py-0.5">nodes</code> once steps
-              execute.
+              Submit a seed input to create a run. Node records (status, values,
+              deps, waits, etc.) appear under{" "}
+              <code className="rounded bg-muted px-1 py-0.5">nodes</code> once
+              steps execute.
             </p>
           )}
         </div>
       </aside>
     </>
-  )
+  );
 }

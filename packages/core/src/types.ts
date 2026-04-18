@@ -53,7 +53,13 @@ export type RunTrace = {
 };
 
 export type QueueEvent =
-  | { kind: "input"; eventId: string; runId: string; inputId: string; payload: unknown }
+  | {
+      kind: "input";
+      eventId: string;
+      runId: string;
+      inputId: string;
+      payload: unknown;
+    }
   | { kind: "step"; eventId: string; runId: string; stepId: string };
 
 export type DispatchResult = {
@@ -62,7 +68,11 @@ export type DispatchResult = {
   trace: RunTrace;
 };
 
-export type StepResolvedEvent = { id: string; value: unknown; duration_ms: number };
+export type StepResolvedEvent = {
+  id: string;
+  value: unknown;
+  duration_ms: number;
+};
 export type StepErroredEvent = { id: string; error: Error };
 export type StepSkippedEvent = { id: string; reason?: string };
 export type StepWaitingEvent = { id: string; waitingOn: string };
