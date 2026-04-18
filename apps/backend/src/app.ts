@@ -263,6 +263,17 @@ export function createApp() {
     }
   });
 
+  app.post("/runs/:runId/auto-advance", async (c) => {
+    try {
+      const body = await c.req.json();
+      const response = await runManager.setAutoAdvance(c.req.param("runId"), body);
+      return c.json(response, 200);
+    } catch (e) {
+      const err = e as Error;
+      return c.json({ message: err.message }, 400);
+    }
+  });
+
   app.get("/state/:runId", (c) => {
     const document = runManager.getState(c.req.param("runId"));
     if (!document) return c.json({ message: "Unknown run" }, 404);

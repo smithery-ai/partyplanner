@@ -1,8 +1,9 @@
 import { useMemo, useState, useEffect } from "react"
 import { globalRegistry } from "@rxwf/core"
 import type { Registry, RunState } from "@rxwf/core"
+import type { QueueSnapshot } from "@rxwf/runtime"
 import type { ZodTypeAny } from "zod"
-import { AlertTriangle, Check } from "lucide-react"
+import { AlertTriangle, Check, Pause, Play, SkipForward } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -19,6 +20,7 @@ import { RunStateJsonSheet } from "@/components/run-state-json-sheet"
 import { WorkflowCodeSheet } from "@/components/workflow-code-sheet"
 import { defaultForSchema } from "@/components/zod-schema-form"
 import { useWorkflow } from "@/hooks/use-workflow"
+import { cn } from "@/lib/utils"
 import { loadWorkflowSourceIntoGlobalRegistry } from "@/lib/evaluate-workflow-source"
 import { BackendRuntime } from "@/lib/workflow-runtimes"
 
@@ -86,6 +88,28 @@ function isRunComplete(runState: RunState | undefined): boolean {
   return true
 }
 
+type NextQueuedWork = {
+  id: string
+  type: "Input" | "Step"
+  description?: string
+}
+
+function nextQueuedWork(
+  queue: QueueSnapshot | undefined,
+  registry: Registry,
+): NextQueuedWork | undefined {
+  const event = queue?.pending[0]?.event
+  if (!event) return undefined
+
+  const id = event.kind === "input" ? event.inputId : event.stepId
+  const def = registry.getInput(id) ?? registry.getAtom(id)
+  return {
+    id,
+    type: event.kind === "input" ? "Input" : "Step",
+    description: def?.description,
+  }
+}
+
 export default function App() {
   const [pane, setPane] = useState<SidePane>(null)
   const [workflowCode, setWorkflowCode] = useState(workflowRaw)
@@ -99,6 +123,7 @@ export default function App() {
 
   const [payloadError, setPayloadError] = useState("")
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [autoAdvance, setAutoAdvance] = useState(false)
 
   const runtime = useMemo(
     () => new BackendRuntime(),
@@ -112,15 +137,15 @@ export default function App() {
   const inputPending = Boolean(pendingDeferredId)
 
   const nodes = runState?.nodes ?? {}
-  const pendingQueueItems = workflow.queue?.pending.length ?? 0
-  const hasPendingQueueWork = pendingQueueItems > 0
+  const nextWork = nextQueuedWork(workflow.queue, globalRegistry)
   const runComplete = workflow.snapshot
     ? workflow.snapshot.status === "completed"
     : isRunComplete(runState)
-  const canAdvance = Boolean(
+  const canManualAdvance = Boolean(
     runState &&
       !runComplete &&
-      (workflow.queue ? hasPendingQueueWork : !inputPending),
+      !autoAdvance &&
+      nextWork,
   )
 
   useEffect(() => {
@@ -204,6 +229,7 @@ export default function App() {
         workflowSource: workflowCode,
         inputId: seed.id,
         payload,
+        autoAdvance,
       })
       setPane(null)
     } catch (e) {
@@ -242,6 +268,7 @@ export default function App() {
         state: runState,
         inputId,
         payload,
+        autoAdvance,
       })
       setPane(null)
     } catch (e) {
@@ -263,6 +290,25 @@ export default function App() {
     } catch (e) {
       setPayloadError(
         e instanceof Error ? e.message : "Processing failed — check workflow code.",
+      )
+    }
+  }
+
+  async function changeAdvanceMode(nextAutoAdvance: boolean) {
+    if (nextAutoAdvance === autoAdvance) return
+    setAutoAdvance(nextAutoAdvance)
+    if (!runState) return
+
+    setPayloadError("")
+    try {
+      await workflow.setAutoAdvance({
+        state: runState,
+        autoAdvance: nextAutoAdvance,
+      })
+    } catch (e) {
+      setAutoAdvance(!nextAutoAdvance)
+      setPayloadError(
+        e instanceof Error ? e.message : "Unable to change advance mode.",
       )
     }
   }
@@ -329,15 +375,77 @@ export default function App() {
           >
             Run state
           </Button>
-          {canAdvance && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void advanceWorkflow()}
+          <div
+            role="group"
+            aria-label="Advance mode"
+            className="inline-flex h-7 shrink-0 overflow-hidden rounded-lg border border-border bg-background text-[0.8rem] font-medium dark:border-input dark:bg-input/30"
+          >
+            <button
+              type="button"
+              aria-pressed={!autoAdvance}
+              title="Manual advance"
               disabled={workflow.isPending}
+              onClick={() => void changeAdvanceMode(false)}
+              className={cn(
+                "inline-flex h-full w-[4.9rem] items-center justify-center gap-1 px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+                !autoAdvance
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
             >
-              Advance
-            </Button>
+              <Pause className="size-3.5 shrink-0" aria-hidden />
+              Manual
+            </button>
+            <button
+              type="button"
+              aria-pressed={autoAdvance}
+              title="Auto advance"
+              disabled={workflow.isPending}
+              onClick={() => void changeAdvanceMode(true)}
+              className={cn(
+                "inline-flex h-full w-[4.4rem] items-center justify-center gap-1 border-l border-border px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:border-input",
+                autoAdvance
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <Play className="size-3.5 shrink-0" aria-hidden />
+              Auto
+            </button>
+          </div>
+          {canManualAdvance && (
+            <>
+              <div
+                className="inline-flex h-7 max-w-[16rem] items-center gap-1.5 rounded-lg border border-indigo-600/35 bg-indigo-600/10 px-2.5 text-[0.8rem] font-medium text-indigo-950 dark:border-indigo-500/35 dark:bg-indigo-500/12 dark:text-indigo-50"
+                title={
+                  nextWork?.description
+                    ? `${nextWork.type} ${nextWork.id}: ${nextWork.description}`
+                    : `${nextWork?.type} ${nextWork?.id}`
+                }
+              >
+                <span className="shrink-0 text-muted-foreground dark:text-indigo-100/75">
+                  Next
+                </span>
+                <span className="shrink-0 text-indigo-900/75 dark:text-indigo-100/80">
+                  {nextWork?.type}
+                </span>
+                <span className="min-w-0 truncate">{nextWork?.id}</span>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void advanceWorkflow()}
+                disabled={workflow.isPending}
+                title={
+                  nextWork
+                    ? `Advance will run ${nextWork.type.toLowerCase()} "${nextWork.id}" from the queue.`
+                    : undefined
+                }
+              >
+                <SkipForward className="size-3.5 shrink-0" aria-hidden />
+                Advance
+              </Button>
+            </>
           )}
           {runComplete ? (
             <div

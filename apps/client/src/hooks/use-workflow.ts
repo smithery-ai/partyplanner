@@ -4,6 +4,7 @@ import type { QueueSnapshot, RunEvent, RunSnapshot } from "@rxwf/runtime"
 
 import type {
   AdvanceWorkflowArgs,
+  SetAutoAdvanceWorkflowArgs,
   StartWorkflowArgs,
   SubmitWorkflowInputArgs,
   WorkflowRuntime,
@@ -19,6 +20,7 @@ export type WorkflowState = {
   start(args: StartWorkflowArgs): Promise<void>
   submitInput(args: SubmitWorkflowInputArgs): Promise<void>
   advance(args: AdvanceWorkflowArgs): Promise<void>
+  setAutoAdvance(args: SetAutoAdvanceWorkflowArgs): Promise<void>
   clear(): void
 }
 
@@ -78,6 +80,12 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
     [run],
   )
 
+  const setAutoAdvance = useCallback(
+    (args: SetAutoAdvanceWorkflowArgs) =>
+      run((runtime, next) => runtime.setAutoAdvance(next), args),
+    [run],
+  )
+
   const clear = useCallback(() => {
     runtimeRef.current.reset?.()
     setRunState(undefined)
@@ -127,6 +135,7 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
     start,
     submitInput,
     advance,
+    setAutoAdvance,
     clear,
   }
 }
