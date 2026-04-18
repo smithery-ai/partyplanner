@@ -72,7 +72,7 @@ export const assess = atom((get) => {
 
 export const dcrProxy = atom((get) => {
   const path = get(assess);
-  if (path !== "dcr-proxy") return get.skip();
+  if (path !== "dcr-proxy") return get.skip("Assessment selected a non-DCR proxy path");
   const p = get(provider);
   return {
     action: "publish-dcr",
@@ -83,7 +83,7 @@ export const dcrProxy = atom((get) => {
 
 export const oauthProxy = atom((get) => {
   const path = get(assess);
-  if (path !== "oauth-proxy") return get.skip();
+  if (path !== "oauth-proxy") return get.skip("Assessment selected a non-OAuth proxy path");
   const p = get(provider);
   const creds = get(oauthCreds);
   return {
@@ -96,7 +96,7 @@ export const oauthProxy = atom((get) => {
 
 export const buildSpec = atom((get) => {
   const path = get(assess);
-  if (path !== "dispatch-worker") return get.skip();
+  if (path !== "dispatch-worker") return get.skip("Assessment selected a non-dispatch-worker path");
   const p = get(provider);
   return {
     action: "build-spec",
@@ -108,7 +108,7 @@ export const buildSpec = atom((get) => {
 export const applyOverlay = atom((get) => {
   const spec = get(buildSpec);
   const review = get(overlayReview);
-  if (!review.approved) return get.skip();
+  if (!review.approved) return get.skip("Overlay review was not approved");
   return {
     action: "apply-overlay",
     provider: spec.provider,
@@ -141,13 +141,12 @@ export const deployProd = atom((get) => {
     path === "dcr-proxy" ? get(dcrProxy) :
     path === "oauth-proxy" ? get(oauthProxy) :
     path === "dispatch-worker" ? get(scanTools) :
-    get.skip();
+    get.skip("No deployable integration path was selected");
   const approval = get(prodApproval);
-  if (!approval.approved) return get.skip();
+  if (!approval.approved) return get.skip("Production approval was not granted");
   return {
     action: "deploy-prod",
     provider: target.provider,
     audit: approval.changeTicket,
   };
 }, { name: "deployProd" });
-

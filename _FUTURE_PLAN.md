@@ -15,7 +15,7 @@ Build a reactive, signals-inspired workflow engine on Cloudflare's stack. Users 
 | `atom(fn)` | A derived computation. Its function receives `get` and can read from inputs or other atoms. Dependencies are discovered implicitly via `get()` calls at runtime. |
 | `get(atom)` | Read and subscribe. Recursively resolves the target atom. Throws `SkipError` if an `input()` is unpopulated. Throws `WaitError` if an `input.deferred()` is unpopulated. |
 | `get.maybe(atom)` | Soft read. Returns `undefined` instead of throwing when an input is unavailable. For atoms that want to handle multiple event types. |
-| `get.skip()` | Explicit self-skip. An atom calls this to remove itself from the current run. |
+| `get.skip(reason)` | Explicit self-skip. An atom calls this to remove itself from the current run. |
 
 **User-facing code example:**
 
@@ -32,7 +32,7 @@ const approvalResponse = input.deferred(z.object({ approved: z.boolean(), approv
 const classify = atom(async (get) => {
   try { return await llm.classify(get(slack).message); } catch {}
   try { return await llm.classify(get(email).body); } catch {}
-  return get.skip();
+  return get.skip("No Slack or email message was available");
 });
 
 const draft = atom(async (get) => {
@@ -45,7 +45,7 @@ const draft = atom(async (get) => {
 const sendDraft = atom(async (get) => {
   const text = get(draft);
   const approval = get(approvalResponse); // pauses here until human approves
-  if (!approval.approved) return get.skip();
+  if (!approval.approved) return get.skip("Approval was denied");
   await sendSlackMessage("#outgoing", text);
 });
 ```
@@ -116,7 +116,7 @@ function atom<T>(fn: (get: Get) => Promise<T>): Atom<T>
 interface Get {
   <T>(source: Input<T> | Atom<T>): Promise<T>   // throws SkipError or WaitError
   maybe<T>(source: Input<T> | Atom<T>): Promise<T | undefined>
-  skip(): never   // throws SkipError
+  skip(reason?: string): never   // throws SkipError
 }
 ```
 
@@ -818,7 +818,7 @@ const review = atom("review", async (get) => {
 const process = atom("process", async (get) => {
   const assessment = get(review);
   const decision = get(approval);  // blocks until human approves
-  if (!decision.approved) return get.skip();
+  if (!decision.approved) return get.skip("Approval was denied");
   await submitExpense(get(ticket), assessment);
 });
 ```
@@ -920,7 +920,7 @@ If an atom throws a real error (not Skip/Wait):
 **Goal:** Atoms execute in a Dynamic Worker, payloads route correctly, traces are returned.
 
 - [ ] Set up monorepo (Turborepo or npm workspaces)
-- [ ] Implement SDK: `input()`, `atom()`, `get()`, `get.maybe()`, `get.skip()`
+- [ ] Implement SDK: `input()`, `atom()`, `get()`, `get.maybe()`, `get.skip(reason)`
 - [ ] Implement `SkipError` and `WaitError`
 - [ ] Implement Runtime class with `resolve()` and `run()`
 - [ ] Build Dynamic Worker entry point

@@ -96,7 +96,7 @@ Keep current control-flow semantics:
 - missing normal input -> `skipped`
 - missing deferred input -> `waiting`
 - unresolved atom dependency -> `blocked`
-- explicit `get.skip()` -> `skipped`
+- explicit `get.skip(reason)` -> `skipped`
 - successful atom -> `resolved`
 - thrown error -> `errored`
 

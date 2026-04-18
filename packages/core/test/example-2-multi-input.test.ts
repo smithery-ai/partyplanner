@@ -15,7 +15,7 @@ describe("Example 2 — Multi-input with get.maybe", () => {
     const extractText = atom((get) => {
       const s = get.maybe(slack);
       const e = get.maybe(email);
-      return s?.text ?? e?.body ?? get.skip();
+      return s?.text ?? e?.body ?? get.skip("No Slack or email input was available");
     }, { name: "extractText" });
 
     const wordCount = atom((get) => {
@@ -45,7 +45,7 @@ describe("Example 2 — Multi-input with get.maybe", () => {
     const extractText = atom((get) => {
       const s = get.maybe(slack);
       const e = get.maybe(email);
-      return s?.text ?? e?.body ?? get.skip();
+      return s?.text ?? e?.body ?? get.skip("No Slack or email input was available");
     }, { name: "extractText" });
 
     const wordCount = atom((get) => {

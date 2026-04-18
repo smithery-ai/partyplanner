@@ -893,7 +893,7 @@ const email = input("email", z.object({ body: z.string() }));
 const extractText = atom((get) => {
   const s = get.maybe(slack);
   const e = get.maybe(email);
-  return s?.text ?? e?.body ?? get.skip();
+  return s?.text ?? e?.body ?? get.skip("No Slack or email input was available");
 }, { name: "extractText" });
 
 const wordCount = atom((get) => {
@@ -985,7 +985,7 @@ const submit = atom((get) => {
   const e = get(expense);
   const a = get(assessment);
   const decision = get(approval);
-  if (!decision.approved) return get.skip();
+  if (!decision.approved) return get.skip("Approval was denied");
   return `submitted: ${e.description} ($${e.amount}, ${a} risk)`;
 }, { name: "submit" });
 ```
