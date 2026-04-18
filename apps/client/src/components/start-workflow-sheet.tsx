@@ -51,7 +51,7 @@ export function StartWorkflowSheet({
         )}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="font-semibold text-sm">Start workflow</h2>
+          <h2 className="font-semibold text-sm">Start Workflow</h2>
           <Button
             size="icon"
             variant="ghost"
@@ -122,7 +122,7 @@ export function StartWorkflowSheet({
                         className="mt-2"
                         onClick={() => onSubmitSeed()}
                       >
-                        Submit “{seedInputId}”
+                        Start Workflow
                       </Button>
                     ) : null}
                   </div>

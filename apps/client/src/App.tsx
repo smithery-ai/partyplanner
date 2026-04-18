@@ -243,7 +243,7 @@ export default function App() {
     if (def && immediateInputNeedsForm(selectedNodeId, runState)) {
       nodeEditor = {
         description:
-          "Submit this payload as the seed input event (same as Start workflow).",
+          "Submit this payload as the seed input event (same as Start Workflow).",
         schema: def.schema as ZodTypeAny,
         value: inputValues[selectedNodeId],
         onChange: (v) => setInputValue(selectedNodeId, v),
@@ -332,11 +332,11 @@ export default function App() {
                 No run yet. Open workflow source or submit a seed payload to begin.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-2">
-                <Button type="button" onClick={() => setPane("workflow")}>
+                <Button type="button" variant="secondary" onClick={() => setPane("workflow")}>
                   Workflow code
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => setPane("start")}>
-                  Start workflow
+                <Button type="button" onClick={() => setPane("start")}>
+                  Start Workflow
                 </Button>
               </div>
             </div>
