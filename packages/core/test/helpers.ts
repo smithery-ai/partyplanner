@@ -1,6 +1,6 @@
 import { beforeEach, expect } from "vitest";
 import { globalRegistry } from "../src/registry";
-import type { Runtime, RunState, RunTrace, QueueEvent } from "../src/types";
+import type { QueueEvent, RunState, RunTrace, Runtime } from "../src/types";
 
 export function resetRegistry() {
   beforeEach(() => globalRegistry.clear());
@@ -9,28 +9,39 @@ export function resetRegistry() {
 export async function runToIdle(
   runtime: Runtime,
   seed: QueueEvent,
-  state?: RunState
+  state?: RunState,
 ): Promise<{ state: RunState; trace: RunTrace }> {
   const queue = [seed];
-  let current = state;
-  let trace!: RunTrace;
+  let current: RunState | undefined = state;
+  let trace: RunTrace | undefined;
 
   while (queue.length > 0) {
-    const event = queue.shift()!;
+    const event = queue.shift();
+    if (event === undefined) break;
     const result = await runtime.process(event, current);
     current = result.state;
     trace = result.trace;
     queue.push(...result.emitted);
   }
 
-  return { state: current!, trace };
+  if (current === undefined || trace === undefined) {
+    throw new Error("Queue did not produce a run state");
+  }
+
+  return { state: current, trace };
 }
 
-export function assertResolved(trace: RunTrace, id: string, expectedValue?: unknown) {
+export function assertResolved(
+  trace: RunTrace,
+  id: string,
+  expectedValue?: unknown,
+) {
   const a = trace.nodes[id];
   if (!a) throw new Error(`No record for "${id}"`);
   if (a.status !== "resolved") {
-    throw new Error(`Expected "${id}" resolved, got "${a.status}" (error: ${a.error?.message})`);
+    throw new Error(
+      `Expected "${id}" resolved, got "${a.status}" (error: ${a.error?.message})`,
+    );
   }
   if (expectedValue !== undefined) {
     expect(a.value).toEqual(expectedValue);

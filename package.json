@@ -4,11 +4,16 @@
   "packageManager": "pnpm@10.26.2",
   "scripts": {
     "build": "turbo run build",
-    "test": "turbo run test",
+    "check": "biome ci --error-on-warnings .",
     "dev": "sh scripts/dev-with-portless.sh",
-    "example": "tsx apps/backend/examples/example-backend.ts"
+    "example": "tsx apps/backend/examples/example-backend.ts",
+    "fmt": "biome check --write --unsafe .",
+    "prepare": "husky",
+    "test": "turbo run test"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.12",
+    "husky": "^9.1.7",
     "portless": "^0.10.3",
     "tsx": "^4.21.0",
     "turbo": "^2.5.0"

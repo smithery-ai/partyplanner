@@ -1,8 +1,8 @@
-import { X } from "lucide-react"
+import { X } from "lucide-react";
 
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 
 export function WorkflowCodeSheet({
   open,
@@ -12,15 +12,15 @@ export function WorkflowCodeSheet({
   onPreviewInput,
   error,
 }: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  workflowCode: string
-  onWorkflowCodeChange: (v: string) => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  workflowCode: string;
+  onWorkflowCodeChange: (v: string) => void;
   /** Opens the seed input step; user starts the run from there. */
-  onPreviewInput: () => void
-  error?: string
+  onPreviewInput: () => void;
+  error?: string;
 }) {
-  if (!open) return null
+  if (!open) return null;
 
   return (
     <>
@@ -64,17 +64,22 @@ export function WorkflowCodeSheet({
           </div>
 
           <div className="shrink-0 border-t border-border bg-card p-4">
-            {error ? <p className="mb-3 text-destructive text-xs">{error}</p> : null}
+            {error ? (
+              <p className="mb-3 text-destructive text-xs">{error}</p>
+            ) : null}
             <Button type="button" className="w-full" onClick={onPreviewInput}>
               Continue to inputs
             </Button>
             <p className="mt-2 text-center text-muted-foreground text-[11px] leading-snug">
               You can adjust your starting values there, then press{" "}
-              <span className="font-medium text-foreground">Start Workflow</span> when you're ready.
+              <span className="font-medium text-foreground">
+                Start Workflow
+              </span>{" "}
+              when you're ready.
             </p>
           </div>
         </div>
       </aside>
     </>
-  )
+  );
 }

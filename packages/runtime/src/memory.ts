@@ -25,9 +25,17 @@ export class MemoryStateStore implements StateStore {
     };
   }
 
-  async save(runId: string, state: RunState, expectedVersion?: number): Promise<SaveResult> {
+  async save(
+    runId: string,
+    state: RunState,
+    expectedVersion?: number,
+  ): Promise<SaveResult> {
     const current = this.runs.get(runId);
-    if (expectedVersion !== undefined && current && current.version !== expectedVersion) {
+    if (
+      expectedVersion !== undefined &&
+      current &&
+      current.version !== expectedVersion
+    ) {
       return { ok: false, reason: "conflict" };
     }
     if (expectedVersion !== undefined && !current && expectedVersion !== 0) {
@@ -69,14 +77,18 @@ export class MemoryWorkQueue implements InspectableWorkQueue {
   }
 
   async complete(eventId: string): Promise<void> {
-    const item = this.items.find((candidate) => candidate.event.eventId === eventId);
+    const item = this.items.find(
+      (candidate) => candidate.event.eventId === eventId,
+    );
     if (!item) return;
     item.status = "completed";
     item.finishedAt = Date.now();
   }
 
   async fail(eventId: string, error: Error): Promise<void> {
-    const item = this.items.find((candidate) => candidate.event.eventId === eventId);
+    const item = this.items.find(
+      (candidate) => candidate.event.eventId === eventId,
+    );
     if (!item) return;
     item.status = "failed";
     item.finishedAt = Date.now();

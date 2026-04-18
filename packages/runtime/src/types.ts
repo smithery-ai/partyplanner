@@ -27,7 +27,11 @@ export type SaveResult =
 
 export interface StateStore {
   load(runId: string): Promise<StoredRunState | undefined>;
-  save(runId: string, state: RunState, expectedVersion?: number): Promise<SaveResult>;
+  save(
+    runId: string,
+    state: RunState,
+    expectedVersion?: number,
+  ): Promise<SaveResult>;
 }
 
 export type QueueItemStatus = "pending" | "running" | "completed" | "failed";
@@ -66,12 +70,42 @@ export type RunEvent =
   | { type: "input_received"; runId: string; inputId: string; at: number }
   | { type: "node_queued"; runId: string; nodeId: string; at: number }
   | { type: "node_started"; runId: string; nodeId: string; at: number }
-  | { type: "edge_discovered"; runId: string; source: string; target: string; at: number }
+  | {
+      type: "edge_discovered";
+      runId: string;
+      source: string;
+      target: string;
+      at: number;
+    }
   | { type: "node_resolved"; runId: string; nodeId: string; at: number }
-  | { type: "node_skipped"; runId: string; nodeId: string; reason?: string; at: number }
-  | { type: "node_waiting"; runId: string; nodeId: string; waitingOn: string; at: number }
-  | { type: "node_blocked"; runId: string; nodeId: string; blockedOn: string; at: number }
-  | { type: "node_errored"; runId: string; nodeId: string; message: string; at: number }
+  | {
+      type: "node_skipped";
+      runId: string;
+      nodeId: string;
+      reason?: string;
+      at: number;
+    }
+  | {
+      type: "node_waiting";
+      runId: string;
+      nodeId: string;
+      waitingOn: string;
+      at: number;
+    }
+  | {
+      type: "node_blocked";
+      runId: string;
+      nodeId: string;
+      blockedOn: string;
+      at: number;
+    }
+  | {
+      type: "node_errored";
+      runId: string;
+      nodeId: string;
+      message: string;
+      at: number;
+    }
   | { type: "run_completed"; runId: string; at: number }
   | { type: "run_waiting"; runId: string; waitingOn: string[]; at: number };
 
@@ -129,7 +163,13 @@ export type GraphEdge = {
 export type RunSnapshot = {
   runId: string;
   workflow: WorkflowRef;
-  status: "created" | "running" | "waiting" | "completed" | "failed" | "canceled";
+  status:
+    | "created"
+    | "running"
+    | "waiting"
+    | "completed"
+    | "failed"
+    | "canceled";
   nodes: GraphNode[];
   edges: GraphEdge[];
   queue: QueueSnapshot;

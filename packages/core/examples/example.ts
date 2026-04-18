@@ -5,21 +5,28 @@ import { overlayReview, prodApproval, provider } from "./example-workflow";
 // ── Run it ───────────────────────────────────────────────────────
 
 const runtime = createRuntime({
-  onStepResolved: (ev) => console.log(`  ✓ ${ev.id} resolved (${ev.duration_ms}ms)`),
+  onStepResolved: (ev) =>
+    console.log(`  ✓ ${ev.id} resolved (${ev.duration_ms}ms)`),
   onStepSkipped: (ev) => console.log(`  ⊘ ${ev.id} skipped`),
-  onStepBlocked: (ev) => console.log(`  ⏳ ${ev.id} blocked on ${ev.blockedOn}`),
+  onStepBlocked: (ev) =>
+    console.log(`  ⏳ ${ev.id} blocked on ${ev.blockedOn}`),
   onStepWaiting: (ev) => console.log(`  ⏸ ${ev.id} waiting on ${ev.waitingOn}`),
-  onStepErrored: (ev) => console.log(`  ✗ ${ev.id} errored: ${ev.error.message}`),
+  onStepErrored: (ev) =>
+    console.log(`  ✗ ${ev.id} errored: ${ev.error.message}`),
 });
 
 async function drainQueue(seed: QueueEvent, state?: RunState) {
   const queue = [seed];
-  let current = state;
-  let trace!: RunTrace;
+  let current: RunState | undefined = state;
+  let trace: RunTrace | undefined;
 
   while (queue.length > 0) {
-    const event = queue.shift()!;
-    const label = event.kind === "input" ? `input:${event.inputId}` : `step:${event.stepId}`;
+    const event = queue.shift();
+    if (event === undefined) break;
+    const label =
+      event.kind === "input"
+        ? `input:${event.inputId}`
+        : `step:${event.stepId}`;
     console.log(`→ processing ${label}`);
     const result = await runtime.process(event, current);
     current = result.state;
@@ -27,7 +34,11 @@ async function drainQueue(seed: QueueEvent, state?: RunState) {
     queue.push(...result.emitted);
   }
 
-  return { state: current!, trace };
+  if (current === undefined || trace === undefined) {
+    throw new Error("Queue did not produce a run state");
+  }
+
+  return { state: current, trace };
 }
 
 function printTrace(title: string, trace: RunTrace) {
@@ -35,7 +46,8 @@ function printTrace(title: string, trace: RunTrace) {
 
   for (const [id, node] of Object.entries(trace.nodes)) {
     const parts = [`${id}: ${node.status}`];
-    if (node.status === "resolved") parts.push(`→ ${JSON.stringify(node.value)}`);
+    if (node.status === "resolved")
+      parts.push(`→ ${JSON.stringify(node.value)}`);
     if (node.status === "waiting") parts.push(`waitingOn: ${node.waitingOn}`);
     if (node.status === "blocked") parts.push(`blockedOn: ${node.blockedOn}`);
     if (node.deps.length) parts.push(`deps: [${node.deps.join(", ")}]`);
@@ -59,28 +71,34 @@ const firstRun = await drainQueue({
 
 printTrace("Trace After Provider Input", firstRun.trace);
 
-const secondRun = await drainQueue({
-  kind: "input",
-  eventId: crypto.randomUUID(),
-  runId: "run-1",
-  inputId: overlayReview.__id,
-  payload: {
-    approved: true,
-    strippedPaths: ["/paths/~1admin", "/components/schemas/InternalOnly"],
+const secondRun = await drainQueue(
+  {
+    kind: "input",
+    eventId: crypto.randomUUID(),
+    runId: "run-1",
+    inputId: overlayReview.__id,
+    payload: {
+      approved: true,
+      strippedPaths: ["/paths/~1admin", "/components/schemas/InternalOnly"],
+    },
   },
-}, firstRun.state);
+  firstRun.state,
+);
 
 printTrace("Trace After Overlay Review", secondRun.trace);
 
-const thirdRun = await drainQueue({
-  kind: "input",
-  eventId: crypto.randomUUID(),
-  runId: "run-1",
-  inputId: prodApproval.__id,
-  payload: {
-    approved: true,
-    changeTicket: "CHG-4821",
+const thirdRun = await drainQueue(
+  {
+    kind: "input",
+    eventId: crypto.randomUUID(),
+    runId: "run-1",
+    inputId: prodApproval.__id,
+    payload: {
+      approved: true,
+      changeTicket: "CHG-4821",
+    },
   },
-}, secondRun.state);
+  secondRun.state,
+);
 
 printTrace("Final Trace", thirdRun.trace);

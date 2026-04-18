@@ -1,7 +1,14 @@
 export class SkipError extends Error {
   readonly kind = "skip" as const;
-  constructor(public stepId: string, public reason?: string) {
-    super(reason ? `Step "${stepId}" skipped: ${reason}` : `Step "${stepId}" skipped`);
+  constructor(
+    public stepId: string,
+    public reason?: string,
+  ) {
+    super(
+      reason
+        ? `Step "${stepId}" skipped: ${reason}`
+        : `Step "${stepId}" skipped`,
+    );
     this.name = "SkipError";
   }
 }
@@ -23,7 +30,11 @@ export class NotReadyError extends Error {
 }
 
 export function isControlFlowError(
-  e: unknown
+  e: unknown,
 ): e is SkipError | WaitError | NotReadyError {
-  return e instanceof SkipError || e instanceof WaitError || e instanceof NotReadyError;
+  return (
+    e instanceof SkipError ||
+    e instanceof WaitError ||
+    e instanceof NotReadyError
+  );
 }

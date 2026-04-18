@@ -1,6 +1,6 @@
+import { atom, globalRegistry, input } from "@rxwf/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { atom, globalRegistry, input } from "@rxwf/core";
 import {
   LocalScheduler,
   MemoryEventSink,
@@ -62,7 +62,7 @@ describe("LocalScheduler", () => {
 
     expect(snapshot.status).toBe("running");
     expect(snapshot.queue.pending).toHaveLength(1);
-    expect(snapshot.queue.pending[0]!.event.kind).toBe("input");
+    expect(snapshot.queue.pending[0]?.event.kind).toBe("input");
     expect(await queue.size()).toBe(1);
     expect(events.events.map((event) => event.type)).toEqual([
       "run_started",
@@ -82,7 +82,9 @@ describe("LocalScheduler", () => {
     const classify = atom(
       (get) => {
         const msg = get(slack);
-        return msg.message.toLowerCase().includes("urgent") ? "urgent" : "normal";
+        return msg.message.toLowerCase().includes("urgent")
+          ? "urgent"
+          : "normal";
       },
       { name: "classify" },
     );
@@ -113,8 +115,12 @@ describe("LocalScheduler", () => {
     expect(snapshot.status).toBe("completed");
     expect(snapshot.queue.pending).toHaveLength(0);
     expect(snapshot.queue.completed).toHaveLength(3);
-    expect(snapshot.nodes.find((node) => node.id === "slack")?.status).toBe("resolved");
-    expect(snapshot.nodes.find((node) => node.id === "classify")?.status).toBe("resolved");
+    expect(snapshot.nodes.find((node) => node.id === "slack")?.status).toBe(
+      "resolved",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "classify")?.status).toBe(
+      "resolved",
+    );
     expect(snapshot.nodes.find((node) => node.id === "format")?.value).toBe(
       "[URGENT] #ops: Server is down URGENT",
     );
@@ -125,7 +131,9 @@ describe("LocalScheduler", () => {
         { id: "slack->format", source: "slack", target: "format" },
       ]),
     );
-    expect(events.events.some((event) => event.type === "edge_discovered")).toBe(true);
+    expect(
+      events.events.some((event) => event.type === "edge_discovered"),
+    ).toBe(true);
     expect(events.events.at(-1)?.type).toBe("run_completed");
   });
 
@@ -178,9 +186,15 @@ describe("LocalScheduler", () => {
     let snapshot = await scheduler.snapshot("run-deferred");
 
     expect(snapshot.status).toBe("waiting");
-    expect(snapshot.nodes.find((node) => node.id === "assessment")?.status).toBe("resolved");
-    expect(snapshot.nodes.find((node) => node.id === "submit")?.status).toBe("waiting");
-    expect(snapshot.nodes.find((node) => node.id === "submit")?.waitingOn).toBe("approval");
+    expect(
+      snapshot.nodes.find((node) => node.id === "assessment")?.status,
+    ).toBe("resolved");
+    expect(snapshot.nodes.find((node) => node.id === "submit")?.status).toBe(
+      "waiting",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "submit")?.waitingOn).toBe(
+      "approval",
+    );
     expect(snapshot.state.waiters.approval).toEqual(["submit"]);
     expect(events.events.at(-1)?.type).toBe("run_waiting");
 
@@ -193,14 +207,18 @@ describe("LocalScheduler", () => {
 
     snapshot = await scheduler.snapshot("run-deferred");
     expect(snapshot.queue.pending).toHaveLength(1);
-    expect(snapshot.queue.pending[0]!.event.kind).toBe("input");
+    expect(snapshot.queue.pending[0]?.event.kind).toBe("input");
 
     await scheduler.drain();
     snapshot = await scheduler.snapshot("run-deferred");
 
     expect(snapshot.status).toBe("completed");
-    expect(snapshot.nodes.find((node) => node.id === "approval")?.status).toBe("resolved");
-    expect(snapshot.nodes.find((node) => node.id === "submit")?.status).toBe("resolved");
+    expect(snapshot.nodes.find((node) => node.id === "approval")?.status).toBe(
+      "resolved",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "submit")?.status).toBe(
+      "resolved",
+    );
     expect(snapshot.nodes.find((node) => node.id === "submit")?.value).toBe(
       "submitted: Conference tickets (high)",
     );
@@ -208,7 +226,10 @@ describe("LocalScheduler", () => {
 
   it("can resume deferred input one queue event at a time", async () => {
     const seed = input("seed", z.object({ name: z.string() }));
-    const approval = input.deferred("approval", z.object({ approved: z.boolean() }));
+    const approval = input.deferred(
+      "approval",
+      z.object({ approved: z.boolean() }),
+    );
 
     atom(
       (get) => {
@@ -234,7 +255,9 @@ describe("LocalScheduler", () => {
     await scheduler.drain();
     let snapshot = await scheduler.snapshot("run-step-deferred");
     expect(snapshot.status).toBe("waiting");
-    expect(snapshot.nodes.find((node) => node.id === "finish")?.status).toBe("waiting");
+    expect(snapshot.nodes.find((node) => node.id === "finish")?.status).toBe(
+      "waiting",
+    );
 
     await scheduler.submitInput({
       runId: "run-step-deferred",
@@ -246,19 +269,25 @@ describe("LocalScheduler", () => {
     snapshot = await scheduler.snapshot("run-step-deferred");
     expect(snapshot.status).toBe("running");
     expect(snapshot.queue.pending).toHaveLength(1);
-    expect(snapshot.queue.pending[0]!.event.kind).toBe("input");
+    expect(snapshot.queue.pending[0]?.event.kind).toBe("input");
 
     await scheduler.processNext();
     snapshot = await scheduler.snapshot("run-step-deferred");
-    expect(snapshot.nodes.find((node) => node.id === "approval")?.status).toBe("resolved");
-    expect(snapshot.nodes.find((node) => node.id === "finish")?.status).toBe("queued");
+    expect(snapshot.nodes.find((node) => node.id === "approval")?.status).toBe(
+      "resolved",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "finish")?.status).toBe(
+      "queued",
+    );
     expect(snapshot.queue.pending).toHaveLength(1);
-    expect(snapshot.queue.pending[0]!.event.kind).toBe("step");
+    expect(snapshot.queue.pending[0]?.event.kind).toBe("step");
 
     await scheduler.processNext();
     snapshot = await scheduler.snapshot("run-step-deferred");
     expect(snapshot.status).toBe("completed");
-    expect(snapshot.nodes.find((node) => node.id === "finish")?.value).toBe("approved demo");
+    expect(snapshot.nodes.find((node) => node.id === "finish")?.value).toBe(
+      "approved demo",
+    );
   });
 
   it("includes skip reasons in graph snapshots and events", async () => {

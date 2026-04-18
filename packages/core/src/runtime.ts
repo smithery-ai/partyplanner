@@ -1,28 +1,25 @@
-import { Registry, globalRegistry, type AtomDef } from "./registry";
-import { SkipError, WaitError, NotReadyError } from "./errors";
-import { isHandle, type Handle } from "./handles";
+import { NotReadyError, SkipError, WaitError } from "./errors";
+import { type Handle, isHandle } from "./handles";
+import { type AtomDef, globalRegistry, type Registry } from "./registry";
 import type {
-  Get,
-  RunTrace,
-  RunState,
-  QueueEvent,
   DispatchResult,
-  RuntimeOptions,
+  Get,
+  QueueEvent,
+  RunState,
+  RunTrace,
   Runtime,
+  RuntimeOptions,
 } from "./types";
 
 class RuntimeImpl implements Runtime {
   constructor(private readonly opts: RuntimeOptions) {}
 
-  async process(
-    event: QueueEvent,
-    state?: RunState
-  ): Promise<DispatchResult> {
+  async process(event: QueueEvent, state?: RunState): Promise<DispatchResult> {
     const registry = this.opts.registry ?? globalRegistry;
     const session = new RunSession(
       registry,
       this.opts,
-      state ?? makeEmptyRunState(event.runId)
+      state ?? makeEmptyRunState(event.runId),
     );
 
     if (session.hasProcessed(event.eventId)) {
@@ -52,7 +49,7 @@ class RunSession {
   constructor(
     private readonly registry: Registry,
     private readonly opts: RuntimeOptions,
-    private readonly state: RunState
+    private readonly state: RunState,
   ) {}
 
   hasProcessed(eventId: string): boolean {
@@ -63,7 +60,9 @@ class RunSession {
     this.state.processedEventIds[eventId] = true;
   }
 
-  handleInputEvent(event: Extract<QueueEvent, { kind: "input" }>): QueueEvent[] {
+  handleInputEvent(
+    event: Extract<QueueEvent, { kind: "input" }>,
+  ): QueueEvent[] {
     const inputDef = this.registry.getInput(event.inputId);
     if (!inputDef) throw new Error(`Unknown input: ${event.inputId}`);
 
@@ -83,14 +82,16 @@ class RunSession {
     const targeted = this.state.waiters[event.inputId] ?? [];
     if (targeted.length > 0) {
       delete this.state.waiters[event.inputId];
-      return targeted.flatMap(stepId => this.emitStep(stepId));
+      return targeted.flatMap((stepId) => this.emitStep(stepId));
     }
 
     // Dynamic deps are not known yet, so the first input for a run fans out to all steps once.
-    return this.registry.allAtoms().flatMap(step => this.emitStep(step.id));
+    return this.registry.allAtoms().flatMap((step) => this.emitStep(step.id));
   }
 
-  async handleStepEvent(event: Extract<QueueEvent, { kind: "step" }>): Promise<QueueEvent[]> {
+  async handleStepEvent(
+    event: Extract<QueueEvent, { kind: "step" }>,
+  ): Promise<QueueEvent[]> {
     const existing = this.state.nodes[event.stepId];
     if (
       existing?.status === "resolved" ||
@@ -139,14 +140,15 @@ class RunSession {
           try {
             return this.readValue(def.id, source.__id) as T;
           } catch (e) {
-            if (e instanceof SkipError || e instanceof WaitError) return undefined;
+            if (e instanceof SkipError || e instanceof WaitError)
+              return undefined;
             throw e;
           }
         },
         skip: (reason?: string): never => {
           throw new SkipError(def.id, reason);
         },
-      }
+      },
     );
 
     try {
@@ -160,7 +162,9 @@ class RunSession {
         attempts: (prev?.attempts ?? 0) + 1,
       };
       this.opts.onStepResolved?.({
-        id: def.id, value, duration_ms,
+        id: def.id,
+        value,
+        duration_ms,
       });
       return value;
     } catch (e) {
@@ -201,7 +205,9 @@ class RunSession {
       // Real error.
       const err = e as Error;
       this.state.nodes[def.id] = {
-        status: "errored", deps, duration_ms,
+        status: "errored",
+        deps,
+        duration_ms,
         attempts: (prev?.attempts ?? 0) + 1,
         error: { message: err.message, stack: err.stack },
       };
@@ -213,11 +219,17 @@ class RunSession {
   private readValue(readerStepId: string, depId: string): unknown {
     const existing = this.state.nodes[depId];
     if (existing?.status === "resolved") return existing.value;
-    if (existing?.status === "skipped") throw new SkipError(depId, existing.skipReason);
-    if (existing?.status === "waiting") throw new WaitError(existing.waitingOn!);
+    if (existing?.status === "skipped")
+      throw new SkipError(depId, existing.skipReason);
+    if (existing?.status === "waiting") {
+      if (existing.waitingOn === undefined) {
+        throw new Error(`Waiting node "${depId}" is missing waitingOn`);
+      }
+      throw new WaitError(existing.waitingOn);
+    }
     if (existing?.status === "errored") {
-      throw Object.assign(new Error(existing.error!.message), {
-        stack: existing.error!.stack,
+      throw Object.assign(new Error(existing.error?.message), {
+        stack: existing.error?.stack,
       });
     }
     if (existing?.status === "blocked") {
@@ -253,7 +265,7 @@ class RunSession {
   private wakeWaiters(depId: string): QueueEvent[] {
     const waiters = this.state.waiters[depId] ?? [];
     delete this.state.waiters[depId];
-    return waiters.flatMap(stepId => this.emitStep(stepId));
+    return waiters.flatMap((stepId) => this.emitStep(stepId));
   }
 
   private emitStep(stepId: string): QueueEvent[] {
@@ -281,6 +293,11 @@ class RunSession {
 
   buildTrace(): RunTrace {
     const nodes: RunTrace["nodes"] = {};
+    const { trigger } = this.state;
+
+    if (trigger === undefined) {
+      throw new Error("Cannot build trace without a trigger");
+    }
 
     // Any node in the registry that never got a record → "not_reached",
     // except unfired non-deferred inputs which are "skipped".
@@ -291,16 +308,26 @@ class RunSession {
       } else {
         const inputDef = this.registry.getInput(id);
         if (inputDef && inputDef.kind === "input") {
-          nodes[id] = { status: "skipped", deps: [], duration_ms: 0, attempts: 0 };
+          nodes[id] = {
+            status: "skipped",
+            deps: [],
+            duration_ms: 0,
+            attempts: 0,
+          };
         } else {
-          nodes[id] = { status: "not_reached", deps: [], duration_ms: 0, attempts: 0 };
+          nodes[id] = {
+            status: "not_reached",
+            deps: [],
+            duration_ms: 0,
+            attempts: 0,
+          };
         }
       }
     }
 
     return {
       runId: this.state.runId,
-      trigger: this.state.trigger!,
+      trigger,
       payload: this.state.payload,
       startedAt: this.state.startedAt,
       completedAt: Date.now(),

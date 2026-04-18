@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { hc } from "hono/client";
+import type { RunState } from "../../../packages/core/src/index";
 import { createApp } from "../src/app";
 import type { AppType, GraphRequest } from "../src/rpc";
-import type { RunState } from "../../../packages/core/src/index";
 
 function examplePriorState(): RunState {
   const providerPayload = {
@@ -74,14 +74,19 @@ function examplePriorState(): RunState {
 }
 
 const workflowSource = await readFile(
-  new URL("../../../packages/core/examples/example-workflow.ts", import.meta.url),
+  new URL(
+    "../../../packages/core/examples/example-workflow.ts",
+    import.meta.url,
+  ),
   "utf8",
 );
 
 const app = createApp();
 const client = hc<AppType>("http://localhost", {
-  fetch: (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) =>
-    app.request(input, init),
+  fetch: (
+    input: Parameters<typeof fetch>[0],
+    init?: Parameters<typeof fetch>[1],
+  ) => app.request(input, init),
 });
 
 const response = await client.graph.$post({
@@ -98,7 +103,9 @@ const response = await client.graph.$post({
 });
 
 if (!response.ok) {
-  throw new Error(`Graph request failed: ${response.status} ${await response.text()}`);
+  throw new Error(
+    `Graph request failed: ${response.status} ${await response.text()}`,
+  );
 }
 
 console.log(JSON.stringify(await response.json(), null, 2));
