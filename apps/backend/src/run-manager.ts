@@ -102,8 +102,11 @@ export class JsonStateManager {
 
 export class BackendRunManager {
   private readonly runs = new Map<string, RunController>();
+  private readonly stateManager: JsonStateManager;
 
-  constructor(private readonly stateManager: JsonStateManager) {}
+  constructor(stateManager: JsonStateManager) {
+    this.stateManager = stateManager;
+  }
 
   async startRun(request: StartBackendRunRequest): Promise<RunStateDocument> {
     const runId = request.runId ?? `run_${crypto.randomUUID()}`;
@@ -276,11 +279,12 @@ type DelayedExecutorOptions = {
 class DelayedExecutor implements Executor {
   private readonly minMs: number;
   private readonly maxMs: number;
+  private readonly delegate: Executor;
+  private readonly options: DelayedExecutorOptions;
 
-  constructor(
-    private readonly delegate: Executor,
-    private readonly options: DelayedExecutorOptions = {},
-  ) {
+  constructor(delegate: Executor, options: DelayedExecutorOptions = {}) {
+    this.delegate = delegate;
+    this.options = options;
     this.minMs = options.minMs ?? 1_000;
     this.maxMs = options.maxMs ?? 4_000;
   }

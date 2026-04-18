@@ -24,9 +24,10 @@ export default defineConfig({
   server: {
     proxy: {
       "/doc": backendProxy,
-      "/graph": backendProxy,
       "/health": backendProxy,
+      "/openapi": backendProxy,
       "/runs": backendProxy,
+      "/swagger": backendProxy,
       "/state": backendProxy,
     },
   },
