@@ -124,9 +124,6 @@ importers:
       globals:
         specifier: ^17.4.0
         version: 17.5.0
-      hono:
-        specifier: ^4.12.14
-        version: 4.12.14
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2

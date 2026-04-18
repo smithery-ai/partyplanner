@@ -19,6 +19,7 @@ import { RunStateJsonSheet } from "@/components/run-state-json-sheet"
 import { WorkflowCodeSheet } from "@/components/workflow-code-sheet"
 import { defaultForSchema } from "@/components/zod-schema-form"
 import { useWorkflow } from "@/hooks/use-workflow"
+import { loadWorkflowSourceIntoGlobalRegistry } from "@/lib/evaluate-workflow-source"
 import { LocalRuntime } from "@/lib/workflow-runtimes"
 
 import workflowRaw from "./workflow.ts?raw"
@@ -88,6 +89,7 @@ function isRunComplete(runState: RunState | undefined): boolean {
 export default function App() {
   const [pane, setPane] = useState<SidePane>(null)
   const [workflowCode, setWorkflowCode] = useState(workflowRaw)
+  const [appliedWorkflowCode, setAppliedWorkflowCode] = useState(workflowRaw)
   const [inputValues, setInputValues] = useState<Record<string, unknown>>(() =>
     buildInitialInputValues(globalRegistry),
   )
@@ -150,6 +152,33 @@ export default function App() {
     setSeedInputId(firstSeedInputId(globalRegistry))
     setPayloadError("")
     setPane(null)
+  }
+
+  function applyWorkflowCodeForStart() {
+    setPayloadError("")
+    if (runState) {
+      setPayloadError("Clear the current run before applying workflow changes.")
+      return
+    }
+
+    try {
+      workflow.clear()
+      loadWorkflowSourceIntoGlobalRegistry(workflowCode)
+      setAppliedWorkflowCode(workflowCode)
+      setSelectedNodeId(null)
+      setInputValues(buildInitialInputValues(globalRegistry))
+      setSeedInputId(firstSeedInputId(globalRegistry))
+      setPane("start")
+    } catch (e) {
+      try {
+        loadWorkflowSourceIntoGlobalRegistry(appliedWorkflowCode)
+      } catch {
+        // The app imports workflow.ts on boot, so this should only fail if the starter source is invalid.
+      }
+      setPayloadError(
+        e instanceof Error ? e.message : "Workflow code could not be evaluated.",
+      )
+    }
   }
 
   async function runWorkflow(seedOverride?: string) {
@@ -359,7 +388,8 @@ export default function App() {
           onOpenChange={(o) => setPane(o ? "workflow" : null)}
           workflowCode={workflowCode}
           onWorkflowCodeChange={setWorkflowCode}
-          onPreviewInput={() => setPane("start")}
+          onPreviewInput={applyWorkflowCodeForStart}
+          error={pane === "workflow" ? payloadError || undefined : undefined}
         />
 
         <RunStateJsonSheet
