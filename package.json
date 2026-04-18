@@ -6,7 +6,7 @@
     "build": "turbo run build",
     "test": "turbo run test",
     "dev": "turbo run dev",
-    "example": "tsx packages/core/examples/example.ts"
+    "example": "tsx apps/backend/examples/example-backend.ts"
   },
   "devDependencies": {
     "tsx": "^4.21.0",
