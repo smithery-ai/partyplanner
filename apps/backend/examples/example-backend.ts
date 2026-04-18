@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { hc } from "hono/client";
 import { createApp } from "../src/app";
-import type { GraphRequest } from "../src/app";
-import type { AppType } from "../src/app";
+import type { AppType, GraphRequest } from "../src/rpc";
 import type { RunState } from "../../../packages/core/src/index";
 
 function examplePriorState(): RunState {

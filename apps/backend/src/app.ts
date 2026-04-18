@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { cors } from "hono/cors";
 import {
   atom,
   globalRegistry,
@@ -214,6 +215,14 @@ let graphQueue = Promise.resolve();
 export function createApp() {
   const app = new OpenAPIHono();
 
+  app.use(
+    "/*",
+    cors({
+      origin: "*",
+      allowHeaders: ["Content-Type"],
+      allowMethods: ["GET", "POST", "OPTIONS"],
+    }),
+  );
   app.get("/health", (c) => c.json({ ok: true }));
 
   const routes = app.openapi(graphRoute, async (c) => {
@@ -285,7 +294,7 @@ function evaluateWorkflowSource(source: string): void {
     (match) => match[1]!,
   );
   const body = source
-    .replace(/^\s*import\s+[^;]+;\s*$/gm, "")
+    .replace(/^\s*import\s+.*;?\s*$/gm, "")
     .replace(/\bexport\s+const\s+/g, "const ")
     .replace(/^\s*export\s+\{[^}]+\};?\s*$/gm, "");
   const moduleBody = `${body}\nreturn { ${exportNames.join(", ")} };`;

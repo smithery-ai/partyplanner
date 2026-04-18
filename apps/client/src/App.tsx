@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from "react"
-import { createRuntime, globalRegistry } from "@rxwf/core"
-import type { QueueEvent, Registry, RunState } from "@rxwf/core"
+import { useState, useEffect } from "react"
+import { globalRegistry } from "@rxwf/core"
+import type { Registry, RunState } from "@rxwf/core"
 import type { ZodTypeAny } from "zod"
 import { AlertTriangle, Check } from "lucide-react"
 
@@ -18,12 +18,11 @@ import { StartWorkflowSheet } from "@/components/start-workflow-sheet"
 import { RunStateJsonSheet } from "@/components/run-state-json-sheet"
 import { WorkflowCodeSheet } from "@/components/workflow-code-sheet"
 import { defaultForSchema } from "@/components/zod-schema-form"
+import { useWorkflowGraphMutation } from "@/hooks/use-workflow-graph"
 
 import workflowRaw from "./workflow.ts?raw"
 
 import "./workflow"
-
-const runtime = createRuntime()
 
 type SidePane = null | "workflow" | "start" | "pending" | "state"
 
@@ -84,23 +83,6 @@ function isRunComplete(runState: RunState | undefined): boolean {
   return true
 }
 
-async function runToIdle(
-  seed: QueueEvent,
-  state?: RunState,
-): Promise<{ state: RunState }> {
-  const queue = [seed]
-  let current = state
-
-  while (queue.length > 0) {
-    const event = queue.shift()!
-    const result = await runtime.process(event, current)
-    current = result.state
-    queue.push(...result.emitted)
-  }
-
-  return { state: current! }
-}
-
 export default function App() {
   const [pane, setPane] = useState<SidePane>(null)
   const [workflowCode, setWorkflowCode] = useState(workflowRaw)
@@ -115,7 +97,7 @@ export default function App() {
   const [runState, setRunState] = useState<RunState | undefined>()
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
 
-  const eventCounter = useRef(0)
+  const graphMutation = useWorkflowGraphMutation()
 
   const wait = findDeferredWait(runState)
   const pendingDeferredId = wait?.inputId
@@ -123,6 +105,7 @@ export default function App() {
 
   const nodes = runState?.nodes ?? {}
   const runComplete = isRunComplete(runState)
+  const canAdvance = Boolean(runState && !runComplete && !inputPending)
 
   useEffect(() => {
     if (!selectedNodeId) return
@@ -173,16 +156,13 @@ export default function App() {
       return
     }
 
-    const eventId = `evt-${++eventCounter.current}`
-    const event: QueueEvent = {
-      kind: "input",
-      eventId,
-      runId: "run-1",
-      inputId: seed.id,
-      payload,
-    }
     try {
-      const result = await runToIdle(event)
+      const result = await graphMutation.mutateAsync({
+        workflowSource: workflowCode,
+        inputs: {
+          [seed.id]: payload,
+        },
+      })
       setRunState(result.state)
       setPane(null)
     } catch (e) {
@@ -215,22 +195,36 @@ export default function App() {
       return
     }
 
-    const eventId = `evt-${++eventCounter.current}`
-    const event: QueueEvent = {
-      kind: "input",
-      eventId,
-      runId: "run-1",
-      inputId,
-      payload,
-    }
-
     try {
-      const result = await runToIdle(event, runState)
+      const result = await graphMutation.mutateAsync({
+        workflowSource: workflowCode,
+        state: runState,
+        inputs: {
+          [inputId]: payload,
+        },
+      })
       setRunState(result.state)
       setPane(null)
     } catch (e) {
       setPayloadError(
         e instanceof Error ? e.message : "Processing failed — check input values.",
+      )
+    }
+  }
+
+  async function advanceWorkflow() {
+    if (!runState) return
+    setPayloadError("")
+    try {
+      const result = await graphMutation.mutateAsync({
+        workflowSource: workflowCode,
+        state: runState,
+      })
+      setRunState(result.state)
+      setPane(null)
+    } catch (e) {
+      setPayloadError(
+        e instanceof Error ? e.message : "Processing failed — check workflow code.",
       )
     }
   }
@@ -297,6 +291,16 @@ export default function App() {
           >
             Run state
           </Button>
+          {canAdvance && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void advanceWorkflow()}
+              disabled={graphMutation.isPending}
+            >
+              Advance
+            </Button>
+          )}
           {runComplete ? (
             <div
               role="status"
