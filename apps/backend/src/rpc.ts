@@ -60,11 +60,17 @@ export type StartBackendRunRequest = {
   inputId: string;
   payload: unknown;
   runId?: string;
+  autoAdvance?: boolean;
 };
 
 export type SubmitBackendInputRequest = {
   inputId: string;
   payload: unknown;
+  autoAdvance?: boolean;
+};
+
+export type SetAutoAdvanceRequest = {
+  autoAdvance: boolean;
 };
 
 export type RunStateDocument = RunSnapshot & {

@@ -23,11 +23,17 @@ export type StartBackendRunRequest = {
   inputId: string;
   payload: unknown;
   runId?: string;
+  autoAdvance?: boolean;
 };
 
 export type SubmitBackendInputRequest = {
   inputId: string;
   payload: unknown;
+  autoAdvance?: boolean;
+};
+
+export type SetAutoAdvanceRequest = {
+  autoAdvance: boolean;
 };
 
 export type RunStateDocument = RunSnapshot & {
@@ -41,6 +47,7 @@ type RunController = {
   scheduler: LocalScheduler;
   queue: MemoryWorkQueue;
   events: MemoryEventSink;
+  autoAdvance: boolean;
   processing: boolean;
   lastError?: string;
 };
@@ -97,6 +104,7 @@ export class BackendRunManager {
       scheduler,
       queue,
       events,
+      autoAdvance: request.autoAdvance ?? true,
       processing: false,
     };
     this.runs.set(runId, controller);
@@ -110,7 +118,7 @@ export class BackendRunManager {
       },
     });
     const document = await this.publishSnapshot(controller);
-    this.kickProcessing(controller);
+    if (controller.autoAdvance) this.kickProcessing(controller);
     return document;
   }
 
@@ -119,6 +127,9 @@ export class BackendRunManager {
     request: SubmitBackendInputRequest,
   ): Promise<RunStateDocument> {
     const controller = this.requireRun(runId);
+    if (request.autoAdvance !== undefined) {
+      controller.autoAdvance = request.autoAdvance;
+    }
     await controller.scheduler.submitInput({
       runId,
       workflow: controller.workflow,
@@ -126,13 +137,39 @@ export class BackendRunManager {
       payload: request.payload,
     });
     const document = await this.publishSnapshot(controller);
-    this.kickProcessing(controller);
+    if (controller.autoAdvance) this.kickProcessing(controller);
     return document;
   }
 
   async advanceRun(runId: string): Promise<RunStateDocument> {
     const controller = this.requireRun(runId);
-    this.kickProcessing(controller);
+    controller.autoAdvance = false;
+    if (controller.processing) return this.publishSnapshot(controller);
+
+    controller.processing = true;
+    try {
+      if ((await controller.queue.size()) > 0) {
+        await controller.scheduler.processNext();
+      }
+      return await this.publishSnapshot(controller);
+    } catch (e) {
+      controller.lastError = e instanceof Error ? e.message : String(e);
+      return await this.publishSnapshot(controller);
+    } finally {
+      controller.processing = false;
+      if (controller.autoAdvance && (await controller.queue.size()) > 0) {
+        this.kickProcessing(controller);
+      }
+    }
+  }
+
+  async setAutoAdvance(
+    runId: string,
+    request: SetAutoAdvanceRequest,
+  ): Promise<RunStateDocument> {
+    const controller = this.requireRun(runId);
+    controller.autoAdvance = request.autoAdvance;
+    if (controller.autoAdvance) this.kickProcessing(controller);
     return this.publishSnapshot(controller);
   }
 
@@ -147,12 +184,13 @@ export class BackendRunManager {
   }
 
   private kickProcessing(controller: RunController): void {
+    if (!controller.autoAdvance) return;
     if (controller.processing) return;
     controller.processing = true;
 
     void (async () => {
       try {
-        while ((await controller.queue.size()) > 0) {
+        while (controller.autoAdvance && (await controller.queue.size()) > 0) {
           await controller.scheduler.processNext();
           await this.publishSnapshot(controller);
         }
@@ -162,7 +200,9 @@ export class BackendRunManager {
         await this.publishSnapshot(controller);
       } finally {
         controller.processing = false;
-        if ((await controller.queue.size()) > 0) this.kickProcessing(controller);
+        if (controller.autoAdvance && (await controller.queue.size()) > 0) {
+          this.kickProcessing(controller);
+        }
       }
     })();
   }
