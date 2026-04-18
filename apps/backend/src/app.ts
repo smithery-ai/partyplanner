@@ -1,14 +1,12 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import {
-  atom,
   globalRegistry,
-  input,
   isHandle,
   NotReadyError,
   SkipError,
   WaitError,
-} from "../../../packages/core/src/index";
+} from "@rxwf/core";
 import type {
   AtomDef,
   Get,
@@ -16,7 +14,9 @@ import type {
   NodeRecord,
   NodeStatus,
   RunState,
-} from "../../../packages/core/src/index";
+} from "@rxwf/core";
+import { BackendRunManager, JsonStateManager } from "./run-manager";
+import { evaluateWorkflowSource } from "./workflow-source";
 
 type GraphPhase =
   | "resolved_previously"
@@ -215,6 +215,9 @@ const graphRoute = createRoute({
 
 let graphQueue = Promise.resolve();
 
+const stateManager = new JsonStateManager();
+const runManager = new BackendRunManager(stateManager);
+
 export function createApp() {
   const app = new OpenAPIHono();
 
@@ -227,6 +230,44 @@ export function createApp() {
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
+
+  app.post("/runs", async (c) => {
+    try {
+      const body = await c.req.json();
+      const response = await runManager.startRun(body);
+      return c.json(response, 200);
+    } catch (e) {
+      const err = e as Error;
+      return c.json({ message: err.message }, 400);
+    }
+  });
+
+  app.post("/runs/:runId/inputs", async (c) => {
+    try {
+      const body = await c.req.json();
+      const response = await runManager.submitInput(c.req.param("runId"), body);
+      return c.json(response, 200);
+    } catch (e) {
+      const err = e as Error;
+      return c.json({ message: err.message }, 400);
+    }
+  });
+
+  app.post("/runs/:runId/advance", async (c) => {
+    try {
+      const response = await runManager.advanceRun(c.req.param("runId"));
+      return c.json(response, 200);
+    } catch (e) {
+      const err = e as Error;
+      return c.json({ message: err.message }, 400);
+    }
+  });
+
+  app.get("/state/:runId", (c) => {
+    const document = runManager.getState(c.req.param("runId"));
+    if (!document) return c.json({ message: "Unknown run" }, 404);
+    return c.json(document, 200);
+  });
 
   const routes = app.openapi(graphRoute, async (c) => {
     try {
@@ -262,7 +303,6 @@ async function enqueueGraphResolution<T>(work: () => Promise<T>): Promise<T> {
 }
 
 async function resolveGraph(body: GraphRequest): Promise<GraphResponse> {
-  globalRegistry.clear();
   evaluateWorkflowSource(body.workflowSource);
 
   const previousState = normalizeState(body.state);
@@ -290,19 +330,6 @@ async function resolveGraph(body: GraphRequest): Promise<GraphResponse> {
     },
     state,
   };
-}
-
-function evaluateWorkflowSource(source: string): void {
-  const exportNames = [...source.matchAll(/\bexport\s+const\s+([A-Za-z_$][\w$]*)\s*=/g)].map(
-    (match) => match[1]!,
-  );
-  const body = source
-    .replace(/^\s*import\s+.*;?\s*$/gm, "")
-    .replace(/\bexport\s+const\s+/g, "const ")
-    .replace(/^\s*export\s+\{[^}]+\};?\s*$/gm, "");
-  const moduleBody = `${body}\nreturn { ${exportNames.join(", ")} };`;
-  const load = new Function("z", "atom", "input", moduleBody);
-  load(z, atom, input);
 }
 
 function normalizeState(state: RunState | undefined): RunState {
