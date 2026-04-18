@@ -1,4 +1,4 @@
-import { getActiveRegistry } from "./registry";
+import { globalRegistry } from "./registry";
 import { makeHandle, type Atom } from "./handles";
 import { hashString } from "./hash";
 import type { Get } from "./types";
@@ -13,7 +13,7 @@ export function atom<T>(
   opts?: AtomOpts
 ): Atom<T> {
   const id = opts?.name ?? `atom_${hashString(fn.toString())}`;
-  getActiveRegistry().registerAtom({
+  globalRegistry.registerAtom({
     kind: "atom",
     id,
     fn: fn as (get: Get) => unknown,

@@ -47,15 +47,3 @@ export class Registry {
 }
 
 export const globalRegistry = new Registry();
-
-let _activeRegistry: Registry | null = null;
-
-/** Redirect `input()` / `atom()` registrations to a specific registry. */
-export function setActiveRegistry(registry: Registry | null): void {
-  _activeRegistry = registry;
-}
-
-/** Returns the active registry, falling back to `globalRegistry`. */
-export function getActiveRegistry(): Registry {
-  return _activeRegistry ?? globalRegistry;
-}

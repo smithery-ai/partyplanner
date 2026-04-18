@@ -1,25 +1,22 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi"
-import { z } from "@hono/zod-openapi"
 
 import {
-  processRequestSchema,
-  processResponseSchema,
-  runDetailResponseSchema,
-  runListResponseSchema,
-  updateWorkflowCodeSchema,
-  workflowFileListSchema,
-  workflowFileSchema,
+  submitInputSchema,
+  workflowSessionSchema,
 } from "./contracts.ts"
 import {
-  getWorkflowCode,
-  listWorkflowFiles,
-  updateWorkflowCode,
-} from "./workflow-store.ts"
-import { processWorkflow } from "./workflow-runner.ts"
-import { listRuns, loadRun } from "./run-store.ts"
+  loadWorkflowSession,
+  resetWorkflowSession,
+  submitWorkflowInput,
+} from "./session-store.ts"
 
 const app = new OpenAPIHono()
 const api = new OpenAPIHono()
+const endpointDelayMs = 2500
+
+async function delayEndpoint(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, endpointDelayMs))
+}
 
 app.onError((error, c) => {
   const message =
@@ -27,187 +24,81 @@ app.onError((error, c) => {
   return c.json({ error: message }, 400)
 })
 
-// ── Workflow file routes ────────────────────────────────────
-
-const listWorkflowsRoute = createRoute({
+const getSessionRoute = createRoute({
   method: "get",
-  path: "/workflows",
-  tags: ["workflows"],
+  path: "/session",
+  tags: ["workflow"],
   responses: {
     200: {
-      description: "List all workflow files",
+      description: "Current workflow session",
       content: {
         "application/json": {
-          schema: workflowFileListSchema,
+          schema: workflowSessionSchema,
         },
       },
     },
   },
 })
 
-const getWorkflowRoute = createRoute({
-  method: "get",
-  path: "/workflows/{filename}",
-  tags: ["workflows"],
-  request: {
-    params: z.object({
-      filename: z.string(),
-    }),
-  },
-  responses: {
-    200: {
-      description: "Get workflow file content",
-      content: {
-        "application/json": {
-          schema: workflowFileSchema,
-        },
-      },
-    },
-  },
-})
-
-const updateWorkflowRoute = createRoute({
-  method: "put",
-  path: "/workflows/{filename}",
-  tags: ["workflows"],
-  request: {
-    params: z.object({
-      filename: z.string(),
-    }),
-    body: {
-      required: true,
-      content: {
-        "application/json": {
-          schema: updateWorkflowCodeSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      description: "Updated workflow file",
-      content: {
-        "application/json": {
-          schema: workflowFileSchema,
-        },
-      },
-    },
-  },
-})
-
-// ── Stateless process route ─────────────────────────────────
-
-const processRoute = createRoute({
+const resetSessionRoute = createRoute({
   method: "post",
-  path: "/workflows/{filename}/process",
-  tags: ["workflows"],
+  path: "/session/reset",
+  tags: ["workflow"],
+  responses: {
+    200: {
+      description: "Reset workflow session",
+      content: {
+        "application/json": {
+          schema: workflowSessionSchema,
+        },
+      },
+    },
+  },
+})
+
+const submitInputRoute = createRoute({
+  method: "post",
+  path: "/session/input",
+  tags: ["workflow"],
   request: {
-    params: z.object({
-      filename: z.string(),
-    }),
     body: {
       required: true,
       content: {
         "application/json": {
-          schema: processRequestSchema,
+          schema: submitInputSchema,
         },
       },
     },
   },
   responses: {
     200: {
-      description: "Run state after processing the input event",
+      description: "Session after processing an input event",
       content: {
         "application/json": {
-          schema: processResponseSchema,
+          schema: workflowSessionSchema,
         },
       },
     },
   },
 })
 
-// ── Run history routes ──────────────────────────────────────
-
-const listRunsRoute = createRoute({
-  method: "get",
-  path: "/workflows/{filename}/runs",
-  tags: ["runs"],
-  request: {
-    params: z.object({
-      filename: z.string(),
-    }),
-  },
-  responses: {
-    200: {
-      description: "List historic runs for a workflow",
-      content: {
-        "application/json": {
-          schema: runListResponseSchema,
-        },
-      },
-    },
-  },
+api.openapi(getSessionRoute, async (c) => {
+  await delayEndpoint()
+  const session = await loadWorkflowSession()
+  return c.json(session)
 })
 
-const getRunRoute = createRoute({
-  method: "get",
-  path: "/workflows/{filename}/runs/{runId}",
-  tags: ["runs"],
-  request: {
-    params: z.object({
-      filename: z.string(),
-      runId: z.string(),
-    }),
-  },
-  responses: {
-    200: {
-      description: "Get full run state for a historic run",
-      content: {
-        "application/json": {
-          schema: runDetailResponseSchema,
-        },
-      },
-    },
-  },
+api.openapi(resetSessionRoute, async (c) => {
+  await delayEndpoint()
+  const session = await resetWorkflowSession()
+  return c.json(session)
 })
 
-// ── Handlers ────────────────────────────────────────────────
-
-api.openapi(listWorkflowsRoute, async (c) => {
-  const files = await listWorkflowFiles()
-  return c.json({ files })
-})
-
-api.openapi(getWorkflowRoute, async (c) => {
-  const { filename } = c.req.valid("param")
-  const code = await getWorkflowCode(filename)
-  return c.json({ filename, code })
-})
-
-api.openapi(updateWorkflowRoute, async (c) => {
-  const { filename } = c.req.valid("param")
-  const { code } = c.req.valid("json")
-  await updateWorkflowCode(filename, code)
-  return c.json({ filename, code })
-})
-
-api.openapi(processRoute, async (c) => {
-  const { filename } = c.req.valid("param")
-  const { runState, inputId, payload } = c.req.valid("json")
-  const result = await processWorkflow(filename, runState, inputId, payload)
-  return c.json(result)
-})
-
-api.openapi(listRunsRoute, async (c) => {
-  const { filename } = c.req.valid("param")
-  const runs = await listRuns(filename)
-  return c.json({ runs })
-})
-
-api.openapi(getRunRoute, async (c) => {
-  const { filename, runId } = c.req.valid("param")
-  const runState = await loadRun(filename, runId)
-  return c.json({ runState })
+api.openapi(submitInputRoute, async (c) => {
+  await delayEndpoint()
+  const { inputId, payload } = c.req.valid("json")
+  const session = await submitWorkflowInput({ inputId, payload })
+  return c.json(session, 200)
 })
 
 app.route("/api", api)
