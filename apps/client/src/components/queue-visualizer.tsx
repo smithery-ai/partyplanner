@@ -25,7 +25,7 @@ import type { NodeRecord, NodeStatus, Registry, RunState } from "@rxwf/core"
 import { cn } from "@/lib/utils"
 
 /** Visual bucket for theming (includes deferred-input gate) */
-type StatusVisual = NodeStatus | "needs_input"
+type StatusVisual = NodeStatus | "needs_input" | "pending_deferred"
 
 const STATUS_LEGEND: {
   key: StatusVisual
@@ -48,6 +48,11 @@ const STATUS_LEGEND: {
     hint: "Deferred input required (e.g. approval)",
   },
   {
+    key: "pending_deferred",
+    label: "Deferred pending",
+    hint: "Submit this deferred input to continue",
+  },
+  {
     key: "skipped",
     label: "Skipped",
     hint: "Step did not run (e.g. branch not taken)",
@@ -68,6 +73,8 @@ type WorkflowNodeData = {
   label: string
   kind: "input" | "atom"
   deferred?: boolean
+  /** Waiting on this deferred input (no node record in state until submitted). */
+  pendingDeferred?: boolean
   status?: NodeRecord["status"]
   handles: { target: boolean; source: boolean }
   /** Inline approve/reject when a downstream step is blocked on this deferred input */
@@ -76,6 +83,7 @@ type WorkflowNodeData = {
 
 function statusVisual(data: WorkflowNodeData): StatusVisual {
   if (data.inlineActions) return "needs_input"
+  if (data.pendingDeferred) return "pending_deferred"
   return data.status ?? "not_reached"
 }
 
@@ -98,6 +106,12 @@ function statusNodeClasses(visual: StatusVisual): { card: string; header: string
         card: "border-amber-600/50 ring-1 ring-amber-600/20 dark:border-amber-500/45",
         header:
           "border-b border-amber-600/30 bg-amber-600/14 dark:bg-amber-500/16 dark:border-amber-500/30",
+      }
+    case "pending_deferred":
+      return {
+        card: "border-yellow-500/55 ring-1 ring-yellow-500/25 dark:border-yellow-400/50",
+        header:
+          "border-b border-yellow-500/35 bg-yellow-400/18 dark:bg-yellow-400/14 dark:border-yellow-400/35",
       }
     case "skipped":
       return {
@@ -128,6 +142,8 @@ const STATUS_SWATCH: Record<StatusVisual, string> = {
   resolved: "bg-emerald-600/45 ring-1 ring-emerald-600/25 dark:bg-emerald-500/35",
   waiting: "bg-sky-600/45 ring-1 ring-sky-600/25 dark:bg-sky-500/35",
   needs_input: "bg-amber-600/45 ring-1 ring-amber-600/25 dark:bg-amber-500/35",
+  pending_deferred:
+    "bg-yellow-400/50 ring-1 ring-yellow-500/30 dark:bg-yellow-400/35",
   skipped: "bg-muted-foreground/25 ring-1 ring-muted-foreground/15",
   blocked: "bg-orange-600/45 ring-1 ring-orange-600/25 dark:bg-orange-500/35",
   errored: "bg-destructive/40 ring-1 ring-destructive/25",
@@ -143,6 +159,19 @@ const EDGE_MARKER = {
   width: 14,
   height: 14,
   color: "var(--muted-foreground)",
+} as const
+
+/** Edges touching a pending deferred input node (matches node yellow accent). */
+const PENDING_DEFERRED_EDGE_STYLE = {
+  stroke: "#eab308",
+  strokeWidth: 2,
+} as const
+
+const PENDING_DEFERRED_EDGE_MARKER = {
+  type: MarkerType.ArrowClosed,
+  width: 14,
+  height: 14,
+  color: "#eab308",
 } as const
 
 function ConnectionLine(props: ConnectionLineComponentProps) {
@@ -214,6 +243,11 @@ function WorkflowNode({
             <>
               {kindLabel} ·{" "}
               <span className="text-foreground">needed</span>
+            </>
+          ) : data.pendingDeferred ? (
+            <>
+              {kindLabel} ·{" "}
+              <span className="text-foreground">pending</span>
             </>
           ) : (
             <>
@@ -450,7 +484,26 @@ function animatedEdgesFromState(state: RunState | undefined): Set<string> {
   return s
 }
 
-/** Nodes that have been evaluated in this run (excludes never-touched registry entries). */
+/**
+ * A deferred input is “in play” when a step is blocked waiting for it, even though
+ * `state.nodes[inputId]` does not exist until the user submits that input.
+ */
+/** Exported for the node detail sheet (pending deferred inputs have no `state.nodes` record yet). */
+export function deferredInputRequested(
+  registry: Registry,
+  runState: RunState,
+  id: string,
+): boolean {
+  const def = registry.getInput(id)
+  if (!def || def.kind !== "deferred_input") return false
+  if (runState.waiters[id]?.length) return true
+  for (const n of Object.values(runState.nodes)) {
+    if (n.status === "waiting" && n.waitingOn === id) return true
+  }
+  return false
+}
+
+/** Nodes that have been evaluated, plus deferred inputs currently awaited by a step. */
 function visibleWorkflowNodeIds(
   registry: Registry,
   runState: RunState | undefined,
@@ -458,7 +511,8 @@ function visibleWorkflowNodeIds(
   if (!runState) return []
   return registry.allIds().filter((id) => {
     const rec = runState.nodes[id]
-    return rec && rec.status !== "not_reached"
+    if (rec && rec.status !== "not_reached") return true
+    return deferredInputRequested(registry, runState, id)
   })
 }
 
@@ -479,10 +533,17 @@ function buildFlow(
     const inputDef = registry.getInput(id)
     const kind: WorkflowNodeData["kind"] = inputDef ? "input" : "atom"
     const deferred = Boolean(inputDef?.kind === "deferred_input")
+    const pendingDeferred = Boolean(
+      runState &&
+        deferred &&
+        deferredInputRequested(registry, runState, id) &&
+        !rec,
+    )
     const data: WorkflowNodeData = {
       label: id,
       kind,
       deferred,
+      pendingDeferred,
       status: rec?.status ?? "not_reached",
       handles: dagHandleSides(id, topology),
     }
@@ -496,10 +557,34 @@ function buildFlow(
     }
   })
 
-  const edges: Edge[] = graphEdges.map((e) => ({
-    ...e,
-    animated: animate.has(e.id),
-  }))
+  const pendingDeferredIdSet = new Set(
+    ids.filter((nid) => {
+      const r = runState?.nodes[nid]
+      const inputDef = registry.getInput(nid)
+      const def = Boolean(inputDef?.kind === "deferred_input")
+      return Boolean(
+        runState &&
+          def &&
+          deferredInputRequested(registry, runState, nid) &&
+          !r,
+      )
+    }),
+  )
+
+  const edges: Edge[] = graphEdges.map((e) => {
+    const touchesPendingDeferred =
+      pendingDeferredIdSet.has(e.source) || pendingDeferredIdSet.has(e.target)
+    return {
+      ...e,
+      animated: animate.has(e.id),
+      ...(touchesPendingDeferred
+        ? {
+            style: PENDING_DEFERRED_EDGE_STYLE,
+            markerEnd: PENDING_DEFERRED_EDGE_MARKER,
+          }
+        : {}),
+    }
+  })
 
   return { nodes, edges }
 }
@@ -610,7 +695,7 @@ function FlowInner({
         className="rounded-md border border-border bg-card/90 px-3 py-2 text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
         position="top-left"
       >
-        Reached steps only · click a node for full result · drag to pan · scroll to zoom
+        Reached steps and pending deferred inputs · click a node for details · drag to pan · scroll to zoom
       </Panel>
       <Panel
         className="mb-2 mr-2 flex max-w-[min(19rem,calc(100vw-1rem))] flex-col items-end gap-2"

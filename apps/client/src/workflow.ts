@@ -4,10 +4,10 @@ import { z } from "zod"
 // ── Inputs ────────────────────────────────────────────────────
 
 export const provider = input("provider", z.object({
-  name: z.string(),
+  name: z.string().default("Acme MCP"),
   openapiUrl: z.string().optional(),
-  mcpUrl: z.string().optional(),
-  hasDcr: z.boolean(),
+  mcpUrl: z.string().default("https://mcp.acme.dev"),
+  hasDcr: z.boolean().default(true),
 }))
 
 export const oauthCreds = input.deferred("oauthCreds", z.object({

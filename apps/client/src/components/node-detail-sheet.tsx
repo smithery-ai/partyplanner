@@ -1,21 +1,38 @@
 import { X } from "lucide-react"
+import type { ZodTypeAny } from "zod"
 
 import { Button } from "@/components/ui/button"
 import type { NodeRecord } from "@rxwf/core"
 import { cn } from "@/lib/utils"
 
+import { ZodSchemaForm } from "@/components/zod-schema-form"
+
+export type NodeDetailEditor = {
+  description: string
+  schema: ZodTypeAny
+  value: unknown
+  onChange: (value: unknown) => void
+  onSubmit: () => void | Promise<void>
+  submitLabel: string
+  error?: string
+}
+
 export function NodeDetailSheet({
   nodeId,
   record,
+  editor,
   open,
   onOpenChange,
 }: {
   nodeId: string | null
   record: NodeRecord | undefined
+  editor?: NodeDetailEditor | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
   if (!open || !nodeId) return null
+
+  const showEmpty = !record && !editor
 
   return (
     <>
@@ -42,6 +59,27 @@ export function NodeDetailSheet({
           </Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {editor && (
+            <div className="mb-6 space-y-3">
+              <p className="text-muted-foreground text-xs leading-snug">{editor.description}</p>
+              <ZodSchemaForm
+                schema={editor.schema}
+                value={editor.value}
+                onChange={editor.onChange}
+                idPrefix={nodeId}
+              />
+              {editor.error ? (
+                <p className="text-destructive text-xs">{editor.error}</p>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => void editor.onSubmit()}
+              >
+                {editor.submitLabel}
+              </Button>
+            </div>
+          )}
           {record ? (
             <div className="space-y-4 text-xs">
               <div>
@@ -94,9 +132,10 @@ export function NodeDetailSheet({
                 </span>
               </div>
             </div>
-          ) : (
+          ) : null}
+          {showEmpty ? (
             <p className="text-muted-foreground text-sm">No record for this node.</p>
-          )}
+          ) : null}
         </div>
       </aside>
     </>
