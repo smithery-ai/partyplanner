@@ -231,6 +231,8 @@ export function createApp() {
   );
   app.get("/health", (c) => c.json({ ok: true }));
 
+  app.get("/runs", (c) => c.json(runManager.listRuns(), 200));
+
   app.post("/runs", async (c) => {
     try {
       const body = await c.req.json();

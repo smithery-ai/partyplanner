@@ -14,6 +14,7 @@ import {
 
 import type {
   RunStateDocument,
+  RunSummary,
   SetAutoAdvanceRequest,
   StartBackendRunRequest,
   SubmitBackendInputRequest,
@@ -24,6 +25,8 @@ export type WorkflowRuntimeResult = {
   snapshot?: RunSnapshot
   queue?: QueueSnapshot
   events?: RunEvent[]
+  workflowSource?: string
+  autoAdvance?: boolean
 }
 
 export type StartWorkflowArgs = {
@@ -60,6 +63,7 @@ export interface WorkflowRuntime {
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>
   setAutoAdvance(args: SetAutoAdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>
+  listRuns?(): Promise<RunSummary[]>
   getState?(args: PollWorkflowStateArgs): Promise<WorkflowRuntimeResult>
   reset?(): void
 }
@@ -67,6 +71,10 @@ export interface WorkflowRuntime {
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8787"
 
 export class BackendRuntime implements WorkflowRuntime {
+  async listRuns(): Promise<RunSummary[]> {
+    return this.get<RunSummary[]>("/runs")
+  }
+
   async start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult> {
     const document = await this.post<StartBackendRunRequest, RunStateDocument>("/runs", {
       workflowSource: args.workflowSource,
@@ -147,6 +155,8 @@ function documentResult(document: RunStateDocument): WorkflowRuntimeResult {
     snapshot: document,
     queue: document.queue,
     events: document.events,
+    workflowSource: document.workflowSource,
+    autoAdvance: document.autoAdvance,
   }
 }
 
