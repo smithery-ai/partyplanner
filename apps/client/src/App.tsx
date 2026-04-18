@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react"
-import { createRuntime } from "@rxwf/core"
+import { createRuntime, globalRegistry } from "@rxwf/core"
 import type { QueueEvent, RunState, NodeRecord } from "@rxwf/core"
 import { X } from "lucide-react"
 
@@ -295,7 +295,12 @@ export default function App() {
       <div className="relative min-h-0 flex-1">
         <QueueVisualizer
           runState={runState}
-          overlayReviewActions={overlayReviewActions}
+          registry={globalRegistry}
+          nodeInlineActions={
+            overlayReviewActions
+              ? { overlayReview: overlayReviewActions }
+              : undefined
+          }
         />
 
         {panel && (
