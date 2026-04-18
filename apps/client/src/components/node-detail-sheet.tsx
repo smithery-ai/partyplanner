@@ -119,6 +119,14 @@ export function NodeDetailSheet({
                   Waiting on <code className="text-foreground">{record.waitingOn}</code>
                 </p>
               )}
+              {record.status === "skipped" && record.skipReason && (
+                <div>
+                  <div className="mb-1 font-medium text-foreground">Skip Reason</div>
+                  <p className="rounded-md border border-border bg-muted/40 p-3 text-muted-foreground whitespace-pre-wrap">
+                    {record.skipReason}
+                  </p>
+                </div>
+              )}
               {record.blockedOn && (
                 <p className="text-muted-foreground">
                   Blocked on <code className="text-foreground">{record.blockedOn}</code>

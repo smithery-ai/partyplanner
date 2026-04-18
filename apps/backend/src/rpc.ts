@@ -34,6 +34,7 @@ export type GraphNode = {
   deps: string[];
   blockedOn?: string;
   waitingOn?: string;
+  skipReason?: string;
   attempts: number;
 };
 

@@ -91,7 +91,7 @@ interface Get {
   maybe<T>(source: Input<T> | DeferredInput<T> | Atom<T>): T | undefined;
 
   /** Explicitly skip the current step. */
-  skip(): never;
+  skip(reason?: string): never;
 }
 ```
 
@@ -148,6 +148,7 @@ type RunState = {
     duration_ms: number;
     blockedOn?: string;
     waitingOn?: string;
+    skipReason?: string;
     attempts: number;
   }>;
   waiters: Record<string, string[]>;     // depId -> directly blocked stepIds
@@ -180,6 +181,7 @@ type RunTrace = {
     duration_ms: number;
     blockedOn?: string;
     waitingOn?: string;
+    skipReason?: string;
     attempts: number;
   }>;
 };
@@ -571,8 +573,8 @@ class RunSession {
             throw e;
           }
         },
-        skip: (): never => {
-          throw new SkipError(def.id);
+        skip: (reason?: string): never => {
+          throw new SkipError(def.id, reason);
         },
       }
     );

@@ -1,7 +1,7 @@
 export class SkipError extends Error {
   readonly kind = "skip" as const;
-  constructor(public stepId: string) {
-    super(`Step "${stepId}" skipped`);
+  constructor(public stepId: string, public reason?: string) {
+    super(reason ? `Step "${stepId}" skipped: ${reason}` : `Step "${stepId}" skipped`);
     this.name = "SkipError";
   }
 }

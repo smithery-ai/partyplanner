@@ -260,4 +260,43 @@ describe("LocalScheduler", () => {
     expect(snapshot.status).toBe("completed");
     expect(snapshot.nodes.find((node) => node.id === "finish")?.value).toBe("approved demo");
   });
+
+  it("includes skip reasons in graph snapshots and events", async () => {
+    const request = input("request", z.object({ approved: z.boolean() }));
+
+    atom(
+      (get) => {
+        const r = get(request);
+        if (!r.approved) return get.skip("approval denied");
+        return "approved";
+      },
+      { name: "gated" },
+    );
+
+    const { scheduler, events } = makeScheduler();
+    await scheduler.startRun({
+      workflow,
+      runId: "run-skip-reason",
+      input: {
+        inputId: "request",
+        payload: { approved: false },
+        eventId: "evt-request",
+      },
+    });
+
+    await scheduler.drain();
+    const snapshot = await scheduler.snapshot("run-skip-reason");
+    const node = snapshot.nodes.find((n) => n.id === "gated");
+    const skipEvent = events.events.find(
+      (event) => event.type === "node_skipped" && event.nodeId === "gated",
+    );
+
+    expect(node?.status).toBe("skipped");
+    expect(node?.skipReason).toBe("approval denied");
+    expect(skipEvent).toMatchObject({
+      type: "node_skipped",
+      nodeId: "gated",
+      reason: "approval denied",
+    });
+  });
 });
