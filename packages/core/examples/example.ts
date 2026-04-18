@@ -1,25 +1,6 @@
-import { z } from "zod";
-import { input, atom, createRuntime } from "../src/index";
-import { globalRegistry } from "../src/registry";
+import { createRuntime } from "../src/index";
 import type { QueueEvent, RunState, RunTrace } from "../src/types";
-
-// ── Define a workflow ────────────────────────────────────────────
-
-const slack = input("slack", z.object({
-  message: z.string(),
-  channel: z.string(),
-}));
-
-const classify = atom((get) => {
-  const msg = get(slack);
-  return msg.message.toLowerCase().includes("urgent") ? "urgent" : "normal";
-}, { name: "classify" });
-
-const format = atom((get) => {
-  const priority = get(classify);
-  const msg = get(slack);
-  return `[${priority.toUpperCase()}] ${msg.channel}: ${msg.message}`;
-}, { name: "format" });
+import { overlayReview, prodApproval, provider } from "./example-workflow";
 
 // ── Run it ───────────────────────────────────────────────────────
 
@@ -49,22 +30,57 @@ async function drainQueue(seed: QueueEvent, state?: RunState) {
   return { state: current!, trace };
 }
 
-console.log("── Running workflow ──\n");
+function printTrace(title: string, trace: RunTrace) {
+  console.log(`\n── ${title} ──\n`);
 
-const { trace } = await drainQueue({
+  for (const [id, node] of Object.entries(trace.nodes)) {
+    const parts = [`${id}: ${node.status}`];
+    if (node.status === "resolved") parts.push(`→ ${JSON.stringify(node.value)}`);
+    if (node.status === "waiting") parts.push(`waitingOn: ${node.waitingOn}`);
+    if (node.status === "blocked") parts.push(`blockedOn: ${node.blockedOn}`);
+    if (node.deps.length) parts.push(`deps: [${node.deps.join(", ")}]`);
+    if (node.attempts) parts.push(`attempts: ${node.attempts}`);
+    console.log(parts.join("  "));
+  }
+}
+
+console.log("── Running workflow ──");
+
+const firstRun = await drainQueue({
   kind: "input",
   eventId: crypto.randomUUID(),
   runId: "run-1",
-  inputId: "slack",
-  payload: { message: "Server is down URGENT", channel: "#ops" },
+  inputId: provider.__id,
+  payload: {
+    name: "DispatchCo",
+    openapiUrl: "https://dispatchco.example/openapi.json",
+  },
 });
 
-console.log("\n── Trace ──\n");
+printTrace("Trace After Provider Input", firstRun.trace);
 
-for (const [id, node] of Object.entries(trace.nodes)) {
-  const parts = [`${id}: ${node.status}`];
-  if (node.status === "resolved") parts.push(`→ ${JSON.stringify(node.value)}`);
-  if (node.deps.length) parts.push(`deps: [${node.deps.join(", ")}]`);
-  if (node.attempts) parts.push(`attempts: ${node.attempts}`);
-  console.log(parts.join("  "));
-}
+const secondRun = await drainQueue({
+  kind: "input",
+  eventId: crypto.randomUUID(),
+  runId: "run-1",
+  inputId: overlayReview.__id,
+  payload: {
+    approved: true,
+    strippedPaths: ["/paths/~1admin", "/components/schemas/InternalOnly"],
+  },
+}, firstRun.state);
+
+printTrace("Trace After Overlay Review", secondRun.trace);
+
+const thirdRun = await drainQueue({
+  kind: "input",
+  eventId: crypto.randomUUID(),
+  runId: "run-1",
+  inputId: prodApproval.__id,
+  payload: {
+    approved: true,
+    changeTicket: "CHG-4821",
+  },
+}, secondRun.state);
+
+printTrace("Final Trace", thirdRun.trace);
