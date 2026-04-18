@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils"
 import { ZodSchemaForm } from "@/components/zod-schema-form"
 
 export type NodeDetailEditor = {
+  /** From `input(..., { description })` in the workflow registry. */
+  inputDescription?: string
   description: string
   schema: ZodTypeAny
   value: unknown
@@ -61,6 +63,11 @@ export function NodeDetailSheet({
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {editor && (
             <div className="mb-6 space-y-3">
+              {editor.inputDescription ? (
+                <p className="text-muted-foreground text-[11px] leading-snug">
+                  {editor.inputDescription}
+                </p>
+              ) : null}
               <p className="text-muted-foreground text-xs leading-snug">{editor.description}</p>
               <ZodSchemaForm
                 schema={editor.schema}

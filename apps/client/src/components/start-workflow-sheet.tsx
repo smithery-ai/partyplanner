@@ -101,12 +101,12 @@ export function StartWorkflowSheet({
                 if (inp.id !== seedInputId && immediate.length > 1) return null
                 return (
                   <div key={inp.id} className="space-y-2">
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <code className="text-[11px] text-foreground">{inp.id}</code>
+                    <div className="space-y-1">
+                      <code className="block text-[11px] text-foreground">{inp.id}</code>
                       {inp.description ? (
-                        <span className="text-muted-foreground text-[11px]">
+                        <p className="text-muted-foreground text-[11px] leading-snug">
                           {inp.description}
-                        </span>
+                        </p>
                       ) : null}
                     </div>
                     <ZodSchemaForm

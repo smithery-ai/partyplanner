@@ -63,10 +63,12 @@ export function PendingInputSheet({
             <code className="rounded bg-muted px-1 py-0.5">kind: &quot;input&quot;</code>.
           </p>
           <div className="space-y-2 rounded-lg border border-yellow-500/40 bg-yellow-500/8 p-3">
-            <code className="text-[11px] text-foreground">{pendingInputId}</code>
-            {def.description ? (
-              <p className="text-muted-foreground text-[11px]">{def.description}</p>
-            ) : null}
+            <div className="space-y-1">
+              <code className="block text-[11px] text-foreground">{pendingInputId}</code>
+              {def.description ? (
+                <p className="text-muted-foreground text-[11px] leading-snug">{def.description}</p>
+              ) : null}
+            </div>
             <ZodSchemaForm
               schema={def.schema}
               value={inputValues[pendingInputId]}

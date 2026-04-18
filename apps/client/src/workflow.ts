@@ -3,27 +3,70 @@ import { z } from "zod"
 
 // ── Inputs ────────────────────────────────────────────────────
 
-export const provider = input("provider", z.object({
-  name: z.string().default("Acme MCP"),
-  openapiUrl: z.string().optional(),
-  mcpUrl: z.string().default("https://mcp.acme.dev"),
-  hasDcr: z.boolean().default(true),
-}))
+export const provider = input(
+  "provider",
+  z.object({
+    name: z.string().default("Acme MCP").describe("Display name used in deploy actions and logs."),
+    openapiUrl: z
+      .string()
+      .optional()
+      .describe("OpenAPI URL for the dispatch-worker path when MCP-based routes are not used."),
+    mcpUrl: z
+      .string()
+      .default("https://mcp.acme.dev")
+      .describe("MCP server URL for OAuth or DCR proxy paths."),
+    hasDcr: z
+      .boolean()
+      .default(true)
+      .describe("Whether Dynamic Client Registration is available at the MCP endpoint."),
+  }),
+  { description: "Connection details for the provider you are onboarding." },
+)
 
-export const oauthCreds = input.deferred("oauthCreds", z.object({
-  clientId: z.string(),
-  clientSecret: z.string(),
-}))
+export const oauthCreds = input.deferred(
+  "oauthCreds",
+  z.object({
+    clientId: z.string().describe("OAuth client_id issued for this MCP deployment."),
+    clientSecret: z
+      .string()
+      .describe("OAuth client_secret; store and rotate outside this UI in production."),
+  }),
+  {
+    description:
+      "Credentials after dynamic or static registration—required to deploy the OAuth proxy.",
+  },
+)
 
-export const overlayReview = input.deferred("overlayReview", z.object({
-  approved: z.boolean(),
-  strippedPaths: z.array(z.string()).optional(),
-}))
+export const overlayReview = input.deferred(
+  "overlayReview",
+  z.object({
+    approved: z
+      .boolean()
+      .describe("Whether to apply the generated OpenAPI overlay to the dispatch worker."),
+    strippedPaths: z
+      .array(z.string())
+      .optional()
+      .describe("JSON pointer–style paths to strip from the spec before deploy (optional)."),
+  }),
+  {
+    description: "Human review gate before applying the OpenAPI overlay in the dispatch path.",
+  },
+)
 
-export const prodApproval = input.deferred("prodApproval", z.object({
-  approved: z.boolean(),
-  confirmCode: z.string(),
-}))
+export const prodApproval = input.deferred(
+  "prodApproval",
+  z.object({
+    approved: z
+      .boolean()
+      .describe("Whether to promote the tested deployment to production."),
+    confirmCode: z
+      .string()
+      .describe("Typed confirmation (e.g. ticket or environment code) for audit trail."),
+  }),
+  {
+    description: "Final sign-off before production deploy—separate from overlay review.",
+  },
+)
 
 // ── Discovery & Assessment ───────────────────────────────────
 

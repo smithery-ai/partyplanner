@@ -242,6 +242,7 @@ export default function App() {
     const def = globalRegistry.getInput(selectedNodeId)
     if (def && immediateInputNeedsForm(selectedNodeId, runState)) {
       nodeEditor = {
+        inputDescription: def.description,
         description:
           "Submit this payload as the seed input event (same as Start Workflow).",
         schema: def.schema as ZodTypeAny,
@@ -254,6 +255,7 @@ export default function App() {
     } else if (def && deferredInputNeedsForm(runState, selectedNodeId)) {
       const id = selectedNodeId
       nodeEditor = {
+        inputDescription: def.description,
         description:
           "Deferred input: delivered as a separate queue event when this step is waiting (SPEC: WaitError).",
         schema: def.schema as ZodTypeAny,
@@ -329,16 +331,11 @@ export default function App() {
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
             <div className="pointer-events-auto flex max-w-md flex-col items-center gap-5 rounded-xl border border-border bg-card/95 p-8 text-center shadow-lg backdrop-blur-sm">
               <p className="text-muted-foreground text-sm leading-relaxed">
-                No run yet. Open workflow source or submit a seed payload to begin.
+                No run yet. Review the workflow source, preview your input, then start.
               </p>
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <Button type="button" variant="secondary" onClick={() => setPane("workflow")}>
-                  Workflow code
-                </Button>
-                <Button type="button" onClick={() => setPane("start")}>
-                  Start Workflow
-                </Button>
-              </div>
+              <Button type="button" onClick={() => setPane("workflow")}>
+                Start Workflow
+              </Button>
             </div>
           </div>
         )}
@@ -348,6 +345,7 @@ export default function App() {
           onOpenChange={(o) => setPane(o ? "workflow" : null)}
           workflowCode={workflowCode}
           onWorkflowCodeChange={setWorkflowCode}
+          onPreviewInput={() => setPane("start")}
         />
 
         <RunStateJsonSheet
