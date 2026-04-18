@@ -5,10 +5,11 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
-    "dev": "turbo run dev",
+    "dev": "sh scripts/dev-with-portless.sh",
     "example": "tsx apps/backend/examples/example-backend.ts"
   },
   "devDependencies": {
+    "portless": "^0.10.3",
     "tsx": "^4.21.0",
     "turbo": "^2.5.0"
   }
