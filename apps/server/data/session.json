@@ -1,0 +1,138 @@
+{
+  "runId": "run-1",
+  "eventCounter": 2,
+  "runState": {
+    "runId": "run-1",
+    "startedAt": 1776511126007,
+    "trigger": "provider",
+    "payload": {
+      "name": "Acme MCP",
+      "openapiUrl": "",
+      "mcpUrl": "https://mcp.acme.dev",
+      "hasDcr": true
+    },
+    "inputs": {
+      "provider": {
+        "name": "Acme MCP",
+        "openapiUrl": "",
+        "mcpUrl": "https://mcp.acme.dev",
+        "hasDcr": true
+      },
+      "prodApproval": {
+        "approved": false,
+        "confirmCode": ""
+      }
+    },
+    "nodes": {
+      "provider": {
+        "status": "resolved",
+        "value": {
+          "name": "Acme MCP",
+          "openapiUrl": "",
+          "mcpUrl": "https://mcp.acme.dev",
+          "hasDcr": true
+        },
+        "deps": [],
+        "duration_ms": 0,
+        "attempts": 1
+      },
+      "assess": {
+        "status": "resolved",
+        "value": "dcr-proxy",
+        "deps": [
+          "provider"
+        ],
+        "duration_ms": 0,
+        "attempts": 1
+      },
+      "dcrProxy": {
+        "status": "resolved",
+        "value": {
+          "action": "publish-dcr",
+          "mcpUrl": "https://mcp.acme.dev",
+          "provider": "Acme MCP"
+        },
+        "deps": [
+          "assess",
+          "provider"
+        ],
+        "duration_ms": 0,
+        "attempts": 1
+      },
+      "oauthProxy": {
+        "status": "skipped",
+        "deps": [
+          "assess"
+        ],
+        "duration_ms": 0,
+        "attempts": 1
+      },
+      "buildSpec": {
+        "status": "skipped",
+        "deps": [
+          "assess"
+        ],
+        "duration_ms": 0,
+        "attempts": 1
+      },
+      "applyOverlay": {
+        "status": "skipped",
+        "deps": [
+          "buildSpec"
+        ],
+        "duration_ms": 0,
+        "attempts": 1
+      },
+      "deployTest": {
+        "status": "skipped",
+        "deps": [
+          "applyOverlay"
+        ],
+        "duration_ms": 0,
+        "attempts": 1
+      },
+      "scanTools": {
+        "status": "skipped",
+        "deps": [
+          "deployTest"
+        ],
+        "duration_ms": 0,
+        "attempts": 1
+      },
+      "deployProd": {
+        "status": "skipped",
+        "deps": [
+          "assess",
+          "dcrProxy",
+          "prodApproval"
+        ],
+        "duration_ms": 0,
+        "attempts": 2
+      },
+      "prodApproval": {
+        "status": "resolved",
+        "value": {
+          "approved": false,
+          "confirmCode": ""
+        },
+        "deps": [],
+        "duration_ms": 0,
+        "attempts": 1
+      }
+    },
+    "waiters": {},
+    "processedEventIds": {
+      "evt-1": true,
+      "1b879f4a-be9b-4e8f-bbeb-50ee028ab280": true,
+      "2994c018-6b27-4f9a-971b-82c7c18c5c71": true,
+      "575b1809-5383-4536-a1bf-98f99a520894": true,
+      "b5800e60-df00-4006-b506-45ed1008447a": true,
+      "c56a5d43-504a-4572-a5ff-811149aaf3e4": true,
+      "6d5fe90d-9fd2-4f67-a4e1-6cc7ab6cae33": true,
+      "66652493-d963-4520-ae43-a9c1e8694fe7": true,
+      "2f476ed6-e8e4-47bf-a139-ae8bd22fd2a9": true,
+      "evt-2": true,
+      "2d767517-bfdf-40c7-9350-36da54694964": true
+    }
+  }
+}

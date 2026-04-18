@@ -14,6 +14,7 @@ export function PendingInputSheet({
   pendingInputId,
   inputValues,
   onInputValuesChange,
+  submitting,
   onSubmit,
   error,
 }: {
@@ -23,6 +24,7 @@ export function PendingInputSheet({
   pendingInputId: string | undefined
   inputValues: Record<string, unknown>
   onInputValuesChange: (id: string, value: unknown) => void
+  submitting?: boolean
   onSubmit: () => void
   error?: string
 }) {
@@ -75,8 +77,13 @@ export function PendingInputSheet({
               onChange={(v) => onInputValuesChange(pendingInputId, v)}
               idPrefix={pendingInputId}
             />
-            <Button type="button" size="sm" onClick={() => onSubmit()}>
-              Submit “{pendingInputId}”
+            <Button
+              type="button"
+              size="sm"
+              disabled={submitting}
+              onClick={() => onSubmit()}
+            >
+              {submitting ? "Submitting..." : `Submit “${pendingInputId}”`}
             </Button>
           </div>
           {error ? <p className="text-destructive text-xs">{error}</p> : null}
