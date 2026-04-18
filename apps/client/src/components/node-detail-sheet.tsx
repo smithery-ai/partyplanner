@@ -17,7 +17,6 @@ export type NodeDetailEditor = {
   onSubmit: () => void | Promise<void>
   submitLabel: string
   error?: string
-  submitting?: boolean
 }
 
 export function NodeDetailSheet({
@@ -82,10 +81,9 @@ export function NodeDetailSheet({
               <Button
                 type="button"
                 size="sm"
-                disabled={editor.submitting}
                 onClick={() => void editor.onSubmit()}
               >
-                {editor.submitting ? "Submitting..." : editor.submitLabel}
+                {editor.submitLabel}
               </Button>
             </div>
           )}

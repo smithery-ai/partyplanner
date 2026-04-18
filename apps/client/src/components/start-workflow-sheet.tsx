@@ -19,7 +19,6 @@ export function StartWorkflowSheet({
   seedInputId,
   onSeedInputIdChange,
   canSubmitSeed,
-  submitting,
   onSubmitSeed,
   error,
 }: {
@@ -31,7 +30,6 @@ export function StartWorkflowSheet({
   seedInputId: string
   onSeedInputIdChange: (id: string) => void
   canSubmitSeed: boolean
-  submitting?: boolean
   onSubmitSeed: () => void
   error?: string
 }) {
@@ -117,15 +115,14 @@ export function StartWorkflowSheet({
                       onChange={(v) => onInputValuesChange(inp.id, v)}
                       idPrefix={inp.id}
                     />
-                    {(canSubmitSeed || submitting) && inp.id === seedInputId ? (
+                    {canSubmitSeed && inp.id === seedInputId ? (
                       <Button
                         type="button"
                         size="sm"
                         className="mt-2"
-                        disabled={!canSubmitSeed || submitting}
                         onClick={() => onSubmitSeed()}
                       >
-                        {submitting ? "Starting..." : "Start Workflow"}
+                        Start Workflow
                       </Button>
                     ) : null}
                   </div>

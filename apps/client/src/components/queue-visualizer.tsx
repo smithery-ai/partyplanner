@@ -24,8 +24,8 @@ import { Button } from "@/components/ui/button"
 import type { NodeRecord, NodeStatus, Registry, RunState } from "@rxwf/core"
 import { cn } from "@/lib/utils"
 
-/** Visual bucket for theming (includes deferred-input gate and transient client loading). */
-type StatusVisual = NodeStatus | "needs_input" | "pending_deferred" | "loading"
+/** Visual bucket for theming (includes deferred-input gate) */
+type StatusVisual = NodeStatus | "needs_input" | "pending_deferred"
 
 const STATUS_LEGEND: {
   key: StatusVisual
@@ -36,11 +36,6 @@ const STATUS_LEGEND: {
     key: "resolved",
     label: "Resolved",
     hint: "Step finished successfully",
-  },
-  {
-    key: "loading",
-    label: "Loading",
-    hint: "Client request is in flight for this node",
   },
   {
     key: "waiting",
@@ -80,7 +75,6 @@ type WorkflowNodeData = {
   deferred?: boolean
   /** Waiting on this deferred input (no node record in state until submitted). */
   pendingDeferred?: boolean
-  loading?: boolean
   status?: NodeRecord["status"]
   handles: { target: boolean; source: boolean }
   /** Inline approve/reject when a downstream step is blocked on this deferred input */
@@ -88,7 +82,6 @@ type WorkflowNodeData = {
 }
 
 function statusVisual(data: WorkflowNodeData): StatusVisual {
-  if (data.loading) return "loading"
   if (data.inlineActions) return "needs_input"
   if (data.pendingDeferred) return "pending_deferred"
   return data.status ?? "not_reached"
@@ -101,12 +94,6 @@ function statusNodeClasses(visual: StatusVisual): { card: string; header: string
         card: "border-emerald-600/45 ring-1 ring-emerald-600/15 dark:border-emerald-500/40",
         header:
           "border-b border-emerald-600/25 bg-emerald-600/12 dark:bg-emerald-500/14 dark:border-emerald-500/25",
-      }
-    case "loading":
-      return {
-        card: "border-cyan-600/45 ring-1 ring-cyan-600/15 dark:border-cyan-500/40",
-        header:
-          "border-b border-cyan-600/25 bg-cyan-600/12 dark:bg-cyan-500/14 dark:border-cyan-500/25",
       }
     case "waiting":
       return {
@@ -153,7 +140,6 @@ function statusNodeClasses(visual: StatusVisual): { card: string; header: string
 
 const STATUS_SWATCH: Record<StatusVisual, string> = {
   resolved: "bg-emerald-600/45 ring-1 ring-emerald-600/25 dark:bg-emerald-500/35",
-  loading: "bg-cyan-600/45 ring-1 ring-cyan-600/25 dark:bg-cyan-500/35",
   waiting: "bg-sky-600/45 ring-1 ring-sky-600/25 dark:bg-sky-500/35",
   needs_input: "bg-amber-600/45 ring-1 ring-amber-600/25 dark:bg-amber-500/35",
   pending_deferred:
@@ -246,7 +232,6 @@ function WorkflowNode({
       className={cn(
         "!w-[11rem] max-w-[11rem] shadow-sm transition-colors duration-200",
         cardStatus,
-        data.loading && "animate-pulse",
       )}
     >
       <NodeHeader className={cn("p-2!", headerStatus)}>
@@ -258,11 +243,6 @@ function WorkflowNode({
             <>
               {kindLabel} ·{" "}
               <span className="text-foreground">needed</span>
-            </>
-          ) : data.loading ? (
-            <>
-              {kindLabel} ·{" "}
-              <span className="text-foreground">loading</span>
             </>
           ) : data.pendingDeferred ? (
             <>
@@ -527,18 +507,13 @@ export function deferredInputRequested(
 function visibleWorkflowNodeIds(
   registry: Registry,
   runState: RunState | undefined,
-  loadingNodeIds: readonly string[],
 ): string[] {
-  const visible = new Set(loadingNodeIds)
-  if (!runState) return [...visible]
-
-  for (const id of registry.allIds()) {
+  if (!runState) return []
+  return registry.allIds().filter((id) => {
     const rec = runState.nodes[id]
-    if (rec && rec.status !== "not_reached") visible.add(id)
-    if (deferredInputRequested(registry, runState, id)) visible.add(id)
-  }
-
-  return [...visible]
+    if (rec && rec.status !== "not_reached") return true
+    return deferredInputRequested(registry, runState, id)
+  })
 }
 
 function buildFlow(
@@ -548,12 +523,10 @@ function buildFlow(
   layout: Record<string, { x: number; y: number }>,
   topology: ReturnType<typeof flowTopology>,
   runState: RunState | undefined,
-  loadingNodeIds: readonly string[],
   nodeInlineActions: Record<string, { approve: () => void; reject: () => void }> | undefined,
 ): { nodes: Node[]; edges: Edge[] } {
   const ids = visibleIds
   const animate = animatedEdgesFromState(runState)
-  const loadingNodeIdSet = new Set(loadingNodeIds)
 
   const nodes: Node[] = ids.map((id) => {
     const rec = runState?.nodes[id]
@@ -571,7 +544,6 @@ function buildFlow(
       kind,
       deferred,
       pendingDeferred,
-      loading: loadingNodeIdSet.has(id),
       status: rec?.status ?? "not_reached",
       handles: dagHandleSides(id, topology),
     }
@@ -619,13 +591,11 @@ function buildFlow(
 
 function FlowInner({
   runState,
-  loadingNodeIds,
   registry,
   nodeInlineActions,
   onNodeClick,
 }: {
   runState: RunState | undefined
-  loadingNodeIds?: string[]
   registry: Registry
   nodeInlineActions?: Record<string, { approve: () => void; reject: () => void }>
   onNodeClick?: (nodeId: string) => void
@@ -634,8 +604,8 @@ function FlowInner({
   const prevEdgeSigRef = useRef<string | null>(null)
 
   const visibleIds = useMemo(
-    () => visibleWorkflowNodeIds(registry, runState, loadingNodeIds ?? []),
-    [loadingNodeIds, registry, runState],
+    () => visibleWorkflowNodeIds(registry, runState),
+    [registry, runState],
   )
 
   const graphEdges = useMemo(() => {
@@ -668,19 +638,9 @@ function FlowInner({
         layout,
         topology,
         runState,
-        loadingNodeIds ?? [],
         nodeInlineActions,
       ),
-    [
-      graphEdges,
-      layout,
-      loadingNodeIds,
-      nodeInlineActions,
-      registry,
-      runState,
-      topology,
-      visibleIds,
-    ],
+    [registry, visibleIds, graphEdges, layout, topology, runState, nodeInlineActions],
   )
 
   const [nodes, setNodes, onNodesChange] = useNodesState(nextNodes)
@@ -788,8 +748,6 @@ export type QueueVisualizerProps = {
   runState: RunState | undefined
   /** Registry for node list and input vs atom (after importing your workflow module). */
   registry: Registry
-  /** Nodes with an in-flight client request before the next run snapshot arrives. */
-  loadingNodeIds?: string[]
   /** Optional: inline actions on a node (e.g. approve/reject on a deferred input). */
   nodeInlineActions?: Record<string, { approve: () => void; reject: () => void }>
   /** When set, clicking a workflow node opens details (e.g. sheet in parent). */
@@ -800,7 +758,6 @@ export type QueueVisualizerProps = {
 export function QueueVisualizer({
   runState,
   registry,
-  loadingNodeIds,
   nodeInlineActions,
   onNodeClick,
   className,
@@ -816,7 +773,6 @@ export function QueueVisualizer({
         <FlowInner
           runState={runState}
           registry={registry}
-          loadingNodeIds={loadingNodeIds}
           nodeInlineActions={nodeInlineActions}
           onNodeClick={onNodeClick}
         />

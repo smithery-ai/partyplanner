@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useState, useRef, useEffect } from "react"
 import { createRuntime, globalRegistry } from "@rxwf/core"
 import type { QueueEvent, Registry, RunState } from "@rxwf/core"
 import type { ZodTypeAny } from "zod"
@@ -19,46 +18,37 @@ import { StartWorkflowSheet } from "@/components/start-workflow-sheet"
 import { RunStateJsonSheet } from "@/components/run-state-json-sheet"
 import { WorkflowCodeSheet } from "@/components/workflow-code-sheet"
 import { defaultForSchema } from "@/components/zod-schema-form"
-import {
-  loadWorkflowSession,
-  resetWorkflowSession,
-  submitWorkflowInput,
-} from "@/lib/api"
 
 import workflowRaw from "./workflow.ts?raw"
 
 import "./workflow"
 
+const runtime = createRuntime()
+
 type SidePane = null | "workflow" | "start" | "pending" | "state"
 
-const previewRuntime = createRuntime()
-
 function buildInitialInputValues(registry: Registry): Record<string, unknown> {
-  const values: Record<string, unknown> = {}
-
-  for (const input of registry.allInputs()) {
-    values[input.id] = defaultForSchema(input.schema as ZodTypeAny)
+  const m: Record<string, unknown> = {}
+  for (const inp of registry.allInputs()) {
+    m[inp.id] = defaultForSchema(inp.schema as ZodTypeAny)
   }
-
-  return values
+  return m
 }
 
 function firstSeedInputId(registry: Registry): string {
-  const immediateInputs = registry.allInputs().filter((input) => input.kind === "input")
-  return immediateInputs[0]?.id ?? ""
+  const im = registry.allInputs().filter((i) => i.kind === "input")
+  return im[0]?.id ?? ""
 }
 
 function findDeferredWait(
   state: RunState | undefined,
 ): { stepId: string; inputId: string } | undefined {
   if (!state?.nodes) return undefined
-
-  for (const [stepId, node] of Object.entries(state.nodes)) {
-    if (node.status === "waiting" && node.waitingOn) {
-      return { stepId, inputId: node.waitingOn }
+  for (const [stepId, n] of Object.entries(state.nodes)) {
+    if (n.status === "waiting" && n.waitingOn) {
+      return { stepId, inputId: n.waitingOn }
     }
   }
-
   return undefined
 }
 
@@ -67,10 +57,8 @@ function immediateInputNeedsForm(
   runState: RunState | undefined,
 ): boolean {
   if (!nodeId) return false
-
-  const input = globalRegistry.getInput(nodeId)
-  if (!input || input.kind !== "input") return false
-
+  const def = globalRegistry.getInput(nodeId)
+  if (!def || def.kind !== "input") return false
   return !runState || !runState.nodes[nodeId]
 }
 
@@ -79,11 +67,9 @@ function deferredInputNeedsForm(
   nodeId: string | null,
 ): boolean {
   if (!nodeId || !runState) return false
-
-  const input = globalRegistry.getInput(nodeId)
-  if (!input || input.kind !== "deferred_input") return false
+  const def = globalRegistry.getInput(nodeId)
+  if (!def || def.kind !== "deferred_input") return false
   if (runState.nodes[nodeId]?.status === "resolved") return false
-
   return deferredInputRequested(globalRegistry, runState, nodeId)
 }
 
@@ -91,61 +77,31 @@ function isRunComplete(runState: RunState | undefined): boolean {
   if (!runState) return false
   if (Object.keys(runState.nodes).length === 0) return false
   if (findDeferredWait(runState)) return false
-
-  for (const node of Object.values(runState.nodes)) {
-    if (node.status === "waiting" || node.status === "blocked") return false
-    if (node.status === "errored") return false
+  for (const n of Object.values(runState.nodes)) {
+    if (n.status === "waiting" || n.status === "blocked") return false
+    if (n.status === "errored") return false
   }
-
   return true
 }
 
-async function runPreviewToIdle(
+async function runToIdle(
   seed: QueueEvent,
   state?: RunState,
-): Promise<RunState> {
+): Promise<{ state: RunState }> {
   const queue = [seed]
   let current = state
 
   while (queue.length > 0) {
-    const event = queue.shift()
-    if (!event) break
-
-    const result = await previewRuntime.process(event, current)
+    const event = queue.shift()!
+    const result = await runtime.process(event, current)
     current = result.state
     queue.push(...result.emitted)
   }
 
-  return current!
-}
-
-function deriveLoadingNodeIds(
-  nextState: RunState,
-  previousState: RunState | undefined,
-  inputId: string,
-): string[] {
-  if (!previousState) {
-    return Array.from(new Set([inputId, ...Object.keys(nextState.nodes)]))
-  }
-
-  const loadingIds = new Set<string>([inputId])
-  const nextNodeIds = new Set(Object.keys(nextState.nodes))
-
-  for (const nodeId of nextNodeIds) {
-    const before = previousState.nodes[nodeId]
-    const after = nextState.nodes[nodeId]
-
-    if (!before || JSON.stringify(before) !== JSON.stringify(after)) {
-      loadingIds.add(nodeId)
-    }
-  }
-
-  return [...loadingIds]
+  return { state: current! }
 }
 
 export default function App() {
-  const queryClient = useQueryClient()
-
   const [pane, setPane] = useState<SidePane>(null)
   const [workflowCode, setWorkflowCode] = useState(workflowRaw)
   const [inputValues, setInputValues] = useState<Record<string, unknown>>(() =>
@@ -154,144 +110,89 @@ export default function App() {
   const [seedInputId, setSeedInputId] = useState(() =>
     firstSeedInputId(globalRegistry),
   )
+
   const [payloadError, setPayloadError] = useState("")
+  const [runState, setRunState] = useState<RunState | undefined>()
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [predictedLoadingNodeIds, setPredictedLoadingNodeIds] = useState<string[]>([])
 
-  const sessionQuery = useQuery({
-    queryKey: ["workflow-session"],
-    queryFn: loadWorkflowSession,
-  })
+  const eventCounter = useRef(0)
 
-  const submitInputMutation = useMutation({
-    mutationFn: submitWorkflowInput,
-  })
-
-  const resetSessionMutation = useMutation({
-    mutationFn: resetWorkflowSession,
-  })
-
-  const runState = sessionQuery.data?.runState ?? undefined
   const wait = findDeferredWait(runState)
   const pendingDeferredId = wait?.inputId
   const inputPending = Boolean(pendingDeferredId)
+
   const nodes = runState?.nodes ?? {}
   const runComplete = isRunComplete(runState)
-  const pendingRequest =
-    submitInputMutation.isPending || resetSessionMutation.isPending
-  const loadingNodeIds = submitInputMutation.isPending ? predictedLoadingNodeIds : []
 
   useEffect(() => {
     if (!selectedNodeId) return
-
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedNodeId(null)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedNodeId(null)
     }
-
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [selectedNodeId])
 
   useEffect(() => {
     if (!pane) return
-
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setPane(null)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPane(null)
     }
-
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [pane])
 
-  useEffect(() => {
-    const inputs = sessionQuery.data?.runState?.inputs
-    if (!inputs) return
-
-    setInputValues((previous) => ({ ...previous, ...inputs }))
-  }, [sessionQuery.data?.runState?.inputs])
-
-  useEffect(() => {
-    if (!submitInputMutation.isPending) {
-      setPredictedLoadingNodeIds([])
-    }
-  }, [submitInputMutation.isPending])
-
   function setInputValue(id: string, value: unknown) {
-    setInputValues((previous) => ({ ...previous, [id]: value }))
+    setInputValues((prev) => ({ ...prev, [id]: value }))
   }
 
-  async function clearRun() {
-    if (pendingRequest) return
-
-    setPayloadError("")
+  function clearRun() {
+    setRunState(undefined)
     setSelectedNodeId(null)
+    setInputValues(buildInitialInputValues(globalRegistry))
+    setSeedInputId(firstSeedInputId(globalRegistry))
+    setPayloadError("")
     setPane(null)
-
-    try {
-      const session = await resetSessionMutation.mutateAsync()
-      queryClient.setQueryData(["workflow-session"], session)
-      setInputValues(buildInitialInputValues(globalRegistry))
-      setSeedInputId(firstSeedInputId(globalRegistry))
-    } catch (error) {
-      setPayloadError(
-        error instanceof Error ? error.message : "Reset failed — refresh and try again.",
-      )
-    }
   }
 
   async function runWorkflow(seedOverride?: string) {
-    if (submitInputMutation.isPending) return
-
     setPayloadError("")
-
-    const inputId = seedOverride ?? seedInputId
-    const seed = globalRegistry.getInput(inputId)
+    const id = seedOverride ?? seedInputId
+    const seed = globalRegistry.getInput(id)
     if (!seed || seed.kind !== "input") {
       setPayloadError("No initial input is registered for this workflow.")
       return
     }
-
     let payload: unknown
     try {
       payload = seed.schema.parse(inputValues[seed.id])
-    } catch (error) {
+    } catch (e) {
       setPayloadError(
-        error instanceof Error ? error.message : "Validation failed for the initial input.",
+        e instanceof Error ? e.message : "Validation failed for the initial input.",
       )
       return
     }
 
+    const eventId = `evt-${++eventCounter.current}`
+    const event: QueueEvent = {
+      kind: "input",
+      eventId,
+      runId: "run-1",
+      inputId: seed.id,
+      payload,
+    }
     try {
+      const result = await runToIdle(event)
+      setRunState(result.state)
       setPane(null)
-      const previewState = await runPreviewToIdle(
-        {
-          kind: "input",
-          eventId: "preview-seed",
-          runId: sessionQuery.data?.runId ?? "run-1",
-          inputId: seed.id,
-          payload,
-        },
-        runState,
-      )
-      setPredictedLoadingNodeIds(
-        deriveLoadingNodeIds(previewState, runState, seed.id),
-      )
-      const session = await submitInputMutation.mutateAsync({
-        inputId: seed.id,
-        payload,
-      })
-
-      queryClient.setQueryData(["workflow-session"], session)
-    } catch (error) {
+    } catch (e) {
       setPayloadError(
-        error instanceof Error ? error.message : "Processing failed — check input values.",
+        e instanceof Error ? e.message : "Processing failed — check input values.",
       )
     }
   }
 
   async function submitDeferredInput(explicitInputId?: string) {
-    if (submitInputMutation.isPending) return
-
     const inputId = explicitInputId ?? pendingDeferredId
     if (!inputId) return
     if (inputId !== pendingDeferredId) {
@@ -300,46 +201,36 @@ export default function App() {
       )
       return
     }
-
-    const deferredInput = globalRegistry.getInput(inputId)
-    if (!deferredInput) return
+    const def = globalRegistry.getInput(inputId)
+    if (!def) return
 
     setPayloadError("")
-
     let payload: unknown
     try {
-      payload = deferredInput.schema.parse(inputValues[inputId])
-    } catch (error) {
+      payload = def.schema.parse(inputValues[inputId])
+    } catch (e) {
       setPayloadError(
-        error instanceof Error ? error.message : `Validation failed for "${inputId}".`,
+        e instanceof Error ? e.message : `Validation failed for "${inputId}".`,
       )
       return
     }
 
-    try {
-      setPane(null)
-      const previewState = await runPreviewToIdle(
-        {
-          kind: "input",
-          eventId: "preview-deferred",
-          runId: sessionQuery.data?.runId ?? runState?.runId ?? "run-1",
-          inputId,
-          payload,
-        },
-        runState,
-      )
-      setPredictedLoadingNodeIds(
-        deriveLoadingNodeIds(previewState, runState, inputId),
-      )
-      const session = await submitInputMutation.mutateAsync({
-        inputId,
-        payload,
-      })
+    const eventId = `evt-${++eventCounter.current}`
+    const event: QueueEvent = {
+      kind: "input",
+      eventId,
+      runId: "run-1",
+      inputId,
+      payload,
+    }
 
-      queryClient.setQueryData(["workflow-session"], session)
-    } catch (error) {
+    try {
+      const result = await runToIdle(event, runState)
+      setRunState(result.state)
+      setPane(null)
+    } catch (e) {
       setPayloadError(
-        error instanceof Error ? error.message : "Processing failed — check input values.",
+        e instanceof Error ? e.message : "Processing failed — check input values.",
       )
     }
   }
@@ -348,47 +239,34 @@ export default function App() {
 
   let nodeEditor: NodeDetailEditor | null = null
   if (selectedNodeId) {
-    const input = globalRegistry.getInput(selectedNodeId)
-
-    if (input && immediateInputNeedsForm(selectedNodeId, runState)) {
+    const def = globalRegistry.getInput(selectedNodeId)
+    if (def && immediateInputNeedsForm(selectedNodeId, runState)) {
       nodeEditor = {
-        inputDescription: input.description,
+        inputDescription: def.description,
         description:
           "Submit this payload as the seed input event (same as Start Workflow).",
-        schema: input.schema as ZodTypeAny,
+        schema: def.schema as ZodTypeAny,
         value: inputValues[selectedNodeId],
-        onChange: (value) => setInputValue(selectedNodeId, value),
+        onChange: (v) => setInputValue(selectedNodeId, v),
         onSubmit: () => void runWorkflow(selectedNodeId),
         submitLabel: `Submit “${selectedNodeId}”`,
         error: payloadError || undefined,
-        submitting:
-          submitInputMutation.isPending &&
-          submitInputMutation.variables?.inputId === selectedNodeId,
       }
-    } else if (input && deferredInputNeedsForm(runState, selectedNodeId)) {
-      const inputId = selectedNodeId
-
+    } else if (def && deferredInputNeedsForm(runState, selectedNodeId)) {
+      const id = selectedNodeId
       nodeEditor = {
-        inputDescription: input.description,
+        inputDescription: def.description,
         description:
           "Deferred input: delivered as a separate queue event when this step is waiting (SPEC: WaitError).",
-        schema: input.schema as ZodTypeAny,
-        value: inputValues[inputId],
-        onChange: (value) => setInputValue(inputId, value),
-        onSubmit: () => void submitDeferredInput(inputId),
-        submitLabel: `Submit “${inputId}”`,
+        schema: def.schema as ZodTypeAny,
+        value: inputValues[id],
+        onChange: (v) => setInputValue(id, v),
+        onSubmit: () => void submitDeferredInput(id),
+        submitLabel: `Submit “${id}”`,
         error: payloadError || undefined,
-        submitting:
-          submitInputMutation.isPending &&
-          submitInputMutation.variables?.inputId === inputId,
       }
     }
   }
-
-  const showEmptyOverlay =
-    sessionQuery.isError ||
-    sessionQuery.isLoading ||
-    (!runState && !submitInputMutation.isPending)
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background">
@@ -398,12 +276,7 @@ export default function App() {
         </h1>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
           {runState && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void clearRun()}
-              disabled={pendingRequest}
-            >
+            <Button size="sm" variant="outline" onClick={clearRun}>
               Clear
             </Button>
           )}
@@ -451,40 +324,25 @@ export default function App() {
         <QueueVisualizer
           runState={runState}
           registry={globalRegistry}
-          loadingNodeIds={loadingNodeIds}
-          onNodeClick={(nodeId) => setSelectedNodeId(nodeId)}
+          onNodeClick={(id) => setSelectedNodeId(id)}
         />
 
-        {showEmptyOverlay && (
+        {!runState && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
             <div className="pointer-events-auto flex max-w-md flex-col items-center gap-5 rounded-xl border border-border bg-card/95 p-8 text-center shadow-lg backdrop-blur-sm">
-              {sessionQuery.isError ? (
-                <p className="text-muted-foreground text-sm leading-relaxed">
-                  {sessionQuery.error instanceof Error
-                    ? sessionQuery.error.message
-                    : "Failed to load workflow session."}
-                </p>
-              ) : sessionQuery.isLoading ? (
-                <p className="text-muted-foreground text-sm leading-relaxed">
-                  Loading workflow session...
-                </p>
-              ) : (
-                <>
-                  <p className="text-muted-foreground text-sm leading-relaxed">
-                    No run yet. Review the workflow source, preview your input, then start.
-                  </p>
-                  <Button type="button" onClick={() => setPane("workflow")}>
-                    Start Workflow
-                  </Button>
-                </>
-              )}
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                No run yet. Review the workflow source, preview your input, then start.
+              </p>
+              <Button type="button" onClick={() => setPane("workflow")}>
+                Start Workflow
+              </Button>
             </div>
           </div>
         )}
 
         <WorkflowCodeSheet
           open={pane === "workflow"}
-          onOpenChange={(open) => setPane(open ? "workflow" : null)}
+          onOpenChange={(o) => setPane(o ? "workflow" : null)}
           workflowCode={workflowCode}
           onWorkflowCodeChange={setWorkflowCode}
           onPreviewInput={() => setPane("start")}
@@ -492,38 +350,30 @@ export default function App() {
 
         <RunStateJsonSheet
           open={pane === "state"}
-          onOpenChange={(open) => setPane(open ? "state" : null)}
+          onOpenChange={(o) => setPane(o ? "state" : null)}
           runState={runState}
         />
 
         <StartWorkflowSheet
           open={pane === "start"}
-          onOpenChange={(open) => setPane(open ? "start" : null)}
+          onOpenChange={(o) => setPane(o ? "start" : null)}
           registry={globalRegistry}
           inputValues={inputValues}
           onInputValuesChange={setInputValue}
           seedInputId={seedInputId}
           onSeedInputIdChange={setSeedInputId}
           canSubmitSeed={!runState}
-          submitting={
-            submitInputMutation.isPending &&
-            submitInputMutation.variables?.inputId === seedInputId
-          }
           onSubmitSeed={() => void runWorkflow()}
           error={pane === "start" ? payloadError || undefined : undefined}
         />
 
         <PendingInputSheet
           open={pane === "pending" && Boolean(pendingDeferredId)}
-          onOpenChange={(open) => setPane(open ? "pending" : null)}
+          onOpenChange={(o) => setPane(o ? "pending" : null)}
           registry={globalRegistry}
           pendingInputId={pendingDeferredId}
           inputValues={inputValues}
           onInputValuesChange={setInputValue}
-          submitting={
-            submitInputMutation.isPending &&
-            submitInputMutation.variables?.inputId === pendingDeferredId
-          }
           onSubmit={() => void submitDeferredInput()}
           error={pane === "pending" ? payloadError || undefined : undefined}
         />
