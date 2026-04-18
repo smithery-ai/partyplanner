@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { globalRegistry } from "@rxwf/core"
 import type { Registry, RunState } from "@rxwf/core"
 import type { ZodTypeAny } from "zod"
@@ -18,7 +18,8 @@ import { StartWorkflowSheet } from "@/components/start-workflow-sheet"
 import { RunStateJsonSheet } from "@/components/run-state-json-sheet"
 import { WorkflowCodeSheet } from "@/components/workflow-code-sheet"
 import { defaultForSchema } from "@/components/zod-schema-form"
-import { useWorkflowGraphMutation } from "@/hooks/use-workflow-graph"
+import { useWorkflow } from "@/hooks/use-workflow"
+import { LocalRuntime } from "@/lib/workflow-runtimes"
 
 import workflowRaw from "./workflow.ts?raw"
 
@@ -45,6 +46,7 @@ function findDeferredWait(
   if (!state?.nodes) return undefined
   for (const [stepId, n] of Object.entries(state.nodes)) {
     if (n.status === "waiting" && n.waitingOn) {
+      if (state.nodes[n.waitingOn]?.status === "resolved") continue
       return { stepId, inputId: n.waitingOn }
     }
   }
@@ -94,18 +96,30 @@ export default function App() {
   )
 
   const [payloadError, setPayloadError] = useState("")
-  const [runState, setRunState] = useState<RunState | undefined>()
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
 
-  const graphMutation = useWorkflowGraphMutation()
+  const runtime = useMemo(
+    () => new LocalRuntime({ registry: globalRegistry, autoDrain: false }),
+    [],
+  )
+  const workflow = useWorkflow(runtime)
+  const runState = workflow.runState
 
   const wait = findDeferredWait(runState)
   const pendingDeferredId = wait?.inputId
   const inputPending = Boolean(pendingDeferredId)
 
   const nodes = runState?.nodes ?? {}
-  const runComplete = isRunComplete(runState)
-  const canAdvance = Boolean(runState && !runComplete && !inputPending)
+  const pendingQueueItems = workflow.queue?.pending.length ?? 0
+  const hasPendingQueueWork = pendingQueueItems > 0
+  const runComplete = workflow.snapshot
+    ? workflow.snapshot.status === "completed"
+    : isRunComplete(runState)
+  const canAdvance = Boolean(
+    runState &&
+      !runComplete &&
+      (workflow.queue ? hasPendingQueueWork : !inputPending),
+  )
 
   useEffect(() => {
     if (!selectedNodeId) return
@@ -130,7 +144,7 @@ export default function App() {
   }
 
   function clearRun() {
-    setRunState(undefined)
+    workflow.clear()
     setSelectedNodeId(null)
     setInputValues(buildInitialInputValues(globalRegistry))
     setSeedInputId(firstSeedInputId(globalRegistry))
@@ -157,13 +171,11 @@ export default function App() {
     }
 
     try {
-      const result = await graphMutation.mutateAsync({
+      await workflow.start({
         workflowSource: workflowCode,
-        inputs: {
-          [seed.id]: payload,
-        },
+        inputId: seed.id,
+        payload,
       })
-      setRunState(result.state)
       setPane(null)
     } catch (e) {
       setPayloadError(
@@ -196,14 +208,12 @@ export default function App() {
     }
 
     try {
-      const result = await graphMutation.mutateAsync({
+      await workflow.submitInput({
         workflowSource: workflowCode,
         state: runState,
-        inputs: {
-          [inputId]: payload,
-        },
+        inputId,
+        payload,
       })
-      setRunState(result.state)
       setPane(null)
     } catch (e) {
       setPayloadError(
@@ -216,11 +226,10 @@ export default function App() {
     if (!runState) return
     setPayloadError("")
     try {
-      const result = await graphMutation.mutateAsync({
+      await workflow.advance({
         workflowSource: workflowCode,
         state: runState,
       })
-      setRunState(result.state)
       setPane(null)
     } catch (e) {
       setPayloadError(
@@ -296,7 +305,7 @@ export default function App() {
               size="sm"
               variant="outline"
               onClick={() => void advanceWorkflow()}
-              disabled={graphMutation.isPending}
+              disabled={workflow.isPending}
             >
               Advance
             </Button>
@@ -327,6 +336,7 @@ export default function App() {
       <div className="relative min-h-0 flex-1">
         <QueueVisualizer
           runState={runState}
+          queue={workflow.queue}
           registry={globalRegistry}
           onNodeClick={(id) => setSelectedNodeId(id)}
         />

@@ -13,6 +13,7 @@
     "@base-ui/react": "^1.4.0",
     "@fontsource-variable/geist": "^5.2.8",
     "@rxwf/core": "workspace:*",
+    "@rxwf/runtime": "workspace:*",
     "@tanstack/react-query": "^5.99.1",
     "@xyflow/react": "^12.10.2",
     "class-variance-authority": "^0.7.1",

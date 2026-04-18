@@ -54,6 +54,9 @@ importers:
       '@rxwf/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@rxwf/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@tanstack/react-query':
         specifier: ^5.99.1
         version: 5.99.1(react@19.2.5)
@@ -132,6 +135,22 @@ importers:
         version: 8.0.8(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3)
 
   packages/core:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+
+  packages/runtime:
+    dependencies:
+      '@rxwf/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       typescript:
         specifier: ^5.7.0
