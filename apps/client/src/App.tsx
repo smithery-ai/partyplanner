@@ -11,7 +11,7 @@ import {
   RefreshCw,
   SkipForward,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ZodTypeAny } from "zod";
 import {
   type NodeDetailEditor,
@@ -30,7 +30,6 @@ import { defaultForSchema } from "@/components/zod-schema-form";
 import { useWorkflow } from "@/hooks/use-workflow";
 import { loadWorkflowSourceIntoGlobalRegistry } from "@/lib/evaluate-workflow-source";
 import { cn } from "@/lib/utils";
-import { BackendRuntime } from "@/lib/workflow-runtimes";
 import type { RunSummary } from "../../backend/src/rpc";
 
 import workflowRaw from "./workflow.ts?raw";
@@ -185,8 +184,7 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [autoAdvance, setAutoAdvance] = useState(false);
 
-  const runtime = useMemo(() => new BackendRuntime(), []);
-  const workflow = useWorkflow(runtime);
+  const workflow = useWorkflow();
   const runState = workflow.runState;
 
   const wait = findDeferredWait(runState);

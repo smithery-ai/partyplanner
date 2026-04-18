@@ -6,7 +6,6 @@
     "build": "turbo run build",
     "check": "biome ci --error-on-warnings .",
     "dev": "sh scripts/dev-with-portless.sh",
-    "example": "tsx apps/backend/examples/example-backend.ts",
     "fmt": "biome check --write --unsafe .",
     "prepare": "husky",
     "test": "turbo run test"
