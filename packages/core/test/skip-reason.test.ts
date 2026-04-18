@@ -9,7 +9,7 @@ import { resetRegistry, runToIdle } from "./helpers";
 describe("skip reasons", () => {
   resetRegistry();
 
-  it("stores the optional reason from get.skip()", async () => {
+  it("stores the optional reason from get.skip(reason)", async () => {
     const request = input("request", z.object({ approved: z.boolean() }));
 
     const gated = atom(

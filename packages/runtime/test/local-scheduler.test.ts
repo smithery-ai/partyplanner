@@ -157,7 +157,7 @@ describe("LocalScheduler", () => {
         const e = get(expense);
         const risk = get(assessment);
         const decision = get(approval);
-        if (!decision.approved) return get.skip();
+        if (!decision.approved) return get.skip("Approval was denied");
         return `submitted: ${e.description} (${risk})`;
       },
       { name: "submit" },
@@ -214,7 +214,7 @@ describe("LocalScheduler", () => {
       (get) => {
         const s = get(seed);
         const a = get(approval);
-        if (!a.approved) return get.skip();
+        if (!a.approved) return get.skip("Approval was denied");
         return `approved ${s.name}`;
       },
       { name: "finish" },

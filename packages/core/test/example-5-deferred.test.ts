@@ -30,7 +30,7 @@ describe("Example 5 — Deferred input (durable workflow)", () => {
       const e = get(expense);
       const a = get(assessment);
       const decision = get(approval);
-      if (!decision.approved) return get.skip();
+      if (!decision.approved) return get.skip("Approval was denied");
       return `submitted: ${e.description} ($${e.amount}, ${a} risk)`;
     }, { name: "submit" });
 
