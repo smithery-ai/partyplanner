@@ -39,10 +39,26 @@ export type SetAutoAdvanceRequest = {
 export type RunStateDocument = RunSnapshot & {
   events: RunEvent[];
   publishedAt: number;
+  workflowSource: string;
+  autoAdvance: boolean;
+};
+
+export type RunSummary = {
+  runId: string;
+  status: RunSnapshot["status"];
+  startedAt: number;
+  publishedAt: number;
+  workflowId: string;
+  version: number;
+  nodeCount: number;
+  terminalNodeCount: number;
+  waitingOn: string[];
+  failedNodeCount: number;
 };
 
 type RunController = {
   runId: string;
+  workflowSource: string;
   workflow: WorkflowRef;
   scheduler: LocalScheduler;
   queue: MemoryWorkQueue;
@@ -55,11 +71,18 @@ type RunController = {
 export class JsonStateManager {
   private readonly documents = new Map<string, RunStateDocument>();
 
-  publish(snapshot: RunSnapshot, events: RunEvent[]): RunStateDocument {
+  publish(
+    snapshot: RunSnapshot,
+    events: RunEvent[],
+    workflowSource: string,
+    autoAdvance: boolean,
+  ): RunStateDocument {
     const document: RunStateDocument = {
       ...snapshot,
       events: structuredClone(events),
       publishedAt: Date.now(),
+      workflowSource,
+      autoAdvance,
     };
     this.documents.set(snapshot.runId, structuredClone(document));
     return document;
@@ -68,6 +91,12 @@ export class JsonStateManager {
   get(runId: string): RunStateDocument | undefined {
     const document = this.documents.get(runId);
     return document ? structuredClone(document) : undefined;
+  }
+
+  list(): RunSummary[] {
+    return [...this.documents.values()]
+      .map((document) => summarizeRun(document))
+      .sort((a, b) => b.publishedAt - a.publishedAt);
   }
 }
 
@@ -100,6 +129,7 @@ export class BackendRunManager {
     });
     const controller: RunController = {
       runId,
+      workflowSource: request.workflowSource,
       workflow,
       scheduler,
       queue,
@@ -177,6 +207,10 @@ export class BackendRunManager {
     return this.stateManager.get(runId);
   }
 
+  listRuns(): RunSummary[] {
+    return this.stateManager.list();
+  }
+
   private requireRun(runId: string): RunController {
     const controller = this.runs.get(runId);
     if (!controller) throw new Error(`Unknown run: ${runId}`);
@@ -218,6 +252,8 @@ export class BackendRunManager {
     return this.stateManager.publish(
       withFailedStatus(snapshot, controller.lastError),
       controller.events.events.filter((event) => event.runId === controller.runId),
+      controller.workflowSource,
+      controller.autoAdvance,
     );
   }
 }
@@ -268,4 +304,39 @@ function withFailedStatus(snapshot: RunSnapshot, message: string | undefined): R
     status: "failed",
     queue: failedQueue,
   };
+}
+
+function summarizeRun(document: RunStateDocument): RunSummary {
+  const waitingOn = new Set<string>();
+  let terminalNodeCount = 0;
+  let failedNodeCount = 0;
+
+  for (const node of document.nodes) {
+    if (isTerminalSummaryNode(document, node)) terminalNodeCount += 1;
+    if (node.status === "errored") failedNodeCount += 1;
+    if (node.status === "waiting" && node.waitingOn) waitingOn.add(node.waitingOn);
+  }
+
+  return {
+    runId: document.runId,
+    status: document.status,
+    startedAt: document.state.startedAt,
+    publishedAt: document.publishedAt,
+    workflowId: document.workflow.workflowId,
+    version: document.version,
+    nodeCount: document.nodes.length,
+    terminalNodeCount,
+    waitingOn: [...waitingOn],
+    failedNodeCount,
+  };
+}
+
+function isTerminalSummaryNode(
+  document: RunStateDocument,
+  node: RunStateDocument["nodes"][number],
+): boolean {
+  if (node.status === "resolved" || node.status === "skipped" || node.status === "errored") {
+    return true;
+  }
+  return document.status === "completed" && node.kind === "deferred_input";
 }

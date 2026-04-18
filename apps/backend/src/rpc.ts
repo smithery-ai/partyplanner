@@ -76,9 +76,32 @@ export type SetAutoAdvanceRequest = {
 export type RunStateDocument = RunSnapshot & {
   events: RunEvent[];
   publishedAt: number;
+  workflowSource: string;
+  autoAdvance: boolean;
+};
+
+export type RunSummary = {
+  runId: string;
+  status: RunSnapshot["status"];
+  startedAt: number;
+  publishedAt: number;
+  workflowId: string;
+  version: number;
+  nodeCount: number;
+  terminalNodeCount: number;
+  waitingOn: string[];
+  failedNodeCount: number;
 };
 
 type GraphSchema = {
+  "/runs": {
+    $get: {
+      input: {};
+      output: RunSummary[];
+      outputFormat: "json";
+      status: 200;
+    };
+  };
   "/graph": {
     $post: {
       input: {

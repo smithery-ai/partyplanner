@@ -2,11 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import type { RunState } from "@rxwf/core"
 import type { QueueSnapshot, RunEvent, RunSnapshot } from "@rxwf/runtime"
 
+import type { RunSummary } from "../../../backend/src/rpc"
 import type {
   AdvanceWorkflowArgs,
+  PollWorkflowStateArgs,
   SetAutoAdvanceWorkflowArgs,
   StartWorkflowArgs,
   SubmitWorkflowInputArgs,
+  WorkflowRuntimeResult,
   WorkflowRuntime,
 } from "@/lib/workflow-runtimes"
 
@@ -15,12 +18,15 @@ export type WorkflowState = {
   snapshot: RunSnapshot | undefined
   queue: QueueSnapshot | undefined
   events: RunEvent[]
+  runs: RunSummary[]
   isPending: boolean
   error: Error | undefined
-  start(args: StartWorkflowArgs): Promise<void>
-  submitInput(args: SubmitWorkflowInputArgs): Promise<void>
-  advance(args: AdvanceWorkflowArgs): Promise<void>
-  setAutoAdvance(args: SetAutoAdvanceWorkflowArgs): Promise<void>
+  start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult>
+  submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>
+  advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>
+  setAutoAdvance(args: SetAutoAdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>
+  loadRun(args: PollWorkflowStateArgs): Promise<WorkflowRuntimeResult>
+  refreshRuns(): Promise<void>
   clear(): void
 }
 
@@ -30,6 +36,7 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
   const [snapshot, setSnapshot] = useState<RunSnapshot | undefined>()
   const [queue, setQueue] = useState<QueueSnapshot | undefined>()
   const [events, setEvents] = useState<RunEvent[]>([])
+  const [runs, setRuns] = useState<RunSummary[]>([])
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState<Error | undefined>()
   const pollingRef = useRef(false)
@@ -44,6 +51,20 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
     [],
   )
 
+  const refreshRuns = useCallback(async () => {
+    const listRuns = runtimeRef.current.listRuns
+    if (!listRuns) {
+      setRuns([])
+      return
+    }
+
+    try {
+      setRuns(await listRuns.call(runtimeRef.current))
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error(String(e)))
+    }
+  }, [])
+
   const run = useCallback(
     async <TArgs,>(
       action: (runtime: WorkflowRuntime, args: TArgs) => Promise<Awaited<ReturnType<WorkflowRuntime["start"]>>>,
@@ -52,7 +73,10 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
       setIsPending(true)
       setError(undefined)
       try {
-        applyResult(await action(runtimeRef.current, args))
+        const result = await action(runtimeRef.current, args)
+        applyResult(result)
+        void refreshRuns()
+        return result
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e))
         setError(err)
@@ -61,7 +85,7 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
         setIsPending(false)
       }
     },
-    [applyResult],
+    [applyResult, refreshRuns],
   )
 
   const start = useCallback(
@@ -86,6 +110,15 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
     [run],
   )
 
+  const loadRun = useCallback(
+    (args: PollWorkflowStateArgs) =>
+      run((runtime, next) => {
+        if (!runtime.getState) throw new Error("This runtime cannot load runs.")
+        return runtime.getState(next)
+      }, args),
+    [run],
+  )
+
   const clear = useCallback(() => {
     runtimeRef.current.reset?.()
     setRunState(undefined)
@@ -95,6 +128,10 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
     setError(undefined)
     setIsPending(false)
   }, [])
+
+  useEffect(() => {
+    void refreshRuns()
+  }, [refreshRuns])
 
   useEffect(() => {
     const runtime = runtimeRef.current
@@ -108,7 +145,10 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
       pollingRef.current = true
       try {
         const result = await getState.call(runtime, { runId })
-        if (!cancelled) applyResult(result)
+        if (!cancelled) {
+          applyResult(result)
+          void refreshRuns()
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e : new Error(String(e)))
       } finally {
@@ -123,19 +163,22 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [applyResult, runState?.runId])
+  }, [applyResult, refreshRuns, runState?.runId])
 
   return {
     runState,
     snapshot,
     queue,
     events,
+    runs,
     isPending,
     error,
     start,
     submitInput,
     advance,
     setAutoAdvance,
+    loadRun,
+    refreshRuns,
     clear,
   }
 }

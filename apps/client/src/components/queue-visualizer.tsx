@@ -748,6 +748,7 @@ function FlowInner({
 
   return (
     <Canvas
+      className="[&_.react-flow__node:not(.dragging)]:transition-transform [&_.react-flow__node:not(.dragging)]:duration-300 [&_.react-flow__node:not(.dragging)]:ease-out"
       nodes={nodes}
       edges={edges}
       nodeTypes={nodeTypes}
