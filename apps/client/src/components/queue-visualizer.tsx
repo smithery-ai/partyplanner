@@ -8,6 +8,8 @@ import {
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useNodesInitialized,
+  useReactFlow,
 } from "@xyflow/react"
 import { useEffect, useMemo, useRef, useState } from "react"
 
@@ -649,7 +651,12 @@ function FlowInner({
   onNodeClick?: (nodeId: string) => void
 }) {
   const [legendOpen, setLegendOpen] = useState(false)
+  const [fitViewRevision, setFitViewRevision] = useState(0)
   const prevEdgeSigRef = useRef<string | null>(null)
+  const prevNodeIdsRef = useRef<Set<string> | null>(null)
+  const lastFitViewRevisionRef = useRef(0)
+  const nodesInitialized = useNodesInitialized()
+  const { fitView } = useReactFlow()
 
   const visibleIds = useMemo(
     () => visibleWorkflowNodeIds(registry, runState, queue),
@@ -698,7 +705,14 @@ function FlowInner({
   useEffect(() => {
     const isFirst = prevEdgeSigRef.current === null
     const edgesChanged = !isFirst && prevEdgeSigRef.current !== edgeSig
+    const prevNodeIds = prevNodeIdsRef.current
+    const nextNodeIds = new Set(nextNodes.map((node) => node.id))
+    const nodeIdsChanged =
+      prevNodeIds === null ||
+      prevNodeIds.size !== nextNodeIds.size ||
+      nextNodes.some((node) => !prevNodeIds.has(node.id))
     prevEdgeSigRef.current = edgeSig
+    prevNodeIdsRef.current = nextNodeIds
 
     setNodes((current) => {
       if (isFirst || edgesChanged) return nextNodes
@@ -708,7 +722,29 @@ function FlowInner({
       })
     })
     setEdges(nextEdges)
+
+    if (nextNodes.length > 0 && (isFirst || edgesChanged || nodeIdsChanged)) {
+      setFitViewRevision((revision) => revision + 1)
+    }
   }, [nextNodes, nextEdges, edgeSig, setNodes, setEdges])
+
+  useEffect(() => {
+    if (
+      fitViewRevision === 0 ||
+      fitViewRevision === lastFitViewRevisionRef.current ||
+      nodes.length === 0 ||
+      !nodesInitialized
+    ) {
+      return
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      void fitView({ padding: 0.2, duration: 350 })
+      lastFitViewRevisionRef.current = fitViewRevision
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [fitView, fitViewRevision, nodes.length, nodesInitialized])
 
   return (
     <Canvas
