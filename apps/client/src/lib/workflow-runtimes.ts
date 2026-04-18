@@ -14,6 +14,8 @@ import {
 
 import type {
   RunStateDocument,
+  RunSummary,
+  SetAutoAdvanceRequest,
   StartBackendRunRequest,
   SubmitBackendInputRequest,
 } from "../../../backend/src/rpc";
@@ -23,12 +25,15 @@ export type WorkflowRuntimeResult = {
   snapshot?: RunSnapshot;
   queue?: QueueSnapshot;
   events?: RunEvent[];
+  workflowSource?: string;
+  autoAdvance?: boolean;
 };
 
 export type StartWorkflowArgs = {
   workflowSource: string;
   inputId: string;
   payload: unknown;
+  autoAdvance?: boolean;
 };
 
 export type SubmitWorkflowInputArgs = {
@@ -36,11 +41,17 @@ export type SubmitWorkflowInputArgs = {
   state?: RunState;
   inputId: string;
   payload: unknown;
+  autoAdvance?: boolean;
 };
 
 export type AdvanceWorkflowArgs = {
   workflowSource: string;
   state?: RunState;
+};
+
+export type SetAutoAdvanceWorkflowArgs = {
+  state?: RunState;
+  autoAdvance: boolean;
 };
 
 export type PollWorkflowStateArgs = {
@@ -51,6 +62,10 @@ export interface WorkflowRuntime {
   start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult>;
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>;
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>;
+  setAutoAdvance(
+    args: SetAutoAdvanceWorkflowArgs,
+  ): Promise<WorkflowRuntimeResult>;
+  listRuns?(): Promise<RunSummary[]>;
   getState?(args: PollWorkflowStateArgs): Promise<WorkflowRuntimeResult>;
   reset?(): void;
 }
@@ -58,6 +73,10 @@ export interface WorkflowRuntime {
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "http://localhost:8787";
 
 export class BackendRuntime implements WorkflowRuntime {
+  async listRuns(): Promise<RunSummary[]> {
+    return this.get<RunSummary[]>("/runs");
+  }
+
   async start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult> {
     const document = await this.post<StartBackendRunRequest, RunStateDocument>(
       "/runs",
@@ -65,6 +84,7 @@ export class BackendRuntime implements WorkflowRuntime {
         workflowSource: args.workflowSource,
         inputId: args.inputId,
         payload: args.payload,
+        autoAdvance: args.autoAdvance,
       },
     );
     return documentResult(document);
@@ -81,6 +101,7 @@ export class BackendRuntime implements WorkflowRuntime {
     >(`/runs/${encodeURIComponent(args.state.runId)}/inputs`, {
       inputId: args.inputId,
       payload: args.payload,
+      autoAdvance: args.autoAdvance,
     });
     return documentResult(document);
   }
@@ -90,6 +111,20 @@ export class BackendRuntime implements WorkflowRuntime {
     const document = await this.post<Record<string, never>, RunStateDocument>(
       `/runs/${encodeURIComponent(args.state.runId)}/advance`,
       {},
+    );
+    return documentResult(document);
+  }
+
+  async setAutoAdvance(
+    args: SetAutoAdvanceWorkflowArgs,
+  ): Promise<WorkflowRuntimeResult> {
+    if (!args.state)
+      throw new Error("Cannot change advance mode before a run exists.");
+    const document = await this.post<SetAutoAdvanceRequest, RunStateDocument>(
+      `/runs/${encodeURIComponent(args.state.runId)}/auto-advance`,
+      {
+        autoAdvance: args.autoAdvance,
+      },
     );
     return documentResult(document);
   }
@@ -136,6 +171,8 @@ function documentResult(document: RunStateDocument): WorkflowRuntimeResult {
     snapshot: document,
     queue: document.queue,
     events: document.events,
+    workflowSource: document.workflowSource,
+    autoAdvance: document.autoAdvance,
   };
 }
 
@@ -148,7 +185,7 @@ export type LocalRuntimeOptions = {
 export class LocalRuntime implements WorkflowRuntime {
   private readonly registry: Registry;
   private readonly workflow: WorkflowRef;
-  private readonly autoDrain: boolean;
+  private autoAdvance: boolean;
   private events = new MemoryEventSink();
   private scheduler: LocalScheduler;
 
@@ -158,7 +195,7 @@ export class LocalRuntime implements WorkflowRuntime {
       workflowId: "client-workflow",
       version: "local",
     };
-    this.autoDrain = options.autoDrain ?? true;
+    this.autoAdvance = options.autoDrain ?? true;
     this.scheduler = this.createScheduler();
   }
 
@@ -168,6 +205,7 @@ export class LocalRuntime implements WorkflowRuntime {
   }
 
   async start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult> {
+    this.applyAutoAdvance(args.autoAdvance);
     const snapshot = await this.scheduler.startRun({
       workflow: this.workflow,
       input: {
@@ -183,15 +221,14 @@ export class LocalRuntime implements WorkflowRuntime {
   ): Promise<WorkflowRuntimeResult> {
     if (!args.state)
       throw new Error("Cannot submit input before a run exists.");
+    this.applyAutoAdvance(args.autoAdvance);
     const snapshot = await this.scheduler.submitInput({
       runId: args.state.runId,
       workflow: this.workflow,
       inputId: args.inputId,
       payload: args.payload,
     });
-    if (this.autoDrain) return this.finalize(snapshot.runId, snapshot);
-    await this.scheduler.processNext();
-    return this.result(await this.scheduler.snapshot(snapshot.runId));
+    return this.finalize(snapshot.runId, snapshot);
   }
 
   async advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult> {
@@ -201,11 +238,21 @@ export class LocalRuntime implements WorkflowRuntime {
     return this.result(snapshot);
   }
 
+  async setAutoAdvance(
+    args: SetAutoAdvanceWorkflowArgs,
+  ): Promise<WorkflowRuntimeResult> {
+    if (!args.state)
+      throw new Error("Cannot change advance mode before a run exists.");
+    this.autoAdvance = args.autoAdvance;
+    const snapshot = await this.scheduler.snapshot(args.state.runId);
+    return this.finalize(snapshot.runId, snapshot);
+  }
+
   private async finalize(
     runId: string,
     snapshot: RunSnapshot,
   ): Promise<WorkflowRuntimeResult> {
-    if (this.autoDrain) {
+    if (this.autoAdvance) {
       await this.scheduler.drain();
       return this.result(await this.scheduler.snapshot(runId));
     }
@@ -235,5 +282,9 @@ export class LocalRuntime implements WorkflowRuntime {
       events: this.events,
       executor: new RuntimeExecutor(),
     });
+  }
+
+  private applyAutoAdvance(autoAdvance: boolean | undefined): void {
+    if (autoAdvance !== undefined) this.autoAdvance = autoAdvance;
   }
 }

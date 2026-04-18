@@ -60,19 +60,48 @@ export type StartBackendRunRequest = {
   inputId: string;
   payload: unknown;
   runId?: string;
+  autoAdvance?: boolean;
 };
 
 export type SubmitBackendInputRequest = {
   inputId: string;
   payload: unknown;
+  autoAdvance?: boolean;
+};
+
+export type SetAutoAdvanceRequest = {
+  autoAdvance: boolean;
 };
 
 export type RunStateDocument = RunSnapshot & {
   events: RunEvent[];
   publishedAt: number;
+  workflowSource: string;
+  autoAdvance: boolean;
+};
+
+export type RunSummary = {
+  runId: string;
+  status: RunSnapshot["status"];
+  startedAt: number;
+  publishedAt: number;
+  workflowId: string;
+  version: number;
+  nodeCount: number;
+  terminalNodeCount: number;
+  waitingOn: string[];
+  failedNodeCount: number;
 };
 
 type GraphSchema = {
+  "/runs": {
+    $get: {
+      input: Record<string, never>;
+      output: RunSummary[];
+      outputFormat: "json";
+      status: 200;
+    };
+  };
   "/graph": {
     $post: {
       input: {

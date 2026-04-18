@@ -231,6 +231,8 @@ export function createApp() {
   );
   app.get("/health", (c) => c.json({ ok: true }));
 
+  app.get("/runs", (c) => c.json(runManager.listRuns(), 200));
+
   app.post("/runs", async (c) => {
     try {
       const body = await c.req.json();
@@ -256,6 +258,20 @@ export function createApp() {
   app.post("/runs/:runId/advance", async (c) => {
     try {
       const response = await runManager.advanceRun(c.req.param("runId"));
+      return c.json(response, 200);
+    } catch (e) {
+      const err = e as Error;
+      return c.json({ message: err.message }, 400);
+    }
+  });
+
+  app.post("/runs/:runId/auto-advance", async (c) => {
+    try {
+      const body = await c.req.json();
+      const response = await runManager.setAutoAdvance(
+        c.req.param("runId"),
+        body,
+      );
       return c.json(response, 200);
     } catch (e) {
       const err = e as Error;

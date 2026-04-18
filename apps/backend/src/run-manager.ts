@@ -23,24 +23,47 @@ export type StartBackendRunRequest = {
   inputId: string;
   payload: unknown;
   runId?: string;
+  autoAdvance?: boolean;
 };
 
 export type SubmitBackendInputRequest = {
   inputId: string;
   payload: unknown;
+  autoAdvance?: boolean;
+};
+
+export type SetAutoAdvanceRequest = {
+  autoAdvance: boolean;
 };
 
 export type RunStateDocument = RunSnapshot & {
   events: RunEvent[];
   publishedAt: number;
+  workflowSource: string;
+  autoAdvance: boolean;
+};
+
+export type RunSummary = {
+  runId: string;
+  status: RunSnapshot["status"];
+  startedAt: number;
+  publishedAt: number;
+  workflowId: string;
+  version: number;
+  nodeCount: number;
+  terminalNodeCount: number;
+  waitingOn: string[];
+  failedNodeCount: number;
 };
 
 type RunController = {
   runId: string;
+  workflowSource: string;
   workflow: WorkflowRef;
   scheduler: LocalScheduler;
   queue: MemoryWorkQueue;
   events: MemoryEventSink;
+  autoAdvance: boolean;
   processing: boolean;
   lastError?: string;
 };
@@ -48,11 +71,18 @@ type RunController = {
 export class JsonStateManager {
   private readonly documents = new Map<string, RunStateDocument>();
 
-  publish(snapshot: RunSnapshot, events: RunEvent[]): RunStateDocument {
+  publish(
+    snapshot: RunSnapshot,
+    events: RunEvent[],
+    workflowSource: string,
+    autoAdvance: boolean,
+  ): RunStateDocument {
     const document: RunStateDocument = {
       ...snapshot,
       events: structuredClone(events),
       publishedAt: Date.now(),
+      workflowSource,
+      autoAdvance,
     };
     this.documents.set(snapshot.runId, structuredClone(document));
     return document;
@@ -61,6 +91,12 @@ export class JsonStateManager {
   get(runId: string): RunStateDocument | undefined {
     const document = this.documents.get(runId);
     return document ? structuredClone(document) : undefined;
+  }
+
+  list(): RunSummary[] {
+    return [...this.documents.values()]
+      .map((document) => summarizeRun(document))
+      .sort((a, b) => b.publishedAt - a.publishedAt);
   }
 }
 
@@ -93,10 +129,12 @@ export class BackendRunManager {
     });
     const controller: RunController = {
       runId,
+      workflowSource: request.workflowSource,
       workflow,
       scheduler,
       queue,
       events,
+      autoAdvance: request.autoAdvance ?? true,
       processing: false,
     };
     this.runs.set(runId, controller);
@@ -110,7 +148,7 @@ export class BackendRunManager {
       },
     });
     const document = await this.publishSnapshot(controller);
-    this.kickProcessing(controller);
+    if (controller.autoAdvance) this.kickProcessing(controller);
     return document;
   }
 
@@ -119,6 +157,9 @@ export class BackendRunManager {
     request: SubmitBackendInputRequest,
   ): Promise<RunStateDocument> {
     const controller = this.requireRun(runId);
+    if (request.autoAdvance !== undefined) {
+      controller.autoAdvance = request.autoAdvance;
+    }
     await controller.scheduler.submitInput({
       runId,
       workflow: controller.workflow,
@@ -126,18 +167,48 @@ export class BackendRunManager {
       payload: request.payload,
     });
     const document = await this.publishSnapshot(controller);
-    this.kickProcessing(controller);
+    if (controller.autoAdvance) this.kickProcessing(controller);
     return document;
   }
 
   async advanceRun(runId: string): Promise<RunStateDocument> {
     const controller = this.requireRun(runId);
-    this.kickProcessing(controller);
+    controller.autoAdvance = false;
+    if (controller.processing) return this.publishSnapshot(controller);
+
+    controller.processing = true;
+    try {
+      if ((await controller.queue.size()) > 0) {
+        await controller.scheduler.processNext();
+      }
+      return await this.publishSnapshot(controller);
+    } catch (e) {
+      controller.lastError = e instanceof Error ? e.message : String(e);
+      return await this.publishSnapshot(controller);
+    } finally {
+      controller.processing = false;
+      if (controller.autoAdvance && (await controller.queue.size()) > 0) {
+        this.kickProcessing(controller);
+      }
+    }
+  }
+
+  async setAutoAdvance(
+    runId: string,
+    request: SetAutoAdvanceRequest,
+  ): Promise<RunStateDocument> {
+    const controller = this.requireRun(runId);
+    controller.autoAdvance = request.autoAdvance;
+    if (controller.autoAdvance) this.kickProcessing(controller);
     return this.publishSnapshot(controller);
   }
 
   getState(runId: string): RunStateDocument | undefined {
     return this.stateManager.get(runId);
+  }
+
+  listRuns(): RunSummary[] {
+    return this.stateManager.list();
   }
 
   private requireRun(runId: string): RunController {
@@ -147,12 +218,13 @@ export class BackendRunManager {
   }
 
   private kickProcessing(controller: RunController): void {
+    if (!controller.autoAdvance) return;
     if (controller.processing) return;
     controller.processing = true;
 
     void (async () => {
       try {
-        while ((await controller.queue.size()) > 0) {
+        while (controller.autoAdvance && (await controller.queue.size()) > 0) {
           await controller.scheduler.processNext();
           await this.publishSnapshot(controller);
         }
@@ -162,8 +234,9 @@ export class BackendRunManager {
         await this.publishSnapshot(controller);
       } finally {
         controller.processing = false;
-        if ((await controller.queue.size()) > 0)
+        if (controller.autoAdvance && (await controller.queue.size()) > 0) {
           this.kickProcessing(controller);
+        }
       }
     })();
   }
@@ -186,6 +259,8 @@ export class BackendRunManager {
       controller.events.events.filter(
         (event) => event.runId === controller.runId,
       ),
+      controller.workflowSource,
+      controller.autoAdvance,
     );
   }
 }
@@ -244,4 +319,44 @@ function withFailedStatus(
     status: "failed",
     queue: failedQueue,
   };
+}
+
+function summarizeRun(document: RunStateDocument): RunSummary {
+  const waitingOn = new Set<string>();
+  let terminalNodeCount = 0;
+  let failedNodeCount = 0;
+
+  for (const node of document.nodes) {
+    if (isTerminalSummaryNode(document, node)) terminalNodeCount += 1;
+    if (node.status === "errored") failedNodeCount += 1;
+    if (node.status === "waiting" && node.waitingOn)
+      waitingOn.add(node.waitingOn);
+  }
+
+  return {
+    runId: document.runId,
+    status: document.status,
+    startedAt: document.state.startedAt,
+    publishedAt: document.publishedAt,
+    workflowId: document.workflow.workflowId,
+    version: document.version,
+    nodeCount: document.nodes.length,
+    terminalNodeCount,
+    waitingOn: [...waitingOn],
+    failedNodeCount,
+  };
+}
+
+function isTerminalSummaryNode(
+  document: RunStateDocument,
+  node: RunStateDocument["nodes"][number],
+): boolean {
+  if (
+    node.status === "resolved" ||
+    node.status === "skipped" ||
+    node.status === "errored"
+  ) {
+    return true;
+  }
+  return document.status === "completed" && node.kind === "deferred_input";
 }
