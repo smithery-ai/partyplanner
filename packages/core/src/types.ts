@@ -9,7 +9,7 @@ export interface Get {
   maybe<T>(source: Handle<T>): T | undefined;
 
   /** Explicitly skip the current step. */
-  skip(): never;
+  skip(reason?: string): never;
 }
 
 export type NodeStatus =
@@ -28,6 +28,7 @@ export type NodeRecord = {
   duration_ms: number;
   blockedOn?: string;
   waitingOn?: string;
+  skipReason?: string;
   attempts: number;
 };
 
@@ -63,7 +64,7 @@ export type DispatchResult = {
 
 export type StepResolvedEvent = { id: string; value: unknown; duration_ms: number };
 export type StepErroredEvent = { id: string; error: Error };
-export type StepSkippedEvent = { id: string };
+export type StepSkippedEvent = { id: string; reason?: string };
 export type StepWaitingEvent = { id: string; waitingOn: string };
 export type StepBlockedEvent = { id: string; blockedOn: string };
 

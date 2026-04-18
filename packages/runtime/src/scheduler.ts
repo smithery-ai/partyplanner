@@ -269,7 +269,7 @@ function recordEvent(runId: string, nodeId: string, record: NodeRecord): RunEven
     case "resolved":
       return { type: "node_resolved", runId, nodeId, at: Date.now() };
     case "skipped":
-      return { type: "node_skipped", runId, nodeId, at: Date.now() };
+      return { type: "node_skipped", runId, nodeId, reason: record.skipReason, at: Date.now() };
     case "waiting":
       return {
         type: "node_waiting",
@@ -320,6 +320,7 @@ function buildGraphNodes(
       deps: rec.deps,
       blockedOn: rec.blockedOn,
       waitingOn: rec.waitingOn,
+      skipReason: rec.skipReason,
       attempts: rec.attempts,
     };
   });

@@ -51,6 +51,7 @@ export type GraphNode = {
   deps: string[];
   blockedOn?: string;
   waitingOn?: string;
+  skipReason?: string;
   attempts: number;
 };
 
@@ -108,6 +109,7 @@ const NodeRecordSchema = z
     duration_ms: z.number(),
     blockedOn: z.string().optional(),
     waitingOn: z.string().optional(),
+    skipReason: z.string().optional(),
     attempts: z.number(),
   })
   .openapi("NodeRecord");
@@ -147,6 +149,7 @@ const GraphNodeSchema = z
     deps: z.array(z.string()),
     blockedOn: z.string().optional(),
     waitingOn: z.string().optional(),
+    skipReason: z.string().optional(),
     attempts: z.number(),
   })
   .openapi("GraphNode");
@@ -425,8 +428,8 @@ async function runAtomShallow(
           throw e;
         }
       },
-      skip: (): never => {
-        throw new SkipError(def.id);
+      skip: (reason?: string): never => {
+        throw new SkipError(def.id, reason);
       },
     },
   );
@@ -436,7 +439,9 @@ async function runAtomShallow(
     state.nodes[def.id] = nodeRecord("resolved", deps, start, prev, { value });
   } catch (e) {
     if (e instanceof SkipError) {
-      state.nodes[def.id] = nodeRecord("skipped", deps, start, prev);
+      state.nodes[def.id] = nodeRecord("skipped", deps, start, prev, {
+        skipReason: e.reason,
+      });
     } else if (e instanceof WaitError) {
       registerWaiter(state, e.inputId, def.id);
       state.nodes[def.id] = nodeRecord("waiting", deps, start, prev, { waitingOn: e.inputId });
@@ -468,7 +473,7 @@ function readValueShallow(
 ): unknown {
   const existing = readState.nodes[depId];
   if (existing?.status === "resolved") return existing.value;
-  if (existing?.status === "skipped") throw new SkipError(depId);
+  if (existing?.status === "skipped") throw new SkipError(depId, existing.skipReason);
   if (existing?.status === "waiting") throw new WaitError(existing.waitingOn!);
   if (existing?.status === "blocked") throw new NotReadyError(existing.blockedOn!);
   if (existing?.status === "errored") {
@@ -532,6 +537,7 @@ function buildGraphNodes(state: RunState, touched: Set<string>): GraphNode[] {
       deps: rec.deps,
       blockedOn: rec.blockedOn,
       waitingOn: rec.waitingOn,
+      skipReason: rec.skipReason,
       attempts: rec.attempts,
     };
   });

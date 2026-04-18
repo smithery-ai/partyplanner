@@ -263,7 +263,7 @@ export type RunEvent =
   | { type: "node_started"; runId: string; nodeId: string; at: number }
   | { type: "edge_discovered"; runId: string; source: string; target: string; at: number }
   | { type: "node_resolved"; runId: string; nodeId: string; at: number }
-  | { type: "node_skipped"; runId: string; nodeId: string; at: number }
+  | { type: "node_skipped"; runId: string; nodeId: string; reason?: string; at: number }
   | { type: "node_waiting"; runId: string; nodeId: string; waitingOn: string; at: number }
   | { type: "node_blocked"; runId: string; nodeId: string; blockedOn: string; at: number }
   | { type: "node_errored"; runId: string; nodeId: string; message: string; at: number }

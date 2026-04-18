@@ -143,8 +143,8 @@ class RunSession {
             throw e;
           }
         },
-        skip: (): never => {
-          throw new SkipError(def.id);
+        skip: (reason?: string): never => {
+          throw new SkipError(def.id, reason);
         },
       }
     );
@@ -170,9 +170,10 @@ class RunSession {
           status: "skipped",
           deps,
           duration_ms,
+          skipReason: e.reason,
           attempts: (prev?.attempts ?? 0) + 1,
         };
-        this.opts.onStepSkipped?.({ id: def.id });
+        this.opts.onStepSkipped?.({ id: def.id, reason: e.reason });
         throw e;
       }
       if (e instanceof WaitError) {
@@ -212,7 +213,7 @@ class RunSession {
   private readValue(readerStepId: string, depId: string): unknown {
     const existing = this.state.nodes[depId];
     if (existing?.status === "resolved") return existing.value;
-    if (existing?.status === "skipped") throw new SkipError(depId);
+    if (existing?.status === "skipped") throw new SkipError(depId, existing.skipReason);
     if (existing?.status === "waiting") throw new WaitError(existing.waitingOn!);
     if (existing?.status === "errored") {
       throw Object.assign(new Error(existing.error!.message), {
