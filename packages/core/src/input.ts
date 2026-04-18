@@ -1,5 +1,5 @@
 import type { ZodSchema } from "zod";
-import { globalRegistry } from "./registry";
+import { getActiveRegistry } from "./registry";
 import { makeHandle, type Input, type DeferredInput } from "./handles";
 
 export function input<T>(
@@ -7,7 +7,7 @@ export function input<T>(
   schema: ZodSchema<T>,
   opts?: { description?: string }
 ): Input<T> {
-  globalRegistry.registerInput({
+  getActiveRegistry().registerInput({
     kind: "input",
     id: name,
     schema: schema as ZodSchema<unknown>,
@@ -21,7 +21,7 @@ input.deferred = function deferred<T>(
   schema: ZodSchema<T>,
   opts?: { description?: string }
 ): DeferredInput<T> {
-  globalRegistry.registerInput({
+  getActiveRegistry().registerInput({
     kind: "deferred_input",
     id: name,
     schema: schema as ZodSchema<unknown>,

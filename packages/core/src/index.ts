@@ -21,5 +21,5 @@ export type {
   StepWaitingEvent,
   StepBlockedEvent,
 } from "./types";
-export { globalRegistry, Registry } from "./registry";
+export { globalRegistry, Registry, setActiveRegistry, getActiveRegistry } from "./registry";
 export type { InputDef, AtomDef } from "./registry";

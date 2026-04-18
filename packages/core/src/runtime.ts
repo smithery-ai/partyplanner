@@ -213,7 +213,10 @@ class RunSession {
     const existing = this.state.nodes[depId];
     if (existing?.status === "resolved") return existing.value;
     if (existing?.status === "skipped") throw new SkipError(depId);
-    if (existing?.status === "waiting") throw new WaitError(existing.waitingOn!);
+    if (existing?.status === "waiting") {
+      this.registerWaiter(depId, readerStepId);
+      throw new WaitError(existing.waitingOn!);
+    }
     if (existing?.status === "errored") {
       throw Object.assign(new Error(existing.error!.message), {
         stack: existing.error!.stack,

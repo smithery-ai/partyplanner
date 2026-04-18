@@ -1,0 +1,123 @@
+{
+  "runId": "run-1776535745890",
+  "startedAt": 1776535745890,
+  "inputs": {
+    "provider": {
+      "name": "Acme MCP",
+      "openapiUrl": "",
+      "mcpUrl": "https://mcp.acme.dev",
+      "hasDcr": true
+    }
+  },
+  "nodes": {
+    "provider": {
+      "status": "resolved",
+      "value": {
+        "name": "Acme MCP",
+        "openapiUrl": "",
+        "mcpUrl": "https://mcp.acme.dev",
+        "hasDcr": true
+      },
+      "deps": [],
+      "duration_ms": 0,
+      "attempts": 1
+    },
+    "assess": {
+      "status": "resolved",
+      "value": "dcr-proxy",
+      "deps": [
+        "provider"
+      ],
+      "duration_ms": 0,
+      "attempts": 1
+    },
+    "dcrProxy": {
+      "status": "resolved",
+      "value": {
+        "action": "publish-dcr",
+        "mcpUrl": "https://mcp.acme.dev",
+        "provider": "Acme MCP"
+      },
+      "deps": [
+        "assess",
+        "provider"
+      ],
+      "duration_ms": 0,
+      "attempts": 1
+    },
+    "oauthProxy": {
+      "status": "skipped",
+      "deps": [
+        "assess"
+      ],
+      "duration_ms": 0,
+      "attempts": 1
+    },
+    "buildSpec": {
+      "status": "skipped",
+      "deps": [
+        "assess"
+      ],
+      "duration_ms": 0,
+      "attempts": 1
+    },
+    "applyOverlay": {
+      "status": "skipped",
+      "deps": [
+        "buildSpec"
+      ],
+      "duration_ms": 0,
+      "attempts": 1
+    },
+    "deployTest": {
+      "status": "skipped",
+      "deps": [
+        "applyOverlay"
+      ],
+      "duration_ms": 0,
+      "attempts": 1
+    },
+    "scanTools": {
+      "status": "skipped",
+      "deps": [
+        "deployTest"
+      ],
+      "duration_ms": 0,
+      "attempts": 1
+    },
+    "deployProd": {
+      "status": "waiting",
+      "deps": [
+        "assess",
+        "dcrProxy",
+        "prodApproval"
+      ],
+      "duration_ms": 0,
+      "waitingOn": "prodApproval",
+      "attempts": 1
+    }
+  },
+  "waiters": {
+    "prodApproval": [
+      "deployProd"
+    ]
+  },
+  "processedEventIds": {
+    "evt-1776535745890-2d3yxr": true,
+    "06bfc114-7bff-45b3-afce-e76e6d1a3fff": true,
+    "2ee363a7-ab0f-4f77-814e-bcbb090b099f": true,
+    "d9674f51-44d2-4527-bca2-df410ee78ee0": true,
+    "eeaa2fd0-e4c3-4977-91a7-e665c2018a54": true,
+    "fb8694b2-83ef-4f2b-b7ad-87f77c990a23": true,
+    "f1e0f198-a094-4540-bd19-c100d5d9b7f1": true,
+    "46ffdf85-799c-4b1b-8eab-5bd06d393f6b": true,
+    "862b6f5d-8a95-4840-8cf7-5a60abae9a2c": true
+  },
+  "trigger": "provider",
+  "payload": {
+    "name": "Acme MCP",
+    "openapiUrl": "",
+    "mcpUrl": "https://mcp.acme.dev",
+    "hasDcr": true
+  }
+}

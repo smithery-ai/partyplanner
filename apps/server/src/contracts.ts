@@ -36,20 +36,61 @@ export const runStateSchema = z.object({
   processedEventIds: z.record(z.string(), z.literal(true)),
 })
 
-export const workflowSessionSchema = z.object({
-  runId: z.string(),
-  eventCounter: z.number().int().nonnegative(),
-  runState: runStateSchema.nullable(),
-})
-
-export const submitInputSchema = z.object({
-  inputId: z.string(),
-  payload: z.unknown(),
-})
-
 export const errorResponseSchema = z.object({
   error: z.string(),
 })
 
-export type WorkflowSession = z.infer<typeof workflowSessionSchema>
-export type SubmitInputRequest = z.infer<typeof submitInputSchema>
+// ── Workflow file management ────────────────────────────────
+
+export const workflowFileSchema = z.object({
+  filename: z.string(),
+  code: z.string(),
+})
+
+export const workflowFileListSchema = z.object({
+  files: z.array(z.string()),
+})
+
+export const updateWorkflowCodeSchema = z.object({
+  code: z.string(),
+})
+
+// ── Stateless process endpoint ──────────────────────────────
+
+export const processRequestSchema = z.object({
+  runState: runStateSchema.nullable(),
+  inputId: z.string(),
+  payload: z.unknown(),
+})
+
+export const processResponseSchema = z.object({
+  runState: runStateSchema,
+})
+
+export type WorkflowFile = z.infer<typeof workflowFileSchema>
+export type WorkflowFileList = z.infer<typeof workflowFileListSchema>
+export type UpdateWorkflowCode = z.infer<typeof updateWorkflowCodeSchema>
+// ── Run history ─────────────────────────────────────────────
+
+export const runSummarySchema = z.object({
+  runId: z.string(),
+  filename: z.string(),
+  startedAt: z.number(),
+  nodeCount: z.number(),
+  complete: z.boolean(),
+})
+
+export const runListResponseSchema = z.object({
+  runs: z.array(runSummarySchema),
+})
+
+export const runDetailResponseSchema = z.object({
+  runState: runStateSchema,
+})
+
+export type ProcessRequest = z.infer<typeof processRequestSchema>
+export type ProcessResponse = z.infer<typeof processResponseSchema>
+export type RunState = z.infer<typeof runStateSchema>
+export type RunSummary = z.infer<typeof runSummarySchema>
+export type RunListResponse = z.infer<typeof runListResponseSchema>
+export type RunDetailResponse = z.infer<typeof runDetailResponseSchema>

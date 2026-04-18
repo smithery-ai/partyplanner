@@ -1,26 +1,15 @@
 {
   "runId": "run-1",
-  "eventCounter": 2,
+  "eventCounter": 1,
   "runState": {
     "runId": "run-1",
-    "startedAt": 1776511126007,
-    "trigger": "provider",
-    "payload": {
-      "name": "Acme MCP",
-      "openapiUrl": "",
-      "mcpUrl": "https://mcp.acme.dev",
-      "hasDcr": true
-    },
+    "startedAt": 1776511866228,
     "inputs": {
       "provider": {
         "name": "Acme MCP",
         "openapiUrl": "",
         "mcpUrl": "https://mcp.acme.dev",
         "hasDcr": true
-      },
-      "prodApproval": {
-        "approved": false,
-        "confirmCode": ""
       }
     },
     "nodes": {
@@ -88,7 +77,7 @@
         "deps": [
           "applyOverlay"
         ],
-        "duration_ms": 0,
+        "duration_ms": 1,
         "attempts": 1
       },
       "scanTools": {
@@ -100,39 +89,39 @@
         "attempts": 1
       },
       "deployProd": {
-        "status": "skipped",
+        "status": "waiting",
         "deps": [
           "assess",
           "dcrProxy",
           "prodApproval"
         ],
         "duration_ms": 0,
-        "attempts": 2
-      },
-      "prodApproval": {
-        "status": "resolved",
-        "value": {
-          "approved": false,
-          "confirmCode": ""
-        },
-        "deps": [],
-        "duration_ms": 0,
+        "waitingOn": "prodApproval",
         "attempts": 1
       }
     },
-    "waiters": {},
+    "waiters": {
+      "prodApproval": [
+        "deployProd"
+      ]
+    },
     "processedEventIds": {
       "evt-1": true,
-      "1b879f4a-be9b-4e8f-bbeb-50ee028ab280": true,
-      "2994c018-6b27-4f9a-971b-82c7c18c5c71": true,
-      "575b1809-5383-4536-a1bf-98f99a520894": true,
-      "b5800e60-df00-4006-b506-45ed1008447a": true,
-      "c56a5d43-504a-4572-a5ff-811149aaf3e4": true,
-      "6d5fe90d-9fd2-4f67-a4e1-6cc7ab6cae33": true,
-      "66652493-d963-4520-ae43-a9c1e8694fe7": true,
-      "2f476ed6-e8e4-47bf-a139-ae8bd22fd2a9": true,
-      "evt-2": true,
-      "2d767517-bfdf-40c7-9350-36da54694964": true
+      "5d8872f8-7e55-4fd9-8268-0ec35958728b": true,
+      "99fa5618-0fc1-4582-9b5a-2cbda9285d85": true,
+      "364598dd-cba9-44c1-b552-fc6411b306e0": true,
+      "da9ff93b-7c6d-4421-a214-916a078c9408": true,
+      "1b1f3749-c27f-4f4a-8dd0-7b20a2f3144f": true,
+      "6ada4145-5f82-48df-9d68-e4ba0f374c74": true,
+      "c8845115-1b71-4124-88fb-ba97b9e83f23": true,
+      "56bec1af-074d-4f01-9961-cdf87fe3c2f8": true
+    },
+    "trigger": "provider",
+    "payload": {
+      "name": "Acme MCP",
+      "openapiUrl": "",
+      "mcpUrl": "https://mcp.acme.dev",
+      "hasDcr": true
     }
   }
 }
