@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { RunState } from "@rxwf/core"
 import type { QueueSnapshot, RunEvent, RunSnapshot } from "@rxwf/runtime"
 
@@ -30,6 +30,7 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
   const [events, setEvents] = useState<RunEvent[]>([])
   const [isPending, setIsPending] = useState(false)
   const [error, setError] = useState<Error | undefined>()
+  const pollingRef = useRef(false)
 
   const applyResult = useCallback(
     (result: Awaited<ReturnType<WorkflowRuntime["start"]>>) => {
@@ -86,6 +87,35 @@ export function useWorkflow(runtime: WorkflowRuntime): WorkflowState {
     setError(undefined)
     setIsPending(false)
   }, [])
+
+  useEffect(() => {
+    const runtime = runtimeRef.current
+    const getState = runtime.getState
+    const runId = runState?.runId
+    if (!getState || !runId) return
+
+    let cancelled = false
+    const poll = async () => {
+      if (pollingRef.current) return
+      pollingRef.current = true
+      try {
+        const result = await getState.call(runtime, { runId })
+        if (!cancelled) applyResult(result)
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e : new Error(String(e)))
+      } finally {
+        pollingRef.current = false
+      }
+    }
+
+    const interval = window.setInterval(() => void poll(), 500)
+    void poll()
+
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [applyResult, runState?.runId])
 
   return {
     runState,
