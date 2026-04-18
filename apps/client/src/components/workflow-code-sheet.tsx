@@ -10,6 +10,7 @@ export function WorkflowCodeSheet({
   workflowCode,
   onWorkflowCodeChange,
   onPreviewInput,
+  error,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -17,6 +18,7 @@ export function WorkflowCodeSheet({
   onWorkflowCodeChange: (v: string) => void
   /** Opens the seed input step; user starts the run from there. */
   onPreviewInput: () => void
+  error?: string
 }) {
   if (!open) return null
 
@@ -51,8 +53,7 @@ export function WorkflowCodeSheet({
               Scroll to the bottom to continue.
             </p>
             <p className="text-muted-foreground text-[11px] leading-snug">
-              Reference only until hot reload: the live runtime uses the compiled{" "}
-              <code className="rounded bg-muted px-1 py-0.5">workflow.ts</code> module.
+              Changes are applied before the input form is built.
             </p>
             <Textarea
               spellCheck={false}
@@ -63,6 +64,7 @@ export function WorkflowCodeSheet({
           </div>
 
           <div className="shrink-0 border-t border-border bg-card p-4">
+            {error ? <p className="mb-3 text-destructive text-xs">{error}</p> : null}
             <Button type="button" className="w-full" onClick={onPreviewInput}>
               Continue to inputs
             </Button>
