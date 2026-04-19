@@ -17,6 +17,7 @@ import type {
   StartRunRequest,
   StateStore,
   SubmitInputRequest,
+  UpdateSecretsRequest,
   WorkflowDefinition,
   WorkflowLoader,
   WorkflowRef,
@@ -46,6 +47,7 @@ export class LocalScheduler implements Scheduler {
 
     this.runWorkflows.set(runId, request.workflow);
     const state = makeEmptyRunState(runId);
+    applySecrets(definition.registry, state, request.secrets);
     const saved = await this.opts.stateStore.save(runId, state, 0);
     if (!saved.ok) throw new Error(`Unable to create run: ${saved.reason}`);
 
@@ -76,8 +78,9 @@ export class LocalScheduler implements Scheduler {
 
   async submitInput(request: SubmitInputRequest): Promise<RunSnapshot> {
     const workflow = request.workflow ?? this.workflowForRun(request.runId);
-    await this.opts.loader.load(workflow);
+    const definition = await this.opts.loader.load(workflow);
     this.runWorkflows.set(request.runId, workflow);
+    await this.mergeSecrets(request.runId, definition, request.secrets);
     await this.enqueueAndPublish({
       kind: "input",
       eventId: request.eventId ?? `evt_${randomId()}`,
@@ -85,6 +88,14 @@ export class LocalScheduler implements Scheduler {
       inputId: request.inputId,
       payload: request.payload,
     });
+    return this.snapshot(request.runId);
+  }
+
+  async updateSecrets(request: UpdateSecretsRequest): Promise<RunSnapshot> {
+    const workflow = request.workflow ?? this.workflowForRun(request.runId);
+    const definition = await this.opts.loader.load(workflow);
+    this.runWorkflows.set(request.runId, workflow);
+    await this.mergeSecrets(request.runId, definition, request.secrets);
     return this.snapshot(request.runId);
   }
 
@@ -264,6 +275,20 @@ export class LocalScheduler implements Scheduler {
     if (!workflow) throw new Error(`Unknown workflow for run: ${runId}`);
     return workflow;
   }
+
+  private async mergeSecrets(
+    runId: string,
+    definition: WorkflowDefinition,
+    secrets: Record<string, unknown> | undefined,
+  ): Promise<void> {
+    if (!secrets) return;
+    const stored = await this.opts.stateStore.load(runId);
+    if (!stored) throw new Error(`Unknown run: ${runId}`);
+    const next = structuredClone(stored.state);
+    applySecrets(definition.registry, next, secrets);
+    const saved = await this.opts.stateStore.save(runId, next, stored.version);
+    if (!saved.ok) throw new Error(`Unable to save run: ${saved.reason}`);
+  }
 }
 
 function makeEmptyRunState(runId: string): RunState {
@@ -271,10 +296,31 @@ function makeEmptyRunState(runId: string): RunState {
     runId,
     startedAt: Date.now(),
     inputs: {},
+    secrets: {},
     nodes: {},
     waiters: {},
     processedEventIds: {},
   };
+}
+
+function applySecrets(
+  registry: Registry,
+  state: RunState,
+  secrets: Record<string, unknown> | undefined,
+): void {
+  if (!secrets) return;
+  state.secrets ??= {};
+  for (const [id, value] of Object.entries(secrets)) {
+    if (!registry.getSecret(id)) continue;
+    state.secrets[id] = value;
+    const existing = state.nodes[id];
+    if (existing?.status === "resolved") {
+      state.nodes[id] = {
+        ...existing,
+        value: redactSecretValue(value),
+      };
+    }
+  }
 }
 
 function queuedEvent(event: QueueEvent): RunEvent | undefined {
@@ -355,12 +401,14 @@ function buildGraphNodes(
 
   return registry.allIds().map((id) => {
     const inputDef = registry.getInput(id);
+    const secretDef = registry.getSecret(id);
     const atomDef = registry.getAtom(id);
     const rec = state.nodes[id] ?? fallbackRecord(inputDef?.kind);
     return {
       id,
-      kind: inputDef?.kind ?? "atom",
-      description: inputDef?.description ?? atomDef?.description,
+      kind: inputDef?.kind ?? (secretDef ? "secret" : "atom"),
+      description:
+        inputDef?.description ?? secretDef?.description ?? atomDef?.description,
       status: running.has(id)
         ? "running"
         : pending.has(id)
@@ -448,4 +496,8 @@ function randomId(): string {
   return (
     globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
   );
+}
+
+function redactSecretValue(value: unknown): unknown {
+  return value === undefined || value === null ? value : "[secret]";
 }

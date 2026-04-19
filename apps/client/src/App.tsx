@@ -48,6 +48,14 @@ function buildInitialInputValues(registry: Registry): Record<string, unknown> {
   return m;
 }
 
+function buildInitialSecretValues(registry: Registry): Record<string, unknown> {
+  const m: Record<string, unknown> = {};
+  for (const s of registry.allSecrets()) {
+    m[s.id] = typeof s.defaultValue === "string" ? s.defaultValue : "";
+  }
+  return m;
+}
+
 function firstSeedInputId(registry: Registry): string {
   const im = registry.allInputs().filter((i) => i.kind === "input");
   return im[0]?.id ?? "";
@@ -315,12 +323,16 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
   const [inputValues, setInputValues] = useState<Record<string, unknown>>(() =>
     buildInitialInputValues(globalRegistry),
   );
+  const [secretValues, setSecretValues] = useState<Record<string, unknown>>(
+    () => buildInitialSecretValues(globalRegistry),
+  );
   const [seedInputId, setSeedInputId] = useState(() =>
     firstSeedInputId(globalRegistry),
   );
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [pendingAutoAdvance, setPendingAutoAdvance] = useState(false);
+  const [secretRunId, setSecretRunId] = useState<string | undefined>();
 
   const manifestSource = workflow.manifest?.source;
   const runSource = workflowRun.workflowSource;
@@ -333,6 +345,8 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
       loadWorkflowSourceIntoGlobalRegistry(activeSource);
       setAppliedSource(activeSource);
       setInputValues(buildInitialInputValues(globalRegistry));
+      setSecretValues(buildInitialSecretValues(globalRegistry));
+      setSecretRunId(undefined);
       setSeedInputId(firstSeedInputId(globalRegistry));
     } catch (e) {
       setPayloadError(
@@ -344,6 +358,16 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
   }, [activeSource, appliedSource]);
 
   const runState = workflowRun.runState;
+
+  useEffect(() => {
+    if (!runState || runState.runId === secretRunId) return;
+    setSecretRunId(runState.runId);
+    setSecretValues({
+      ...buildInitialSecretValues(globalRegistry),
+      ...(runState.secrets ?? {}),
+    });
+  }, [runState, secretRunId]);
+
   const wait = findDeferredWait(runState);
   const pendingDeferredId = wait?.inputId;
   const inputPending = Boolean(pendingDeferredId);
@@ -381,10 +405,16 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
     setInputValues((prev) => ({ ...prev, [id]: value }));
   }
 
+  function setSecretValue(id: string, value: unknown) {
+    setSecretValues((prev) => ({ ...prev, [id]: value }));
+  }
+
   function clearRun() {
     workflowRun.clear();
     setSelectedNodeId(null);
     setInputValues(buildInitialInputValues(globalRegistry));
+    setSecretValues(buildInitialSecretValues(globalRegistry));
+    setSecretRunId(undefined);
     setSeedInputId(firstSeedInputId(globalRegistry));
     setPayloadError("");
     setPane(null);
@@ -419,6 +449,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
         inputId: seed.id,
         payload,
         autoAdvance: pendingAutoAdvance,
+        secrets: secretValues,
       });
       void navigate({
         to: "/workflows/$workflowId/runs/$runId",
@@ -464,6 +495,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
         inputId,
         payload,
         autoAdvance: activeAutoAdvance,
+        secrets: secretValues,
       });
       setPane(null);
     } catch (e) {
@@ -482,6 +514,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
       await workflowRun.advance({
         workflowSource: runSource ?? manifestSource ?? "",
         state: runState,
+        secrets: secretValues,
       });
       setPane(null);
     } catch (e) {
@@ -798,6 +831,8 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
             registry={globalRegistry}
             inputValues={inputValues}
             onInputValuesChange={setInputValue}
+            secretValues={secretValues}
+            onSecretValuesChange={setSecretValue}
             seedInputId={seedInputId}
             onSeedInputIdChange={setSeedInputId}
             canSubmitSeed={!runState}

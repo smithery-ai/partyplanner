@@ -34,6 +34,7 @@ export type StartWorkflowRunRequest = {
   payload: unknown;
   runId?: string;
   autoAdvance?: boolean;
+  secrets?: Record<string, unknown>;
 };
 
 export type StartBackendRunRequest = {
@@ -42,16 +43,22 @@ export type StartBackendRunRequest = {
   payload: unknown;
   runId?: string;
   autoAdvance?: boolean;
+  secrets?: Record<string, unknown>;
 };
 
 export type SubmitBackendInputRequest = {
   inputId: string;
   payload: unknown;
   autoAdvance?: boolean;
+  secrets?: Record<string, unknown>;
 };
 
 export type SetAutoAdvanceRequest = {
   autoAdvance: boolean;
+};
+
+export type AdvanceBackendRunRequest = {
+  secrets?: Record<string, unknown>;
 };
 
 export type RunStateDocument = RunSnapshot & {
@@ -208,6 +215,7 @@ export class BackendRunManager {
         payload: request.payload,
         runId,
         autoAdvance: request.autoAdvance,
+        secrets: request.secrets,
       },
     );
   }
@@ -249,6 +257,7 @@ export class BackendRunManager {
     await scheduler.startRun({
       workflow,
       runId,
+      secrets: request.secrets,
       input: {
         inputId: request.inputId,
         payload: request.payload,
@@ -272,19 +281,30 @@ export class BackendRunManager {
       workflow: controller.workflow,
       inputId: request.inputId,
       payload: request.payload,
+      secrets: request.secrets,
     });
     const document = await this.publishSnapshot(controller);
     if (controller.autoAdvance) this.kickProcessing(controller);
     return document;
   }
 
-  async advanceRun(runId: string): Promise<RunStateDocument> {
+  async advanceRun(
+    runId: string,
+    request: AdvanceBackendRunRequest = {},
+  ): Promise<RunStateDocument> {
     const controller = this.requireRun(runId);
     controller.autoAdvance = false;
     if (controller.processing) return this.publishSnapshot(controller);
 
     controller.processing = true;
     try {
+      if (request.secrets) {
+        await controller.scheduler.updateSecrets({
+          runId,
+          workflow: controller.workflow,
+          secrets: request.secrets,
+        });
+      }
       if ((await controller.queue.size()) > 0) {
         await controller.scheduler.processNext();
       }

@@ -26,6 +26,7 @@ export type {
   StateStore,
   StoredRunState,
   SubmitInputRequest,
+  UpdateSecretsRequest,
   WorkflowDefinition,
   WorkflowLoader,
   WorkflowRef,

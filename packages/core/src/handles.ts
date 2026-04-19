@@ -1,6 +1,6 @@
 export const HANDLE = Symbol.for("@rxwf/handle");
 
-export type HandleKind = "input" | "deferred_input" | "atom";
+export type HandleKind = "input" | "deferred_input" | "secret" | "atom";
 
 export interface Handle<T = unknown> {
   readonly [HANDLE]: true;
@@ -13,6 +13,7 @@ export type Input<T> = Handle<T> & { readonly __kind: "input" };
 export type DeferredInput<T> = Handle<T> & {
   readonly __kind: "deferred_input";
 };
+export type Secret<T> = Handle<T> & { readonly __kind: "secret" };
 export type Atom<T> = Handle<T> & { readonly __kind: "atom" };
 
 export function makeHandle<T>(kind: HandleKind, id: string): Handle<T> {

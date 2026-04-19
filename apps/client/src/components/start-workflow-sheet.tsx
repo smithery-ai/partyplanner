@@ -1,6 +1,7 @@
 import type { Registry } from "@rxwf/core";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ZodSchemaForm } from "@/components/zod-schema-form";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,8 @@ export function StartWorkflowSheet({
   registry,
   inputValues,
   onInputValuesChange,
+  secretValues,
+  onSecretValuesChange,
   seedInputId,
   onSeedInputIdChange,
   canSubmitSeed,
@@ -25,6 +28,8 @@ export function StartWorkflowSheet({
   registry: Registry;
   inputValues: Record<string, unknown>;
   onInputValuesChange: (id: string, value: unknown) => void;
+  secretValues: Record<string, unknown>;
+  onSecretValuesChange: (id: string, value: unknown) => void;
   seedInputId: string;
   onSeedInputIdChange: (id: string) => void;
   canSubmitSeed: boolean;
@@ -34,6 +39,7 @@ export function StartWorkflowSheet({
   if (!open) return null;
 
   const immediate = registry.allInputs().filter((i) => i.kind === "input");
+  const secrets = registry.allSecrets();
 
   return (
     <>
@@ -140,9 +146,41 @@ export function StartWorkflowSheet({
             </>
           )}
 
+          {secrets.length > 0 ? (
+            <div className="space-y-3 border-t border-border pt-4">
+              <h3 className="font-medium text-xs text-foreground">Secrets</h3>
+              {secrets.map((s) => (
+                <div key={s.id} className="space-y-1">
+                  <label
+                    className="block text-[11px] font-medium text-foreground"
+                    htmlFor={`secret-${s.id}`}
+                  >
+                    {s.id}
+                  </label>
+                  {s.description ? (
+                    <p className="text-muted-foreground text-[11px] leading-snug">
+                      {s.description}
+                    </p>
+                  ) : null}
+                  <Input
+                    id={`secret-${s.id}`}
+                    type="password"
+                    className="h-8 font-mono text-xs"
+                    value={secretInputValue(secretValues[s.id])}
+                    onChange={(e) => onSecretValuesChange(s.id, e.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           {error ? <p className="text-destructive text-xs">{error}</p> : null}
         </div>
       </aside>
     </>
   );
+}
+
+function secretInputValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }

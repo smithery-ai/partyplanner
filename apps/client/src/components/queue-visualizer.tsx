@@ -88,7 +88,7 @@ const STATUS_LEGEND: {
 
 type WorkflowNodeData = {
   label: string;
-  kind: "input" | "atom";
+  kind: "input" | "secret" | "atom";
   deferred?: boolean;
   /** Waiting on this deferred input (no node record in state until submitted). */
   pendingDeferred?: boolean;
@@ -256,7 +256,9 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
       ? data.deferred
         ? "Deferred input"
         : "Input"
-      : "Atom";
+      : data.kind === "secret"
+        ? "Secret"
+        : "Atom";
 
   return (
     <WorkflowCard
@@ -588,7 +590,12 @@ function buildFlow(
   const nodes: Node[] = ids.map((id) => {
     const rec = runState?.nodes[id];
     const inputDef = registry.getInput(id);
-    const kind: WorkflowNodeData["kind"] = inputDef ? "input" : "atom";
+    const secretDef = registry.getSecret(id);
+    const kind: WorkflowNodeData["kind"] = inputDef
+      ? "input"
+      : secretDef
+        ? "secret"
+        : "atom";
     const deferred = Boolean(inputDef?.kind === "deferred_input");
     const pendingDeferred = Boolean(
       runState &&

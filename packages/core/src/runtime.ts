@@ -1,6 +1,11 @@
 import { NotReadyError, SkipError, WaitError } from "./errors";
 import { type Handle, isHandle } from "./handles";
-import { type AtomDef, globalRegistry, type Registry } from "./registry";
+import {
+  type AtomDef,
+  globalRegistry,
+  type Registry,
+  type SecretDef,
+} from "./registry";
 import type {
   DispatchResult,
   Get,
@@ -217,6 +222,13 @@ class RunSession {
   }
 
   private readValue(readerStepId: string, depId: string): unknown {
+    const secretDef = this.registry.getSecret(depId);
+    if (secretDef) {
+      const value = this.readSecretValue(secretDef);
+      this.markSecretRead(secretDef, value);
+      return value;
+    }
+
     const existing = this.state.nodes[depId];
     if (existing?.status === "resolved") return existing.value;
     if (existing?.status === "skipped")
@@ -254,6 +266,26 @@ class RunSession {
 
     this.registerWaiter(depId, readerStepId);
     throw new NotReadyError(depId);
+  }
+
+  private readSecretValue(def: SecretDef): unknown {
+    this.state.secrets ??= {};
+    if (Object.hasOwn(this.state.secrets, def.id)) {
+      return this.state.secrets[def.id];
+    }
+    return def.defaultValue;
+  }
+
+  private markSecretRead(def: SecretDef, value: unknown): void {
+    const existing = this.state.nodes[def.id];
+    if (existing?.status === "resolved") return;
+    this.state.nodes[def.id] = {
+      status: "resolved",
+      value: redactSecretValue(value),
+      deps: [],
+      duration_ms: 0,
+      attempts: 1,
+    };
   }
 
   private registerWaiter(depId: string, stepId: string): void {
@@ -341,6 +373,7 @@ function makeEmptyRunState(runId: string): RunState {
     runId,
     startedAt: Date.now(),
     inputs: {},
+    secrets: {},
     nodes: {},
     waiters: {},
     processedEventIds: {},
@@ -349,4 +382,8 @@ function makeEmptyRunState(runId: string): RunState {
 
 export function createRuntime(opts: RuntimeOptions = {}): Runtime {
   return new RuntimeImpl(opts);
+}
+
+function redactSecretValue(value: unknown): unknown {
+  return value === undefined || value === null ? value : "[secret]";
 }

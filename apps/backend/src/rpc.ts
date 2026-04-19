@@ -12,6 +12,7 @@ export type StartWorkflowRunRequest = {
   payload: unknown;
   runId?: string;
   autoAdvance?: boolean;
+  secrets?: Record<string, unknown>;
 };
 
 export type StartBackendRunRequest = {
@@ -20,12 +21,18 @@ export type StartBackendRunRequest = {
   payload: unknown;
   runId?: string;
   autoAdvance?: boolean;
+  secrets?: Record<string, unknown>;
 };
 
 export type SubmitBackendInputRequest = {
   inputId: string;
   payload: unknown;
   autoAdvance?: boolean;
+  secrets?: Record<string, unknown>;
+};
+
+export type AdvanceBackendRunRequest = {
+  secrets?: Record<string, unknown>;
 };
 
 export type SetAutoAdvanceRequest = {

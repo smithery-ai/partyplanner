@@ -143,7 +143,7 @@ export type ExecutionStatus =
 
 export type GraphNode = {
   id: string;
-  kind: "input" | "deferred_input" | "atom";
+  kind: "input" | "deferred_input" | "secret" | "atom";
   description?: string;
   status: ExecutionStatus;
   value?: unknown;
@@ -180,6 +180,7 @@ export type RunSnapshot = {
 export type StartRunRequest = {
   workflow: WorkflowRef;
   runId?: string;
+  secrets?: Record<string, unknown>;
   input?: {
     inputId: string;
     payload: unknown;
@@ -193,11 +194,19 @@ export type SubmitInputRequest = {
   payload: unknown;
   eventId?: string;
   workflow?: WorkflowRef;
+  secrets?: Record<string, unknown>;
+};
+
+export type UpdateSecretsRequest = {
+  runId: string;
+  secrets: Record<string, unknown>;
+  workflow?: WorkflowRef;
 };
 
 export interface Scheduler {
   startRun(request: StartRunRequest): Promise<RunSnapshot>;
   submitInput(request: SubmitInputRequest): Promise<RunSnapshot>;
+  updateSecrets(request: UpdateSecretsRequest): Promise<RunSnapshot>;
   processNext(): Promise<void>;
   drain(): Promise<void>;
   processEvent(event: QueueEvent): Promise<void>;

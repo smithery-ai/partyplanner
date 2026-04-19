@@ -34,6 +34,7 @@ export type StartWorkflowArgs = {
   inputId: string;
   payload: unknown;
   autoAdvance?: boolean;
+  secrets?: Record<string, unknown>;
 };
 
 export type SubmitWorkflowInputArgs = {
@@ -42,11 +43,13 @@ export type SubmitWorkflowInputArgs = {
   inputId: string;
   payload: unknown;
   autoAdvance?: boolean;
+  secrets?: Record<string, unknown>;
 };
 
 export type AdvanceWorkflowArgs = {
   workflowSource: string;
   state?: RunState;
+  secrets?: Record<string, unknown>;
 };
 
 export type SetAutoAdvanceWorkflowArgs = {
@@ -85,6 +88,7 @@ export class BackendRuntime implements WorkflowRuntime {
         inputId: args.inputId,
         payload: args.payload,
         autoAdvance: args.autoAdvance,
+        secrets: args.secrets,
       },
     );
     return documentResult(document);
@@ -102,16 +106,19 @@ export class BackendRuntime implements WorkflowRuntime {
       inputId: args.inputId,
       payload: args.payload,
       autoAdvance: args.autoAdvance,
+      secrets: args.secrets,
     });
     return documentResult(document);
   }
 
   async advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult> {
     if (!args.state) throw new Error("Cannot advance before a run exists.");
-    const document = await this.post<Record<string, never>, RunStateDocument>(
-      `/runs/${encodeURIComponent(args.state.runId)}/advance`,
-      {},
-    );
+    const document = await this.post<
+      { secrets?: Record<string, unknown> },
+      RunStateDocument
+    >(`/runs/${encodeURIComponent(args.state.runId)}/advance`, {
+      secrets: args.secrets,
+    });
     return documentResult(document);
   }
 
@@ -212,6 +219,7 @@ export class LocalRuntime implements WorkflowRuntime {
         inputId: args.inputId,
         payload: args.payload,
       },
+      secrets: args.secrets,
     });
     return this.finalize(snapshot.runId, snapshot);
   }
@@ -227,12 +235,20 @@ export class LocalRuntime implements WorkflowRuntime {
       workflow: this.workflow,
       inputId: args.inputId,
       payload: args.payload,
+      secrets: args.secrets,
     });
     return this.finalize(snapshot.runId, snapshot);
   }
 
   async advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult> {
     if (!args.state) throw new Error("Cannot advance before a run exists.");
+    if (args.secrets) {
+      await this.scheduler.updateSecrets({
+        runId: args.state.runId,
+        workflow: this.workflow,
+        secrets: args.secrets,
+      });
+    }
     await this.scheduler.processNext();
     const snapshot = await this.scheduler.snapshot(args.state.runId);
     return this.result(snapshot);
