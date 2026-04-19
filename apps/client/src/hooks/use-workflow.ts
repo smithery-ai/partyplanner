@@ -2,10 +2,9 @@ import type { RunState } from "@rxwf/core";
 import type { QueueSnapshot, RunEvent, RunSnapshot } from "@rxwf/runtime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { hc } from "hono/client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type {
   AdvanceWorkflowArgs,
-  PollWorkflowStateArgs,
   SetAutoAdvanceWorkflowArgs,
   StartWorkflowArgs,
   SubmitWorkflowInputArgs,
@@ -32,6 +31,8 @@ export type WorkflowState = {
   queue: QueueSnapshot | undefined;
   events: RunEvent[];
   runs: RunSummary[];
+  workflowSource: string | undefined;
+  autoAdvance: boolean | undefined;
   isPending: boolean;
   error: Error | undefined;
   start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult>;
@@ -40,7 +41,6 @@ export type WorkflowState = {
   setAutoAdvance(
     args: SetAutoAdvanceWorkflowArgs,
   ): Promise<WorkflowRuntimeResult>;
-  loadRun(args: PollWorkflowStateArgs): Promise<WorkflowRuntimeResult>;
   refreshRuns(): Promise<void>;
   clear(): void;
 };
@@ -143,44 +143,35 @@ function useSetAutoAdvanceMutation() {
   });
 }
 
-function useLoadRunMutation() {
-  return useMutation({
-    mutationFn: async (args: PollWorkflowStateArgs) => {
-      const response = await client.state[":runId"].$get({
-        param: { runId: args.runId },
-      });
-      return documentResult(await readJsonResponse<RunStateDocument>(response));
-    },
-  });
-}
-
-export function useWorkflow(): WorkflowState {
+export function useWorkflow(activeRunId?: string): WorkflowState {
   const queryClient = useQueryClient();
   const runsQuery = useRunsQuery();
   const startMutation = useStartRunMutation();
   const submitInputMutation = useSubmitInputMutation();
   const advanceMutation = useAdvanceRunMutation();
   const setAutoAdvanceMutation = useSetAutoAdvanceMutation();
-  const loadRunMutation = useLoadRunMutation();
 
-  const [runState, setRunState] = useState<RunState | undefined>();
-  const [snapshot, setSnapshot] = useState<RunSnapshot | undefined>();
-  const [queue, setQueue] = useState<QueueSnapshot | undefined>();
-  const [events, setEvents] = useState<RunEvent[]>([]);
   const [error, setError] = useState<Error | undefined>();
 
-  const stateQuery = useRunStateQuery(runState?.runId);
+  const stateQuery = useRunStateQuery(activeRunId);
 
-  const applyResult = useCallback((result: WorkflowRuntimeResult) => {
-    setRunState(result.state);
-    setSnapshot(result.snapshot);
-    setQueue(result.queue);
-    setEvents(result.events ?? []);
-  }, []);
+  const cacheResult = useCallback(
+    (result: WorkflowRuntimeResult) => {
+      queryClient.setQueryData(queryKeys.runState(result.state.runId), result);
+    },
+    [queryClient],
+  );
 
   const refreshRuns = useCallback(async () => {
     try {
-      await runsQuery.refetch();
+      const result = await runsQuery.refetch();
+      if (result.error) {
+        setError(
+          result.error instanceof Error
+            ? result.error
+            : new Error(String(result.error)),
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e : new Error(String(e)));
     }
@@ -196,7 +187,7 @@ export function useWorkflow(): WorkflowState {
       setError(undefined);
       try {
         const result = await mutation.mutateAsync(args);
-        applyResult(result);
+        cacheResult(result);
         await queryClient.invalidateQueries({ queryKey: queryKeys.runs });
         return result;
       } catch (e) {
@@ -205,7 +196,7 @@ export function useWorkflow(): WorkflowState {
         throw err;
       }
     },
-    [applyResult, queryClient],
+    [cacheResult, queryClient],
   );
 
   const start = useCallback(
@@ -229,44 +220,9 @@ export function useWorkflow(): WorkflowState {
     [runMutation, setAutoAdvanceMutation],
   );
 
-  const loadRun = useCallback(
-    (args: PollWorkflowStateArgs) => runMutation(loadRunMutation, args),
-    [loadRunMutation, runMutation],
-  );
-
   const clear = useCallback(() => {
-    setRunState(undefined);
-    setSnapshot(undefined);
-    setQueue(undefined);
-    setEvents([]);
     setError(undefined);
   }, []);
-
-  useEffect(() => {
-    if (!stateQuery.data) return;
-    applyResult(stateQuery.data);
-    void queryClient.invalidateQueries({ queryKey: queryKeys.runs });
-  }, [applyResult, queryClient, stateQuery.data]);
-
-  useEffect(() => {
-    if (runsQuery.error) {
-      setError(
-        runsQuery.error instanceof Error
-          ? runsQuery.error
-          : new Error(String(runsQuery.error)),
-      );
-    }
-  }, [runsQuery.error]);
-
-  useEffect(() => {
-    if (stateQuery.error) {
-      setError(
-        stateQuery.error instanceof Error
-          ? stateQuery.error
-          : new Error(String(stateQuery.error)),
-      );
-    }
-  }, [stateQuery.error]);
 
   const isPending = useMemo(
     () =>
@@ -274,32 +230,42 @@ export function useWorkflow(): WorkflowState {
       submitInputMutation.isPending ||
       advanceMutation.isPending ||
       setAutoAdvanceMutation.isPending ||
-      loadRunMutation.isPending,
+      (Boolean(activeRunId) && stateQuery.isPending),
     [
       advanceMutation.isPending,
-      loadRunMutation.isPending,
       setAutoAdvanceMutation.isPending,
+      stateQuery.isPending,
+      activeRunId,
       startMutation.isPending,
       submitInputMutation.isPending,
     ],
   );
 
+  const queryError = runsQuery.error ?? stateQuery.error;
+  const activeError = error ?? normalizeError(queryError);
+
   return {
-    runState,
-    snapshot,
-    queue,
-    events,
+    runState: stateQuery.data?.state,
+    snapshot: stateQuery.data?.snapshot,
+    queue: stateQuery.data?.queue,
+    events: stateQuery.data?.events ?? [],
     runs: runsQuery.data ?? [],
+    workflowSource: stateQuery.data?.workflowSource,
+    autoAdvance: stateQuery.data?.autoAdvance,
     isPending,
-    error,
+    error: activeError,
     start,
     submitInput,
     advance,
     setAutoAdvance,
-    loadRun,
     refreshRuns,
     clear,
   };
+}
+
+function normalizeError(error: unknown): Error | undefined {
+  if (!error) return undefined;
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 async function readJsonResponse<TResponse>(

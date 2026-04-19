@@ -12,7 +12,7 @@ import {
   RefreshCw,
   SkipForward,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ZodTypeAny } from "zod";
 import {
   type NodeDetailEditor,
@@ -181,6 +181,8 @@ export function RunApp() {
 export default function App() {
   const params = useParams({ strict: false }) as { runId?: string };
   const navigate = useNavigate();
+  const routeRunId =
+    typeof params.runId === "string" ? params.runId : undefined;
   const [pane, setPane] = useState<SidePane>(null);
   const [workflowCode, setWorkflowCode] = useState(workflowRaw);
   const [appliedWorkflowCode, setAppliedWorkflowCode] = useState(workflowRaw);
@@ -194,13 +196,10 @@ export default function App() {
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [autoAdvance, setAutoAdvance] = useState(false);
-  const requestedRouteRunIdRef = useRef<string | undefined>(undefined);
 
-  const workflow = useWorkflow();
+  const workflow = useWorkflow(routeRunId);
   const runState = workflow.runState;
-  const { clear: clearWorkflow, isPending, loadRun } = workflow;
-  const routeRunId =
-    typeof params.runId === "string" ? params.runId : undefined;
+  const { clear: clearWorkflow } = workflow;
   const wait = findDeferredWait(runState);
   const pendingDeferredId = wait?.inputId;
   const inputPending = Boolean(pendingDeferredId);
@@ -210,8 +209,10 @@ export default function App() {
   const runComplete = workflow.snapshot
     ? workflow.snapshot.status === "completed"
     : isRunComplete(runState);
+  const activeAutoAdvance = workflow.autoAdvance ?? autoAdvance;
+  const activeWorkflowCode = workflow.workflowSource ?? workflowCode;
   const canManualAdvance = Boolean(
-    runState && !runComplete && !autoAdvance && nextWork,
+    runState && !runComplete && !activeAutoAdvance && nextWork,
   );
 
   useEffect(() => {
@@ -231,6 +232,12 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [pane]);
+
+  useEffect(() => {
+    if (!workflow.workflowSource) return;
+    if (workflow.workflowSource === appliedWorkflowCode) return;
+    loadWorkflowSourceIntoGlobalRegistry(workflow.workflowSource);
+  }, [appliedWorkflowCode, workflow.workflowSource]);
 
   function setInputValue(id: string, value: unknown) {
     setInputValues((prev) => ({ ...prev, [id]: value }));
@@ -306,7 +313,7 @@ export default function App() {
         workflowSource: workflowCode,
         inputId: seed.id,
         payload,
-        autoAdvance,
+        autoAdvance: activeAutoAdvance,
       });
       void navigate({
         to: "/runs/$runId",
@@ -347,11 +354,11 @@ export default function App() {
 
     try {
       await workflow.submitInput({
-        workflowSource: workflowCode,
+        workflowSource: activeWorkflowCode,
         state: runState,
         inputId,
         payload,
-        autoAdvance,
+        autoAdvance: activeAutoAdvance,
       });
       setPane(null);
     } catch (e) {
@@ -368,7 +375,7 @@ export default function App() {
     setPayloadError("");
     try {
       await workflow.advance({
-        workflowSource: workflowCode,
+        workflowSource: activeWorkflowCode,
         state: runState,
       });
       setPane(null);
@@ -382,7 +389,7 @@ export default function App() {
   }
 
   async function changeAdvanceMode(nextAutoAdvance: boolean) {
-    if (nextAutoAdvance === autoAdvance) return;
+    if (nextAutoAdvance === activeAutoAdvance) return;
     setAutoAdvance(nextAutoAdvance);
     if (!runState) return;
 
@@ -399,48 +406,6 @@ export default function App() {
       );
     }
   }
-
-  const loadHistoricalRun = useCallback(
-    async (runId: string) => {
-      if (isPending) return;
-      setPayloadError("");
-      try {
-        const result = await loadRun({ runId });
-        if (result.workflowSource) {
-          loadWorkflowSourceIntoGlobalRegistry(result.workflowSource);
-          setWorkflowCode(result.workflowSource);
-          setAppliedWorkflowCode(result.workflowSource);
-          setInputValues(buildInitialInputValues(globalRegistry));
-          setSeedInputId(firstSeedInputId(globalRegistry));
-        }
-        if (result.autoAdvance !== undefined)
-          setAutoAdvance(result.autoAdvance);
-        setSelectedNodeId(null);
-        setPane(null);
-      } catch (e) {
-        setPayloadError(
-          e instanceof Error ? e.message : "Unable to load the selected run.",
-        );
-      }
-    },
-    [isPending, loadRun],
-  );
-
-  useEffect(() => {
-    if (!routeRunId) {
-      requestedRouteRunIdRef.current = undefined;
-      return;
-    }
-    if (routeRunId === runState?.runId) {
-      requestedRouteRunIdRef.current = routeRunId;
-      return;
-    }
-    if (isPending || requestedRouteRunIdRef.current === routeRunId) {
-      return;
-    }
-    requestedRouteRunIdRef.current = routeRunId;
-    void loadHistoricalRun(routeRunId);
-  }, [isPending, loadHistoricalRun, routeRunId, runState?.runId]);
 
   const selectedRecord = selectedNodeId ? nodes[selectedNodeId] : undefined;
 
@@ -475,7 +440,7 @@ export default function App() {
     }
   }
 
-  const activeRunId = runState?.runId;
+  const activeRunId = routeRunId;
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background">
@@ -518,13 +483,13 @@ export default function App() {
           >
             <button
               type="button"
-              aria-pressed={!autoAdvance}
+              aria-pressed={!activeAutoAdvance}
               title="Manual advance"
               disabled={workflow.isPending}
               onClick={() => void changeAdvanceMode(false)}
               className={cn(
                 "inline-flex h-full w-[4.9rem] items-center justify-center gap-1 px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-                !autoAdvance
+                !activeAutoAdvance
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
@@ -534,13 +499,13 @@ export default function App() {
             </button>
             <button
               type="button"
-              aria-pressed={autoAdvance}
+              aria-pressed={activeAutoAdvance}
               title="Auto advance"
               disabled={workflow.isPending}
               onClick={() => void changeAdvanceMode(true)}
               className={cn(
                 "inline-flex h-full w-[4.4rem] items-center justify-center gap-1 border-l border-border px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:border-input",
-                autoAdvance
+                activeAutoAdvance
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
@@ -719,7 +684,7 @@ export default function App() {
           <WorkflowCodeSheet
             open={pane === "workflow"}
             onOpenChange={(o) => setPane(o ? "workflow" : null)}
-            workflowCode={workflowCode}
+            workflowCode={activeWorkflowCode}
             onWorkflowCodeChange={setWorkflowCode}
             onPreviewInput={applyWorkflowCodeForStart}
             error={pane === "workflow" ? payloadError || undefined : undefined}
