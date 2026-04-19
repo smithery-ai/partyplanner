@@ -1,23 +1,23 @@
 {
-  "name": "backend",
+  "name": "workflow-backend-node-example",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "portless run --force --name api-worker.hylo sh -c 'wrangler dev --ip 127.0.0.1 --port \"${PORT:-8788}\"'",
+    "dev": "portless run --name api.hylo tsx src/index.ts",
     "build": "tsc --noEmit"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.14",
+    "@hono/zod-openapi": "^0.19.10",
     "@workflow/core": "workspace:*",
-    "@workflow/demo-workflow": "workspace:*",
     "@workflow/runtime": "workspace:*",
-    "@workflow/server": "workspace:*",
     "hono": "^4.12.14",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0",
-    "wrangler": "^4.0.0",
+    "@types/node": "^24.12.2",
+    "tsx": "^4.21.0",
     "typescript": "~6.0.2"
   }
 }
