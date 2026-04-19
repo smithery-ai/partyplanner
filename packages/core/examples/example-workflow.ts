@@ -190,12 +190,12 @@ export const deployProd = atom(
           : path === "dispatch-worker"
             ? get(scanTools)
             : get.skip("No deployable integration path was selected");
-    const deployToken = get(prodDeployToken);
     const approval = get(prodApproval);
     if (!approval.approved)
       return get.skip("Production approval was not granted");
+    const deployToken = get(prodDeployToken);
     if (deployToken.trim().length === 0)
-      return get.skip("Production deployment token was not provided");
+      throw new Error("Production deployment token was not provided");
     return {
       action: "deploy-prod",
       provider: target.provider,

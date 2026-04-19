@@ -248,6 +248,9 @@ class RunSession {
         this.registerWaiter(depId, readerStepId);
         throw new WaitError(depId);
       }
+      if (inputDef.secret) {
+        throw new Error(`Required secret "${depId}" was not provided.`);
+      }
       throw new SkipError(depId);
     }
 

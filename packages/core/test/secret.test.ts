@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { atom } from "../src/atom";
 import { secret } from "../src/input";
 import { createRuntime } from "../src/runtime";
-import { assertResolved, resetRegistry, runToIdle } from "./helpers";
+import {
+  assertErrored,
+  assertResolved,
+  resetRegistry,
+  runToIdle,
+} from "./helpers";
 
 describe("secret()", () => {
   resetRegistry();
@@ -64,6 +69,34 @@ describe("secret()", () => {
         payload: "",
       }),
     ).rejects.toThrow("Secret must not be empty.");
+  });
+
+  it("errors when a step reads a missing secret", async () => {
+    const seed = secret("seed");
+    const apiKey = secret("apiKey");
+
+    atom(
+      (get) => {
+        get(seed);
+        return get(apiKey);
+      },
+      { name: "useSecret" },
+    );
+
+    const runtime = createRuntime();
+    const { trace } = await runToIdle(runtime, {
+      kind: "input",
+      eventId: "evt-1",
+      runId: "run-1",
+      inputId: "seed",
+      payload: "start",
+    });
+
+    assertErrored(
+      trace,
+      "useSecret",
+      'Required secret "apiKey" was not provided.',
+    );
   });
 
   it("does not expose a deferred secret helper", () => {
