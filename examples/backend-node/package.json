@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "portless run --name api.hylo tsx src/index.ts",
+    "dev": "portless run --force --name api-legacy.hylo tsx src/index.ts",
     "build": "tsc --noEmit"
   },
   "dependencies": {

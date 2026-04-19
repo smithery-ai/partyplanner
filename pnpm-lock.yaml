@@ -32,6 +32,9 @@ importers:
       '@workflow/demo-workflow':
         specifier: workspace:*
         version: link:../../packages/demo-workflow
+      '@workflow/remote':
+        specifier: workspace:*
+        version: link:../../packages/remote
       '@workflow/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -54,6 +57,37 @@ importers:
       wrangler:
         specifier: ^4.0.0
         version: 4.83.0(@cloudflare/workers-types@4.20260418.1)
+
+  apps/backend-node:
+    dependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.3.14
+        version: 0.3.16
+      '@hono/node-server':
+        specifier: ^1.19.14
+        version: 1.19.14(hono@4.12.14)
+      '@workflow/postgres':
+        specifier: workspace:*
+        version: link:../../packages/postgres
+      '@workflow/remote':
+        specifier: workspace:*
+        version: link:../../packages/remote
+      drizzle-orm:
+        specifier: ^0.45.1
+        version: 0.45.2(@cloudflare/workers-types@4.20260418.1)(@electric-sql/pglite@0.3.16)
+      hono:
+        specifier: ^4.12.14
+        version: 4.12.14
+    devDependencies:
+      '@types/node':
+        specifier: ^24.12.2
+        version: 24.12.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
 
   apps/client:
     dependencies:
@@ -188,24 +222,18 @@ importers:
 
   examples/nextjs:
     dependencies:
-      '@electric-sql/pglite':
-        specifier: ^0.3.14
-        version: 0.3.16
       '@workflow/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@workflow/frontend':
         specifier: workspace:*
         version: link:../../packages/frontend
-      '@workflow/postgres':
+      '@workflow/remote':
         specifier: workspace:*
-        version: link:../../packages/postgres
+        version: link:../../packages/remote
       '@workflow/server':
         specifier: workspace:*
         version: link:../../packages/server
-      drizzle-orm:
-        specifier: ^0.45.1
-        version: 0.45.2(@cloudflare/workers-types@4.20260418.1)(@electric-sql/pglite@0.3.16)
       hono:
         specifier: ^4.12.14
         version: 4.12.14
@@ -357,6 +385,28 @@ importers:
       zod:
         specifier: ^3.24.0
         version: 3.25.76
+
+  packages/remote:
+    dependencies:
+      '@workflow/core':
+        specifier: workspace:*
+        version: link:../core
+      '@workflow/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@workflow/server':
+        specifier: workspace:*
+        version: link:../server
+      hono:
+        specifier: ^4.12.14
+        version: 4.12.14
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
 
   packages/runtime:
     dependencies:

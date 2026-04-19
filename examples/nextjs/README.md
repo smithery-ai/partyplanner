@@ -1,43 +1,48 @@
 # Workflow Next.js Example
 
-This example runs a Workflow backend inside a Next.js route handler using:
+This example runs workflow atom code inside a Next.js route handler using:
 
 - `@workflow/server` for the Hono API
-- `@workflow/postgres` for separate state-store and queue adapters
-- Drizzle with PGlite as the Postgres-compatible local database
+- local workflow imports for execution
+- remote state/queue adapters pointed at a Hylo-compatible backend
 
 This represents the user-managed runtime model: workflow atoms are imported and
 executed by the user's application instead of being uploaded to Hylo for
-execution.
+execution. Run state, queue items, events, and run documents are stored by the
+backend configured with `HYLO_BACKEND_URL` while execution remains in Next.js.
 
-The future hybrid variant keeps this execution ownership in the user's app, but
-uses `apps/backend` for shared queue and run state. To get there, the local
-state-store and queue adapters in this example would be replaced with remote
-adapters that register workflow manifests, lease queue work, and commit
-idempotent step results to the backend.
+For local backend development without Wrangler or Cloudflare, run
+`apps/backend-node`; it uses PGlite under the hood and exposes the same runtime
+API that this example consumes.
 
 ## Run
 
 ```sh
 pnpm install
+pnpm --filter backend-node dev
 pnpm --filter workflow-nextjs-example dev
 ```
 
 The Workflow API is mounted at:
 
 ```txt
-http://localhost:3000/api/workflow
+https://nextjs.hylo.localhost/api/workflow
 ```
+
+When run through Portless, the example derives the sibling backend URL from its
+own `PORTLESS_URL`, so worktree-prefixed URLs point at the matching
+`api.hylo` service. Set `HYLO_BACKEND_URL` explicitly to point at another
+compatible backend.
 
 Useful requests:
 
 ```sh
-curl http://localhost:3000/api/workflow/manifest
+curl https://nextjs.hylo.localhost/api/workflow/manifest
 
-curl -X POST http://localhost:3000/api/workflow/runs \
+curl -X POST https://nextjs.hylo.localhost/api/workflow/runs \
   -H 'content-type: application/json' \
   -d '{"inputId":"lead","payload":{"name":"Ada","plan":"enterprise"}}'
 ```
 
-The default PGlite data directory is `.workflow-data` inside this example
-directory. Set `WORKFLOW_PGLITE_DATA_DIR` to override it.
+The backend-node PGlite data directory defaults to `.hylo-backend-node` inside
+`apps/backend-node`. Set `HYLO_BACKEND_NODE_DATA_DIR` to override it.

@@ -1,6 +1,12 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalPassThroughEnv": ["PORTLESS", "PORTLESS_*", "VITE_BACKEND_URL"],
+  "globalPassThroughEnv": [
+    "HYLO_BACKEND_NODE_DATA_DIR",
+    "HYLO_BACKEND_URL",
+    "PORTLESS",
+    "PORTLESS_*",
+    "VITE_BACKEND_URL"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
