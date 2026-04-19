@@ -1,4 +1,4 @@
-import type { Registry, RunState } from "@rxwf/core";
+import type { Registry, RunState } from "@workflow/core";
 import { Check, Copy, X } from "lucide-react";
 import { useState } from "react";
 

@@ -1,4 +1,4 @@
-import { globalRegistry, type Registry, type RunState } from "@rxwf/core";
+import { globalRegistry, type Registry, type RunState } from "@workflow/core";
 import {
   LocalScheduler,
   MemoryEventSink,
@@ -10,7 +10,7 @@ import {
   RuntimeExecutor,
   StaticWorkflowLoader,
   type WorkflowRef,
-} from "@rxwf/runtime";
+} from "@workflow/runtime";
 
 import type {
   RunStateDocument,

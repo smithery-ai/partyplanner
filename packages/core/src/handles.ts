@@ -1,4 +1,4 @@
-export const HANDLE = Symbol.for("@rxwf/handle");
+export const HANDLE = Symbol.for("@workflow/handle");
 
 export type HandleKind = "input" | "deferred_input" | "atom";
 

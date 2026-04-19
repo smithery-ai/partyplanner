@@ -1,4 +1,4 @@
-import type { NodeRecord } from "@rxwf/core";
+import type { NodeRecord } from "@workflow/core";
 import { X } from "lucide-react";
 import type { ZodTypeAny } from "zod";
 import { Button } from "@/components/ui/button";

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { QueueEvent, Registry } from "@rxwf/core";
+import type { QueueEvent, Registry } from "@workflow/core";
 import type {
   ExecuteRequest,
   ExecuteResult,
@@ -8,7 +8,7 @@ import type {
   RunEvent,
   RunSnapshot,
   WorkflowRef,
-} from "@rxwf/runtime";
+} from "@workflow/runtime";
 import {
   LocalScheduler,
   MemoryEventSink,
@@ -16,7 +16,7 @@ import {
   MemoryWorkQueue,
   RuntimeExecutor,
   StaticWorkflowLoader,
-} from "@rxwf/runtime";
+} from "@workflow/runtime";
 import {
   buildWorkflowManifest,
   type WorkflowManifest,

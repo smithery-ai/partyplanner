@@ -4,7 +4,7 @@ import type {
   QueueEvent,
   Registry,
   RunState,
-} from "@rxwf/core";
+} from "@workflow/core";
 import type {
   EventSink,
   Executor,

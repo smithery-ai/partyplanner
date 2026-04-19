@@ -1,5 +1,10 @@
-import type { NodeRecord, NodeStatus, Registry, RunState } from "@rxwf/core";
-import type { QueueSnapshot } from "@rxwf/runtime";
+import type {
+  NodeRecord,
+  NodeStatus,
+  Registry,
+  RunState,
+} from "@workflow/core";
+import type { QueueSnapshot } from "@workflow/runtime";
 import {
   type ConnectionLineComponentProps,
   Controls,

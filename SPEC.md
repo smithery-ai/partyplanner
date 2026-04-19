@@ -29,8 +29,8 @@ By the end of this plan, `npm test` against the five example workflows in the ap
 ## Public API
 
 ```ts
-import { input, secret, atom, createRuntime } from "@rxwf/core";
-import type { Runtime, RunTrace, Get } from "@rxwf/core";
+import { input, secret, atom, createRuntime } from "@workflow/core";
+import type { Runtime, RunTrace, Get } from "@workflow/core";
 ```
 
 ### `input(name, schema, opts?)`
@@ -235,7 +235,7 @@ Every `input()` / `input.deferred()` / `atom()` call returns a `Handle`. The run
 
 ```ts
 // handles.ts
-export const HANDLE = Symbol.for("@rxwf/handle");
+export const HANDLE = Symbol.for("@workflow/handle");
 
 export type HandleKind = "input" | "deferred_input" | "atom";
 

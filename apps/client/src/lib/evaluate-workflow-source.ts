@@ -1,4 +1,4 @@
-import { atom, globalRegistry, input, secret } from "@rxwf/core";
+import { atom, globalRegistry, input, secret } from "@workflow/core";
 import { z } from "zod";
 
 export function loadWorkflowSourceIntoGlobalRegistry(source: string): void {

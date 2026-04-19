@@ -1,4 +1,4 @@
-import type { Registry } from "@rxwf/core";
+import type { Registry } from "@workflow/core";
 import { type ZodTypeAny, z } from "zod";
 
 export type JsonSchema = Record<string, unknown>;
