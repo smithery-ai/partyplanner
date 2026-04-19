@@ -1,4 +1,4 @@
-import { atom, input } from "@workflow/core";
+import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
 
 export const alert = input(
@@ -22,6 +22,14 @@ export const commanderUpdate = input.deferred(
   { description: "Incident commander update before resolution." },
 );
 
+export const pagingApiKey = secret("PAGING_API_KEY", {
+  description: "Pager service API key used to page responders.",
+});
+
+export const statusPageApiKey = secret("STATUS_PAGE_API_KEY", {
+  description: "Status page API key used when an external update is required.",
+});
+
 export const assessImpact = atom(
   (get) => {
     const a = get(alert);
@@ -36,11 +44,13 @@ export const pageResponders = atom(
   (get) => {
     const severity = get(assessImpact);
     const a = get(alert);
+    const apiKey = get(pagingApiKey);
     return {
       channel: severity === "sev1" ? "war-room" : "on-call",
       service: a.service,
       region: a.region,
       severity,
+      credential: apiKey.length > 0 ? "PAGING_API_KEY" : undefined,
     };
   },
   { name: "pageResponders" },
@@ -51,10 +61,12 @@ export const draftStatusPage = atom(
     const severity = get(assessImpact);
     if (severity === "sev3") return get.skip("Status page is not required.");
     const a = get(alert);
+    const apiKey = get(statusPageApiKey);
     return {
       title: `${a.service} degradation in ${a.region}`,
       severity,
       audience: a.customerImpact ? "external" : "internal",
+      credential: apiKey.length > 0 ? "STATUS_PAGE_API_KEY" : undefined,
     };
   },
   { name: "draftStatusPage" },

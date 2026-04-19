@@ -12,6 +12,9 @@ const StartWorkflowRunRequestSchema = z.object({
   additionalInputs: z
     .array(z.object({ inputId: z.string(), payload: z.any() }))
     .optional(),
+  secretBindings: z
+    .record(z.union([z.string(), z.object({ vaultEntryId: z.string() })]))
+    .optional(),
   runId: z.string().optional(),
   autoAdvance: z.boolean().optional(),
 });

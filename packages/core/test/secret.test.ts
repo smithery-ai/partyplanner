@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { atom } from "../src/atom";
-import { secret } from "../src/input";
+import { input, secret } from "../src/input";
 import { createRuntime } from "../src/runtime";
 import {
-  assertErrored,
   assertResolved,
+  assertWaiting,
   resetRegistry,
   runToIdle,
 } from "./helpers";
@@ -25,7 +26,11 @@ describe("secret()", () => {
       { name: "useKey" },
     );
 
-    const runtime = createRuntime();
+    const runtime = createRuntime({
+      secretValues: {
+        apiKey: "sk-live-123",
+      },
+    });
     const { state, trace } = await runToIdle(runtime, {
       kind: "input",
       eventId: "evt-1",
@@ -35,7 +40,7 @@ describe("secret()", () => {
     });
 
     expect(apiKey.__kind).toBe("input");
-    expect(state.inputs.apiKey).toBe("sk-live-123");
+    expect(state.inputs.apiKey).toBeUndefined();
     expect(trace.payload).toBe("[secret]");
     assertResolved(trace, "apiKey", "[secret]");
     assertResolved(trace, useKey.__id, "sk-");
@@ -71,8 +76,8 @@ describe("secret()", () => {
     ).rejects.toThrow("Secret must not be empty.");
   });
 
-  it("errors when a step reads a missing secret", async () => {
-    const seed = secret("seed");
+  it("waits when a step reads a missing secret", async () => {
+    const seed = input("seed", z.string());
     const apiKey = secret("apiKey");
 
     atom(
@@ -92,11 +97,7 @@ describe("secret()", () => {
       payload: "start",
     });
 
-    assertErrored(
-      trace,
-      "useSecret",
-      'Required secret "apiKey" was not provided.',
-    );
+    assertWaiting(trace, "useSecret", "apiKey");
   });
 
   it("does not expose a deferred secret helper", () => {

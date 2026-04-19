@@ -32,6 +32,7 @@ export type WorkflowManagerOptions = {
   executor?: Executor;
   workflow?: {
     id?: string;
+    organizationId?: string;
     version?: string;
     codeHash?: string;
     name?: string;
@@ -54,6 +55,7 @@ export class WorkflowManager {
     const codeHash = options.workflow?.codeHash ?? hashRegistry(registry);
     const workflow: WorkflowRef = {
       workflowId: options.workflow?.id ?? "workflow",
+      organizationId: options.workflow?.organizationId,
       version: options.workflow?.version ?? codeHash,
       codeHash,
     };
@@ -61,6 +63,7 @@ export class WorkflowManager {
       ref: workflow,
       manifest: buildWorkflowManifest({
         workflowId: workflow.workflowId,
+        organizationId: workflow.organizationId,
         version: workflow.version,
         codeHash,
         name: options.workflow?.name,

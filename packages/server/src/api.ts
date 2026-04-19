@@ -22,6 +22,7 @@ export type StartWorkflowRunRequest = {
     inputId: string;
     payload: unknown;
   }[];
+  secretBindings?: Record<string, string | { vaultEntryId: string }>;
   runId?: string;
   autoAdvance?: boolean;
 };
@@ -38,6 +39,49 @@ export type SubmitBackendInputRequest = {
 
 export type SetAutoAdvanceRequest = {
   autoAdvance: boolean;
+};
+
+export type SecretVaultScope = "user" | "organization";
+
+export type SecretVaultEntry = {
+  id: string;
+  organizationId: string;
+  ownerUserId?: string;
+  scope: SecretVaultScope;
+  name: string;
+  key?: string;
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt?: number;
+};
+
+export type CreateSecretVaultEntryRequest = {
+  name: string;
+  value: string;
+  key?: string;
+  scope?: SecretVaultScope;
+};
+
+export type UpdateSecretVaultEntryRequest = {
+  name?: string;
+  value?: string;
+  key?: string;
+  scope?: SecretVaultScope;
+};
+
+export type RunSecretBinding = {
+  runId: string;
+  workflowId: string;
+  organizationId: string;
+  logicalName: string;
+  vaultEntryId: string;
+  boundByUserId: string;
+  createdAt: number;
+};
+
+export type BindRunSecretRequest = {
+  vaultEntryId: string;
+  autoAdvance?: boolean;
 };
 
 export type RunStateDocument = RunSnapshot & {

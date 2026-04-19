@@ -22,7 +22,7 @@ const workflow: WorkflowRef = {
   version: "v1",
 };
 
-function makeScheduler() {
+function makeScheduler(secretValues: Record<string, string> = {}) {
   const loader = new StaticWorkflowLoader([
     {
       ref: workflow,
@@ -37,7 +37,11 @@ function makeScheduler() {
     stateStore,
     queue,
     events,
-    executor: new RuntimeExecutor(),
+    executor: new RuntimeExecutor({
+      async resolve({ logicalName }) {
+        return secretValues[logicalName];
+      },
+    }),
   });
   return { scheduler, queue, events };
 }
@@ -80,7 +84,7 @@ describe("LocalScheduler", () => {
     ]);
   });
 
-  it("enqueues start secrets before fan-out steps", async () => {
+  it("injects bound secrets without storing plaintext in run state", async () => {
     const seed = input("seed", z.object({ name: z.string() }));
     const apiKey = secret("apiKey");
 
@@ -93,7 +97,7 @@ describe("LocalScheduler", () => {
       { name: "useSecret" },
     );
 
-    const { scheduler } = makeScheduler();
+    const { scheduler } = makeScheduler({ apiKey: "sk-live" });
     const started = await scheduler.startRun({
       workflow,
       runId: "run-secret-start",
@@ -102,23 +106,17 @@ describe("LocalScheduler", () => {
         payload: { name: "Ada" },
         eventId: "evt-seed",
       },
-      additionalInputs: [
-        {
-          inputId: "apiKey",
-          payload: "sk-live",
-          eventId: "evt-secret",
-        },
-      ],
     });
 
     expect(
       started.queue.pending.map((item) => queueNodeId(item.event)),
-    ).toEqual(["seed", "apiKey"]);
+    ).toEqual(["seed"]);
 
     await scheduler.drain();
     const snapshot = await scheduler.snapshot("run-secret-start");
 
     expect(snapshot.status).toBe("completed");
+    expect(snapshot.state.inputs.apiKey).toBeUndefined();
     expect(snapshot.nodes.find((node) => node.id === "apiKey")?.value).toBe(
       "[secret]",
     );
@@ -146,7 +144,7 @@ describe("LocalScheduler", () => {
       { name: "deploy" },
     );
 
-    const { scheduler } = makeScheduler();
+    const { scheduler } = makeScheduler({ apiKey: "sk-live" });
     await scheduler.startRun({
       workflow,
       runId: "run-secret-wait",
@@ -155,13 +153,6 @@ describe("LocalScheduler", () => {
         payload: { name: "Ada" },
         eventId: "evt-seed",
       },
-      additionalInputs: [
-        {
-          inputId: "apiKey",
-          payload: "sk-live",
-          eventId: "evt-secret",
-        },
-      ],
     });
 
     await scheduler.drain();

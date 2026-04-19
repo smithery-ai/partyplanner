@@ -6,8 +6,20 @@ import type {
   QueueSnapshot,
   RunEvent,
   SaveResult,
+  SecretResolver,
   StoredRunState,
 } from "@workflow/runtime";
+import { RuntimeExecutor } from "@workflow/runtime";
+import type {
+  BindRunSecretRequest,
+  CreateSecretVaultEntryRequest,
+  RunSecretBinding,
+  SecretVaultEntry,
+  SetWorkflowAutoAdvanceRequest,
+  StartWorkflowRunRequest,
+  SubmitWorkflowInputRequest,
+  UpdateSecretVaultEntryRequest,
+} from "@workflow/server";
 import {
   summarizeRun,
   WorkflowManager,
@@ -27,6 +39,13 @@ import {
 
 const WORKFLOW_ID = "default";
 const WORKFLOW_NAME = "Onboarding demo";
+const DEFAULT_ORGANIZATION_ID = "org_personal_dev";
+const DEFAULT_USER_ID = "user_dev";
+const SECRET_BOUND_PAYLOAD = "[bound]";
+
+type StoredSecretVaultEntry = SecretVaultEntry & {
+  ciphertext: string;
+};
 
 export function createApp(
   storage: DurableObjectStorage,
@@ -34,18 +53,30 @@ export function createApp(
 ) {
   const stateStore = new DurableObjectWorkflowStateStore(storage);
   const queue = new DurableObjectWorkflowQueue(storage);
+  const secretResolver: SecretResolver = {
+    resolve: ({ workflow, state, logicalName }) =>
+      resolveBoundSecret(storage, {
+        runId: state.runId,
+        workflowId: workflow.workflowId,
+        organizationId: workflow.organizationId ?? DEFAULT_ORGANIZATION_ID,
+        logicalName,
+      }),
+  };
   const staticManager = new WorkflowManager({
     workflows: {},
     stateStore,
     queue,
+    executor: new RuntimeExecutor(secretResolver),
     workflow: {
       id: WORKFLOW_ID,
+      organizationId: DEFAULT_ORGANIZATION_ID,
       name: WORKFLOW_NAME,
     },
   });
   const dynamicExecutor = new DynamicWorkerExecutor(
     workerLoader,
     (workflowId) => loadWorkflow(storage, workflowId),
+    secretResolver,
   );
 
   const app = new Hono();
@@ -59,6 +90,45 @@ export function createApp(
   );
 
   app.get("/health", (c) => c.json({ ok: true }));
+
+  app.get("/vault/secrets", async (c) =>
+    c.json(await listSecretVaultEntries(storage, DEFAULT_ORGANIZATION_ID)),
+  );
+
+  app.post("/vault/secrets", async (c) => {
+    try {
+      const body = (await readBody(c.req)) as CreateSecretVaultEntryRequest;
+      return c.json(
+        publicVaultEntry(
+          await createSecretVaultEntry(storage, {
+            organizationId: DEFAULT_ORGANIZATION_ID,
+            ownerUserId: DEFAULT_USER_ID,
+            body,
+          }),
+        ),
+      );
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
+
+  app.patch("/vault/secrets/:secretId", async (c) => {
+    try {
+      const secretId = c.req.param("secretId");
+      const body = (await readBody(c.req)) as UpdateSecretVaultEntryRequest;
+      const updated = await updateSecretVaultEntry(storage, secretId, body);
+      if (!updated) return c.json({ message: "Unknown secret" }, 404);
+      return c.json(publicVaultEntry(updated));
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
+
+  app.delete("/vault/secrets/:secretId", async (c) => {
+    const secretId = c.req.param("secretId");
+    await storage.delete(secretVaultEntryKey(secretId));
+    return c.json({ ok: true as const });
+  });
 
   app.get("/workflows", async (c) => {
     return c.json(
@@ -85,6 +155,7 @@ export function createApp(
 
       const workflow = await createStoredDynamicWorkflow(workerLoader, {
         workflowId,
+        organizationId: DEFAULT_ORGANIZATION_ID,
         name: stringValue(body, "name"),
         source,
       });
@@ -125,9 +196,20 @@ export function createApp(
     try {
       const workflowId = c.req.param("workflowId");
       const manager = await managerForWorkflow(workflowId);
-      if (!manager || !(await loadWorkflow(storage, workflowId)))
+      const workflow = await loadWorkflow(storage, workflowId);
+      if (!manager || !workflow)
         return c.json({ message: "Unknown workflow" }, 404);
-      return c.json(await manager.startRun(await readBody(c.req)));
+      const body = await readBody(c.req);
+      const runId = stringValue(body, "runId") ?? `run_${randomId()}`;
+      await saveInitialSecretBindings(storage, {
+        workflowId,
+        organizationId: workflow.organizationId ?? DEFAULT_ORGANIZATION_ID,
+        runId,
+        secretBindings: secretBindingsValue(body),
+      });
+      return c.json(
+        await manager.startRun({ ...body, runId } as StartWorkflowRunRequest),
+      );
     } catch (e) {
       return errorResponse(c, e);
     }
@@ -136,7 +218,17 @@ export function createApp(
   app.post("/runs", async (c) => {
     try {
       const manager = (await managerForWorkflow(WORKFLOW_ID)) ?? staticManager;
-      return c.json(await manager.startRun(await readBody(c.req)));
+      const body = await readBody(c.req);
+      const runId = stringValue(body, "runId") ?? `run_${randomId()}`;
+      await saveInitialSecretBindings(storage, {
+        workflowId: WORKFLOW_ID,
+        organizationId: DEFAULT_ORGANIZATION_ID,
+        runId,
+        secretBindings: secretBindingsValue(body),
+      });
+      return c.json(
+        await manager.startRun({ ...body, runId } as StartWorkflowRunRequest),
+      );
     } catch (e) {
       return errorResponse(c, e);
     }
@@ -145,11 +237,69 @@ export function createApp(
   app.get("/runs/:runId", async (c) => runDocument(c, stateStore));
   app.get("/state/:runId", async (c) => runDocument(c, stateStore));
 
+  app.get("/runs/:runId/secret-bindings", async (c) => {
+    const document = await stateStore.getRunDocument(c.req.param("runId"));
+    if (!document) return c.json({ message: "Unknown run" }, 404);
+    return c.json(await listRunSecretBindings(storage, document.runId));
+  });
+
+  app.put("/runs/:runId/secret-bindings/:logicalName", async (c) => {
+    try {
+      return c.json(
+        await bindRunSecretAndWake(
+          c.req.param("runId"),
+          c.req.param("logicalName"),
+          await readBody(c.req),
+        ),
+      );
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
+
+  app.get("/workflows/:workflowId/runs/:runId/secret-bindings", async (c) => {
+    const document = await stateStore.getRunDocument(c.req.param("runId"));
+    if (
+      !document ||
+      document.workflow.workflowId !== c.req.param("workflowId")
+    ) {
+      return c.json({ message: "Unknown run" }, 404);
+    }
+    return c.json(await listRunSecretBindings(storage, document.runId));
+  });
+
+  app.put(
+    "/workflows/:workflowId/runs/:runId/secret-bindings/:logicalName",
+    async (c) => {
+      try {
+        const document = await stateStore.getRunDocument(c.req.param("runId"));
+        if (
+          !document ||
+          document.workflow.workflowId !== c.req.param("workflowId")
+        ) {
+          return c.json({ message: "Unknown run" }, 404);
+        }
+        return c.json(
+          await bindRunSecretAndWake(
+            c.req.param("runId"),
+            c.req.param("logicalName"),
+            await readBody(c.req),
+          ),
+        );
+      } catch (e) {
+        return errorResponse(c, e);
+      }
+    },
+  );
+
   app.post("/runs/:runId/inputs", async (c) => {
     try {
       const manager = await managerForRun(c.req.param("runId"));
       return c.json(
-        await manager.submitInput(c.req.param("runId"), await readBody(c.req)),
+        await manager.submitInput(
+          c.req.param("runId"),
+          (await readBody(c.req)) as SubmitWorkflowInputRequest,
+        ),
       );
     } catch (e) {
       return errorResponse(c, e);
@@ -171,7 +321,7 @@ export function createApp(
       return c.json(
         await manager.setAutoAdvance(
           c.req.param("runId"),
-          await readBody(c.req),
+          (await readBody(c.req)) as SetWorkflowAutoAdvanceRequest,
         ),
       );
     } catch (e) {
@@ -205,10 +355,41 @@ export function createApp(
       executor: dynamicExecutor,
       workflow: {
         id: workflow.workflowId,
+        organizationId: workflow.organizationId ?? DEFAULT_ORGANIZATION_ID,
         name: workflow.name,
         version: workflow.manifest.version,
         codeHash: workflow.manifest.codeHash,
       },
+    });
+  }
+
+  async function bindRunSecretAndWake(
+    runId: string,
+    logicalName: string,
+    body: unknown,
+  ): Promise<WorkflowRunDocument> {
+    const document = await stateStore.getRunDocument(runId);
+    if (!document) throw new Error(`Unknown run: ${runId}`);
+    const request = body as BindRunSecretRequest;
+    if (!request || typeof request.vaultEntryId !== "string") {
+      throw new Error("Missing vaultEntryId");
+    }
+
+    await saveRunSecretBinding(storage, {
+      runId,
+      workflowId: document.workflow.workflowId,
+      organizationId:
+        document.workflow.organizationId ?? DEFAULT_ORGANIZATION_ID,
+      logicalName,
+      vaultEntryId: request.vaultEntryId,
+      boundByUserId: DEFAULT_USER_ID,
+    });
+
+    const manager = await managerForRun(runId);
+    return manager.submitInput(runId, {
+      inputId: logicalName,
+      payload: SECRET_BOUND_PAYLOAD,
+      autoAdvance: request.autoAdvance ?? document.autoAdvance,
     });
   }
 }
@@ -225,11 +406,181 @@ async function runDocument(
   return c.json(document);
 }
 
-async function readBody(req: { json(): Promise<unknown> }): Promise<never> {
+async function createSecretVaultEntry(
+  storage: DurableObjectStorage,
+  args: {
+    organizationId: string;
+    ownerUserId: string;
+    body: CreateSecretVaultEntryRequest;
+  },
+): Promise<StoredSecretVaultEntry> {
+  if (!args.body || typeof args.body.name !== "string" || !args.body.name) {
+    throw new Error("Missing secret name");
+  }
+  if (typeof args.body.value !== "string" || !args.body.value) {
+    throw new Error("Missing secret value");
+  }
+
+  const now = Date.now();
+  const entry: StoredSecretVaultEntry = {
+    id: `vault_secret_${randomId()}`,
+    organizationId: args.organizationId,
+    ownerUserId:
+      args.body.scope === "organization" ? undefined : args.ownerUserId,
+    scope: args.body.scope ?? "user",
+    name: args.body.name,
+    key: args.body.key,
+    ciphertext: await encryptSecret(args.body.value),
+    createdAt: now,
+    updatedAt: now,
+  };
+  await storage.put(secretVaultEntryKey(entry.id), entry);
+  return entry;
+}
+
+async function updateSecretVaultEntry(
+  storage: DurableObjectStorage,
+  secretId: string,
+  body: UpdateSecretVaultEntryRequest,
+): Promise<StoredSecretVaultEntry | undefined> {
+  const current = await storage.get<StoredSecretVaultEntry>(
+    secretVaultEntryKey(secretId),
+  );
+  if (!current) return undefined;
+
+  const next: StoredSecretVaultEntry = {
+    ...current,
+    name: typeof body.name === "string" && body.name ? body.name : current.name,
+    key: typeof body.key === "string" ? body.key : current.key,
+    scope: body.scope ?? current.scope,
+    ownerUserId:
+      body.scope === "organization" ? undefined : current.ownerUserId,
+    ciphertext:
+      typeof body.value === "string" && body.value
+        ? await encryptSecret(body.value)
+        : current.ciphertext,
+    updatedAt: Date.now(),
+  };
+  await storage.put(secretVaultEntryKey(secretId), next);
+  return next;
+}
+
+async function listSecretVaultEntries(
+  storage: DurableObjectStorage,
+  organizationId: string,
+): Promise<SecretVaultEntry[]> {
+  const rows = await storage.list<StoredSecretVaultEntry>({
+    prefix: secretVaultEntryPrefix(),
+  });
+  return [...rows.values()]
+    .filter((entry) => entry.organizationId === organizationId)
+    .map(publicVaultEntry)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function publicVaultEntry(entry: StoredSecretVaultEntry): SecretVaultEntry {
+  const { ciphertext: _ciphertext, ...publicEntry } = entry;
+  return publicEntry;
+}
+
+async function saveInitialSecretBindings(
+  storage: DurableObjectStorage,
+  args: {
+    workflowId: string;
+    organizationId: string;
+    runId: string;
+    secretBindings: Record<string, string> | undefined;
+  },
+): Promise<void> {
+  if (!args.secretBindings) return;
+  for (const [logicalName, vaultEntryId] of Object.entries(
+    args.secretBindings,
+  )) {
+    await saveRunSecretBinding(storage, {
+      runId: args.runId,
+      workflowId: args.workflowId,
+      organizationId: args.organizationId,
+      logicalName,
+      vaultEntryId,
+      boundByUserId: DEFAULT_USER_ID,
+    });
+  }
+}
+
+async function saveRunSecretBinding(
+  storage: DurableObjectStorage,
+  args: Omit<RunSecretBinding, "createdAt">,
+): Promise<RunSecretBinding> {
+  const entry = await storage.get<StoredSecretVaultEntry>(
+    secretVaultEntryKey(args.vaultEntryId),
+  );
+  if (!entry) throw new Error(`Unknown vault secret: ${args.vaultEntryId}`);
+  if (entry.organizationId !== args.organizationId) {
+    throw new Error("Vault secret belongs to a different organization");
+  }
+
+  const binding: RunSecretBinding = {
+    ...args,
+    createdAt: Date.now(),
+  };
+  await storage.put(runSecretBindingKey(args.runId, args.logicalName), binding);
+  return binding;
+}
+
+async function listRunSecretBindings(
+  storage: DurableObjectStorage,
+  runId: string,
+): Promise<RunSecretBinding[]> {
+  const rows = await storage.list<RunSecretBinding>({
+    prefix: runSecretBindingPrefix(runId),
+  });
+  return [...rows.values()].sort((a, b) => a.createdAt - b.createdAt);
+}
+
+async function resolveBoundSecret(
+  storage: DurableObjectStorage,
+  args: {
+    runId: string;
+    workflowId: string;
+    organizationId: string;
+    logicalName: string;
+  },
+): Promise<string | undefined> {
+  const binding = await storage.get<RunSecretBinding>(
+    runSecretBindingKey(args.runId, args.logicalName),
+  );
+  if (!binding) return undefined;
+  if (
+    binding.workflowId !== args.workflowId ||
+    binding.organizationId !== args.organizationId
+  ) {
+    return undefined;
+  }
+
+  const entry = await storage.get<StoredSecretVaultEntry>(
+    secretVaultEntryKey(binding.vaultEntryId),
+  );
+  if (!entry || entry.organizationId !== args.organizationId) {
+    return undefined;
+  }
+
+  await storage.put<StoredSecretVaultEntry>(secretVaultEntryKey(entry.id), {
+    ...entry,
+    lastUsedAt: Date.now(),
+  });
+  return decryptSecret(entry.ciphertext);
+}
+
+async function readBody(req: {
+  json(): Promise<unknown>;
+}): Promise<Record<string, unknown>> {
   try {
-    return (await req.json()) as never;
+    const value = await req.json();
+    return value && typeof value === "object"
+      ? (value as Record<string, unknown>)
+      : {};
   } catch {
-    return {} as never;
+    return {};
   }
 }
 
@@ -245,6 +596,28 @@ function stringValue(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const candidate = (value as Record<string, unknown>)[key];
   return typeof candidate === "string" ? candidate : undefined;
+}
+
+function secretBindingsValue(
+  value: unknown,
+): Record<string, string> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = (value as Record<string, unknown>).secretBindings;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+
+  const bindings: Record<string, string> = {};
+  for (const [logicalName, binding] of Object.entries(raw)) {
+    if (typeof binding === "string") {
+      bindings[logicalName] = binding;
+      continue;
+    }
+    if (binding && typeof binding === "object") {
+      const vaultEntryId = (binding as Record<string, unknown>).vaultEntryId;
+      if (typeof vaultEntryId === "string")
+        bindings[logicalName] = vaultEntryId;
+    }
+  }
+  return Object.keys(bindings).length > 0 ? bindings : undefined;
 }
 
 function workflowPrefix(): string {
@@ -275,6 +648,8 @@ function isStoredWorkflow(value: unknown): value is StoredWorkflow {
   const workflow = value as Partial<StoredWorkflow>;
   return (
     typeof workflow.workflowId === "string" &&
+    (workflow.organizationId === undefined ||
+      typeof workflow.organizationId === "string") &&
     typeof workflow.source === "string" &&
     Boolean(workflow.manifest) &&
     Array.isArray(workflow.atoms)
@@ -516,6 +891,74 @@ function queuePrefix(): string {
 
 function queueKey(eventId: string): string {
   return `${queuePrefix()}${eventId}`;
+}
+
+function secretVaultEntryPrefix(): string {
+  return "secret-vault-entry:";
+}
+
+function secretVaultEntryKey(secretId: string): string {
+  return `${secretVaultEntryPrefix()}${secretId}`;
+}
+
+function runSecretBindingPrefix(runId: string): string {
+  return `run-secret-binding:${runId}:`;
+}
+
+function runSecretBindingKey(runId: string, logicalName: string): string {
+  return `${runSecretBindingPrefix(runId)}${encodeURIComponent(logicalName)}`;
+}
+
+let cachedVaultKey: Promise<CryptoKey> | undefined;
+
+async function vaultKey(): Promise<CryptoKey> {
+  cachedVaultKey ??= crypto.subtle.importKey(
+    "raw",
+    await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode("hylo-local-dev-secret-vault-key"),
+    ),
+    "AES-GCM",
+    false,
+    ["encrypt", "decrypt"],
+  );
+  return cachedVaultKey;
+}
+
+async function encryptSecret(value: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    await vaultKey(),
+    new TextEncoder().encode(value),
+  );
+  return `${base64Encode(iv)}.${base64Encode(new Uint8Array(ciphertext))}`;
+}
+
+async function decryptSecret(ciphertext: string): Promise<string> {
+  const [encodedIv, encodedValue] = ciphertext.split(".");
+  if (!encodedIv || !encodedValue) throw new Error("Invalid secret ciphertext");
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: base64Decode(encodedIv) },
+    await vaultKey(),
+    base64Decode(encodedValue),
+  );
+  return new TextDecoder().decode(plaintext);
+}
+
+function base64Encode(value: Uint8Array): string {
+  let binary = "";
+  for (const byte of value) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64Decode(value: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(value);
+  const bytes = new Uint8Array<ArrayBuffer>(new ArrayBuffer(binary.length));
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function randomId(): string {
