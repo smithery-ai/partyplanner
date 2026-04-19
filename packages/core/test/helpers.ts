@@ -52,6 +52,12 @@ export function assertSkipped(trace: RunTrace, id: string) {
   expect(trace.nodes[id]?.status).toBe("skipped");
 }
 
+export function assertErrored(trace: RunTrace, id: string, message?: string) {
+  expect(trace.nodes[id]?.status).toBe("errored");
+  if (message !== undefined)
+    expect(trace.nodes[id]?.error?.message).toBe(message);
+}
+
 export function assertWaiting(trace: RunTrace, id: string, waitingOn?: string) {
   expect(trace.nodes[id]?.status).toBe("waiting");
   if (waitingOn) expect(trace.nodes[id]?.waitingOn).toBe(waitingOn);
