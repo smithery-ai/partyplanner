@@ -69,6 +69,10 @@ const PayloadSchema = z
 
 const HealthResponseSchema = z.object({ ok: z.boolean() }).openapi("Health");
 
+const DeleteWorkflowResponseSchema = z
+  .object({ ok: z.literal(true) })
+  .openapi("DeleteWorkflowResponse");
+
 const WorkflowRefSchema = z
   .object({
     workflowId: z.string(),
@@ -284,6 +288,7 @@ const WorkflowInputManifestSchema = z
   .object({
     id: z.string(),
     kind: z.enum(["input", "deferred_input"]),
+    secret: z.boolean().optional(),
     description: z.string().optional(),
     schema: JsonSchemaSchema,
   })
@@ -313,6 +318,9 @@ const StartWorkflowRunRequestSchema = z
   .object({
     inputId: z.string(),
     payload: PayloadSchema,
+    additionalInputs: z
+      .array(z.object({ inputId: z.string(), payload: PayloadSchema }))
+      .optional(),
     runId: z.string().optional(),
     autoAdvance: z.boolean().optional(),
   })
@@ -323,6 +331,9 @@ const StartBackendRunRequestSchema = z
     workflowSource: z.string(),
     inputId: z.string(),
     payload: PayloadSchema,
+    additionalInputs: z
+      .array(z.object({ inputId: z.string(), payload: PayloadSchema }))
+      .optional(),
     runId: z.string().optional(),
     autoAdvance: z.boolean().optional(),
   })
@@ -448,6 +459,32 @@ const getWorkflowRoute = createRoute({
         },
       },
       description: "Workflow manifest.",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+      description: "Unknown workflow.",
+    },
+  },
+});
+
+const deleteWorkflowRoute = createRoute({
+  method: "delete",
+  path: "/workflows/{workflowId}",
+  request: {
+    params: WorkflowIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: DeleteWorkflowResponseSchema,
+        },
+      },
+      description: "Deleted workflow.",
     },
     404: {
       content: {
@@ -666,7 +703,7 @@ export function createApp() {
     cors({
       origin: "*",
       allowHeaders: ["Content-Type"],
-      allowMethods: ["GET", "POST", "OPTIONS"],
+      allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
     }),
   );
   const routes = app
@@ -687,6 +724,13 @@ export function createApp() {
       const manifest = runManager.getWorkflow(workflowId);
       if (!manifest) return c.json({ message: "Unknown workflow" }, 404);
       return c.json(manifest, 200);
+    })
+    .openapi(deleteWorkflowRoute, (c) => {
+      const { workflowId } = c.req.valid("param");
+      if (!runManager.deleteWorkflow(workflowId)) {
+        return c.json({ message: "Unknown workflow" }, 404);
+      }
+      return c.json({ ok: true as const }, 200);
     })
     .openapi(startWorkflowRunRoute, async (c) => {
       try {

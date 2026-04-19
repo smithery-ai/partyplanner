@@ -8,7 +8,7 @@ export {
 } from "./errors";
 export type { Atom, DeferredInput, Handle, HandleKind, Input } from "./handles";
 export { HANDLE, isHandle } from "./handles";
-export { input } from "./input";
+export { input, secret } from "./input";
 export type { AtomDef, InputDef } from "./registry";
 export { globalRegistry, Registry } from "./registry";
 export { createRuntime } from "./runtime";

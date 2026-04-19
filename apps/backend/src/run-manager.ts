@@ -32,6 +32,10 @@ export type CreateWorkflowRequest = {
 export type StartWorkflowRunRequest = {
   inputId: string;
   payload: unknown;
+  additionalInputs?: {
+    inputId: string;
+    payload: unknown;
+  }[];
   runId?: string;
   autoAdvance?: boolean;
 };
@@ -40,6 +44,10 @@ export type StartBackendRunRequest = {
   workflowSource: string;
   inputId: string;
   payload: unknown;
+  additionalInputs?: {
+    inputId: string;
+    payload: unknown;
+  }[];
   runId?: string;
   autoAdvance?: boolean;
 };
@@ -123,6 +131,14 @@ export class JsonStateManager {
       .map((document) => summarizeRun(document))
       .sort((a, b) => b.startedAt - a.startedAt);
   }
+
+  deleteForWorkflow(workflowId: string): void {
+    for (const [runId, document] of this.documents) {
+      if (document.workflow.workflowId === workflowId) {
+        this.documents.delete(runId);
+      }
+    }
+  }
 }
 
 export class BackendRunManager {
@@ -167,6 +183,16 @@ export class BackendRunManager {
     return structuredClone(manifest);
   }
 
+  deleteWorkflow(workflowId: string): boolean {
+    if (!this.workflows.delete(workflowId)) return false;
+    for (const [runId, controller] of this.runs) {
+      if (controller.workflow.workflowId === workflowId)
+        this.runs.delete(runId);
+    }
+    this.stateManager.deleteForWorkflow(workflowId);
+    return true;
+  }
+
   listWorkflows(): WorkflowManifest[] {
     return [...this.workflows.values()]
       .map((workflow) => structuredClone(workflow.manifest))
@@ -206,6 +232,7 @@ export class BackendRunManager {
       {
         inputId: request.inputId,
         payload: request.payload,
+        additionalInputs: request.additionalInputs,
         runId,
         autoAdvance: request.autoAdvance,
       },
@@ -253,6 +280,7 @@ export class BackendRunManager {
         inputId: request.inputId,
         payload: request.payload,
       },
+      additionalInputs: request.additionalInputs,
     });
     const document = await this.publishSnapshot(controller);
     if (controller.autoAdvance) this.kickProcessing(controller);

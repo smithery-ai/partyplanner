@@ -10,6 +10,7 @@ export type NodeDetailEditor = {
   inputDescription?: string;
   description: string;
   schema: ZodTypeAny;
+  secret?: boolean;
   value: unknown;
   onChange: (value: unknown) => void;
   onSubmit: () => void | Promise<void>;
@@ -74,6 +75,7 @@ export function NodeDetailSheet({
                 value={editor.value}
                 onChange={editor.onChange}
                 idPrefix={nodeId}
+                secret={editor.secret}
               />
               {editor.error ? (
                 <p className="text-destructive text-xs">{editor.error}</p>

@@ -33,7 +33,12 @@ export function StartWorkflowSheet({
 }) {
   if (!open) return null;
 
-  const immediate = registry.allInputs().filter((i) => i.kind === "input");
+  const immediate = registry
+    .allInputs()
+    .filter((i) => i.kind === "input" && !i.secret);
+  const secrets = registry
+    .allInputs()
+    .filter((i) => i.kind === "input" && i.secret);
 
   return (
     <>
@@ -123,20 +128,49 @@ export function StartWorkflowSheet({
                       value={inputValues[inp.id]}
                       onChange={(v) => onInputValuesChange(inp.id, v)}
                       idPrefix={inp.id}
+                      secret={inp.secret}
                     />
-                    {canSubmitSeed && inp.id === seedInputId ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => onSubmitSeed()}
-                      >
-                        Start Workflow
-                      </Button>
-                    ) : null}
                   </div>
                 );
               })}
+              {secrets.length > 0 ? (
+                <div className="space-y-3 border-t border-border pt-4">
+                  <h3 className="font-medium text-xs text-foreground">
+                    Secrets
+                  </h3>
+                  {secrets.map((inp) => (
+                    <div key={inp.id} className="space-y-2">
+                      <div className="space-y-1">
+                        <code className="block text-[11px] text-foreground">
+                          {inp.id}
+                        </code>
+                        {inp.description ? (
+                          <p className="text-muted-foreground text-[11px] leading-snug">
+                            {inp.description}
+                          </p>
+                        ) : null}
+                      </div>
+                      <ZodSchemaForm
+                        schema={inp.schema}
+                        value={inputValues[inp.id]}
+                        onChange={(v) => onInputValuesChange(inp.id, v)}
+                        idPrefix={inp.id}
+                        secret={inp.secret}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {canSubmitSeed ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => onSubmitSeed()}
+                >
+                  Start Workflow
+                </Button>
+              ) : null}
             </>
           )}
 

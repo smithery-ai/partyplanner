@@ -6,6 +6,7 @@ export type InputDef = {
   id: string;
   schema: ZodSchema<unknown>;
   description?: string;
+  secret?: boolean;
 };
 
 export type AtomDef = {

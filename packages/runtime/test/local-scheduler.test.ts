@@ -1,4 +1,10 @@
-import { atom, globalRegistry, input } from "@rxwf/core";
+import {
+  atom,
+  globalRegistry,
+  input,
+  type QueueEvent,
+  secret,
+} from "@rxwf/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -36,6 +42,10 @@ function makeScheduler() {
   return { scheduler, queue, events };
 }
 
+function queueNodeId(event: QueueEvent): string {
+  return event.kind === "input" ? event.inputId : event.stepId;
+}
+
 describe("LocalScheduler", () => {
   beforeEach(() => {
     globalRegistry.clear();
@@ -68,6 +78,105 @@ describe("LocalScheduler", () => {
       "run_started",
       "node_queued",
     ]);
+  });
+
+  it("enqueues start secrets before fan-out steps", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+    const apiKey = secret("apiKey");
+
+    atom(
+      (get) => {
+        const initial = get(seed);
+        const key = get(apiKey);
+        return `${initial.name}:${key.slice(0, 2)}`;
+      },
+      { name: "useSecret" },
+    );
+
+    const { scheduler } = makeScheduler();
+    const started = await scheduler.startRun({
+      workflow,
+      runId: "run-secret-start",
+      input: {
+        inputId: "seed",
+        payload: { name: "Ada" },
+        eventId: "evt-seed",
+      },
+      additionalInputs: [
+        {
+          inputId: "apiKey",
+          payload: "sk-live",
+          eventId: "evt-secret",
+        },
+      ],
+    });
+
+    expect(
+      started.queue.pending.map((item) => queueNodeId(item.event)),
+    ).toEqual(["seed", "apiKey"]);
+
+    await scheduler.drain();
+    const snapshot = await scheduler.snapshot("run-secret-start");
+
+    expect(snapshot.status).toBe("completed");
+    expect(snapshot.nodes.find((node) => node.id === "apiKey")?.value).toBe(
+      "[secret]",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "useSecret")?.value).toBe(
+      "Ada:sk",
+    );
+  });
+
+  it("keeps secret dependency edges when a downstream step waits", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+    const apiKey = secret("apiKey");
+    const approval = input.deferred(
+      "approval",
+      z.object({ approved: z.boolean() }),
+    );
+
+    atom(
+      (get) => {
+        const initial = get(seed);
+        const key = get(apiKey);
+        const ok = get(approval);
+        if (!ok.approved) return get.skip("not approved");
+        return `${initial.name}:${key.slice(0, 2)}`;
+      },
+      { name: "deploy" },
+    );
+
+    const { scheduler } = makeScheduler();
+    await scheduler.startRun({
+      workflow,
+      runId: "run-secret-wait",
+      input: {
+        inputId: "seed",
+        payload: { name: "Ada" },
+        eventId: "evt-seed",
+      },
+      additionalInputs: [
+        {
+          inputId: "apiKey",
+          payload: "sk-live",
+          eventId: "evt-secret",
+        },
+      ],
+    });
+
+    await scheduler.drain();
+    const snapshot = await scheduler.snapshot("run-secret-wait");
+
+    expect(snapshot.status).toBe("waiting");
+    expect(snapshot.nodes.find((node) => node.id === "deploy")?.deps).toEqual(
+      expect.arrayContaining(["seed", "apiKey", "approval"]),
+    );
+    expect(snapshot.edges).toEqual(
+      expect.arrayContaining([
+        { id: "apiKey->deploy", source: "apiKey", target: "deploy" },
+        { id: "approval->deploy", source: "approval", target: "deploy" },
+      ]),
+    );
   });
 
   it("drains a linear workflow into a graph snapshot", async () => {

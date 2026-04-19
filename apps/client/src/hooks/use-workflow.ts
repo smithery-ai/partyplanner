@@ -11,6 +11,7 @@ import type {
 } from "@/lib/workflow-runtimes";
 import type {
   AppType,
+  DeleteWorkflowResponse,
   RunStateDocument,
   RunSummary,
   SetAutoAdvanceRequest,
@@ -28,6 +29,10 @@ type JsonPayload =
 export type StartRunArgs = {
   inputId: string;
   payload: unknown;
+  additionalInputs?: {
+    inputId: string;
+    payload: unknown;
+  }[];
   autoAdvance?: boolean;
 };
 
@@ -43,6 +48,7 @@ export type WorkflowsState = {
   error: Error | undefined;
   refresh(): Promise<void>;
   createWorkflow(args: CreateWorkflowArgs): Promise<WorkflowManifest>;
+  deleteWorkflow(workflowId: string): Promise<void>;
 };
 
 export type WorkflowState = {
@@ -139,6 +145,9 @@ function useStartWorkflowRunMutation(workflowId: string | undefined) {
       const body = {
         inputId: args.inputId,
         payload: args.payload as JsonPayload,
+        additionalInputs: args.additionalInputs as
+          | { inputId: string; payload: JsonPayload }[]
+          | undefined,
         autoAdvance: args.autoAdvance,
       };
       const response = await client.workflows[":workflowId"].runs.$post({
@@ -217,10 +226,22 @@ function useCreateWorkflowMutation() {
   });
 }
 
+function useDeleteWorkflowMutation() {
+  return useMutation({
+    mutationFn: async (workflowId: string) => {
+      const response = await client.workflows[":workflowId"].$delete({
+        param: { workflowId },
+      });
+      await readJsonResponse<DeleteWorkflowResponse>(response);
+    },
+  });
+}
+
 export function useWorkflows(): WorkflowsState {
   const queryClient = useQueryClient();
   const workflowsQuery = useWorkflowsQuery();
   const createMutation = useCreateWorkflowMutation();
+  const deleteMutation = useDeleteWorkflowMutation();
   const [error, setError] = useState<Error | undefined>();
 
   const refresh = useCallback(async () => {
@@ -258,12 +279,33 @@ export function useWorkflows(): WorkflowsState {
     [createMutation, queryClient],
   );
 
+  const deleteWorkflow = useCallback(
+    async (workflowId: string) => {
+      setError(undefined);
+      try {
+        await deleteMutation.mutateAsync(workflowId);
+        queryClient.removeQueries({ queryKey: queryKeys.workflow(workflowId) });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.workflows });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.runs });
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        setError(err);
+        throw err;
+      }
+    },
+    [deleteMutation, queryClient],
+  );
+
   return {
     workflows: workflowsQuery.data ?? [],
-    isPending: workflowsQuery.isPending || createMutation.isPending,
+    isPending:
+      workflowsQuery.isPending ||
+      createMutation.isPending ||
+      deleteMutation.isPending,
     error: error ?? normalizeError(workflowsQuery.error),
     refresh,
     createWorkflow,
+    deleteWorkflow,
   };
 }
 

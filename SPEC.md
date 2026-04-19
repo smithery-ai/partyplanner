@@ -29,7 +29,7 @@ By the end of this plan, `npm test` against the five example workflows in the ap
 ## Public API
 
 ```ts
-import { input, atom, createRuntime } from "@rxwf/core";
+import { input, secret, atom, createRuntime } from "@rxwf/core";
 import type { Runtime, RunTrace, Get } from "@rxwf/core";
 ```
 
@@ -56,6 +56,18 @@ type InputOpts = {
 - `name` is required and must be unique within the registry.
 - `schema` is a Zod schema used to validate the payload when the input fires.
 - `description` is optional human text for UI tooltips and docs.
+
+### `secret(name, opts?)`
+
+```ts
+function secret(
+  name: string,
+  opts?: InputOpts
+): Input<string>;
+```
+
+`secret()` schedules like `input(name, z.string())`, but the registry marks it
+as secret-bearing so UI and trace surfaces redact its displayed value.
 
 ### `atom(fn, opts?)`
 
@@ -258,6 +270,7 @@ export type InputDef = {
   id: string;
   schema: ZodSchema<unknown>;
   description?: string;
+  secret?: boolean;
 };
 
 export type AtomDef = {
@@ -363,10 +376,12 @@ import type { ZodSchema } from "zod";
 import { globalRegistry } from "./registry";
 import { makeHandle, type Input, type DeferredInput } from "./handles";
 
+type InputOpts = { description?: string };
+
 export function input<T>(
   name: string,
   schema: ZodSchema<T>,
-  opts?: { description?: string }
+  opts?: InputOpts
 ): Input<T> {
   globalRegistry.registerInput({
     kind: "input",
@@ -380,7 +395,7 @@ export function input<T>(
 input.deferred = function deferred<T>(
   name: string,
   schema: ZodSchema<T>,
-  opts?: { description?: string }
+  opts?: InputOpts
 ): DeferredInput<T> {
   globalRegistry.registerInput({
     kind: "deferred_input",
@@ -390,6 +405,20 @@ input.deferred = function deferred<T>(
   });
   return makeHandle<T>("deferred_input", name) as DeferredInput<T>;
 };
+
+export function secret(
+  name: string,
+  opts?: InputOpts
+): Input<string> {
+  globalRegistry.registerInput({
+    kind: "input",
+    id: name,
+    schema: z.string(),
+    description: opts?.description,
+    secret: true,
+  });
+  return makeHandle<string>("input", name) as Input<string>;
+}
 ```
 
 ### atom() implementation
