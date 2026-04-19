@@ -5,8 +5,12 @@ import { defineConfig } from "vite";
 
 const backendTarget =
   process.env.VITE_BACKEND_URL ??
-  derivePortlessServiceUrl(process.env.PORTLESS_URL, "hylo", "api.hylo") ??
-  "http://localhost:8787";
+  derivePortlessServiceUrl(
+    process.env.PORTLESS_URL,
+    "hylo",
+    "api-worker.hylo",
+  ) ??
+  "http://localhost:8788";
 
 const backendProxy = {
   target: backendTarget,

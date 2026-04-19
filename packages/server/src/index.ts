@@ -1,3 +1,13 @@
+export type {
+  CreateWorkflowRequest,
+  DeleteWorkflowResponse,
+  RunStateDocument,
+  RunSummary,
+  SetAutoAdvanceRequest,
+  StartBackendRunRequest,
+  SubmitBackendInputRequest,
+  WorkflowApiManifest,
+} from "./api";
 export type { CreateWorkflowServerOptions, WorkflowApp } from "./app";
 export { createWorkflowServer } from "./app";
 export type { WorkflowManagerOptions } from "./manager";

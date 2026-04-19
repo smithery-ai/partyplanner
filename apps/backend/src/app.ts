@@ -1,703 +1,46 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { cors } from "hono/cors";
+import "@workflow/demo-workflow";
+import type { QueueEvent, RunState } from "@workflow/core";
+import type {
+  QueueItem,
+  QueueItemStatus,
+  QueueSnapshot,
+  RunEvent,
+  SaveResult,
+  StoredRunState,
+} from "@workflow/runtime";
 import {
-  BackendRunManager,
-  type CreateWorkflowRequest,
-  JsonStateManager,
-  type StartBackendRunRequest,
-  type StartWorkflowRunRequest,
-  type SubmitBackendInputRequest,
-} from "./run-manager";
+  summarizeRun,
+  WorkflowManager,
+  type WorkflowQueue,
+  type WorkflowRunDocument,
+  type WorkflowRunSummary,
+  type WorkflowStateStore,
+} from "@workflow/server";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
 
-const NodeStatusSchema = z.enum([
-  "resolved",
-  "skipped",
-  "waiting",
-  "blocked",
-  "errored",
-  "not_reached",
-]);
+const WORKFLOW_ID = "default";
+const WORKFLOW_NAME = "Onboarding demo";
+const WORKFLOW_SOURCE = "bundled-default";
 
-const NodeRecordSchema = z
-  .object({
-    status: NodeStatusSchema,
-    value: z.any().optional(),
-    error: z
-      .object({
-        message: z.string(),
-        stack: z.string().optional(),
-      })
-      .optional(),
-    deps: z.array(z.string()),
-    duration_ms: z.number(),
-    blockedOn: z.string().optional(),
-    waitingOn: z.string().optional(),
-    skipReason: z.string().optional(),
-    attempts: z.number(),
-  })
-  .openapi("NodeRecord");
-
-const RunStateSchema = z
-  .object({
-    runId: z.string(),
-    startedAt: z.number(),
-    trigger: z.string().optional(),
-    payload: z.any().optional(),
-    inputs: z.record(z.any()),
-    nodes: z.record(NodeRecordSchema),
-    waiters: z.record(z.array(z.string())),
-    processedEventIds: z.record(z.literal(true)),
-  })
-  .openapi("RunState");
-
-const ErrorSchema = z
-  .object({
-    message: z.string(),
-  })
-  .openapi("Error");
-
-const PayloadSchema = z
-  .union([
-    z.string(),
-    z.number(),
-    z.boolean(),
-    z.null(),
-    z.array(z.any()),
-    z.record(z.any()),
-  ])
-  .openapi("JsonPayload");
-
-const HealthResponseSchema = z.object({ ok: z.boolean() }).openapi("Health");
-
-const DeleteWorkflowResponseSchema = z
-  .object({ ok: z.literal(true) })
-  .openapi("DeleteWorkflowResponse");
-
-const WorkflowRefSchema = z
-  .object({
-    workflowId: z.string(),
-    version: z.string(),
-    codeHash: z.string().optional(),
-  })
-  .openapi("WorkflowRef");
-
-const QueueEventSchema = z
-  .discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("input"),
-      eventId: z.string(),
-      runId: z.string(),
-      inputId: z.string(),
-      payload: PayloadSchema,
-    }),
-    z.object({
-      kind: z.literal("step"),
-      eventId: z.string(),
-      runId: z.string(),
-      stepId: z.string(),
-    }),
-  ])
-  .openapi("QueueEvent");
-
-const QueueItemSchema = z
-  .object({
-    event: QueueEventSchema,
-    status: z.enum(["pending", "running", "completed", "failed"]),
-    enqueuedAt: z.number(),
-    startedAt: z.number().optional(),
-    finishedAt: z.number().optional(),
-    error: z.string().optional(),
-  })
-  .openapi("QueueItem");
-
-const QueueSnapshotSchema = z
-  .object({
-    pending: z.array(QueueItemSchema),
-    running: z.array(QueueItemSchema),
-    completed: z.array(QueueItemSchema),
-    failed: z.array(QueueItemSchema),
-  })
-  .openapi("QueueSnapshot");
-
-const ExecutionStatusSchema = z.enum([
-  "not_reached",
-  "queued",
-  "running",
-  "resolved",
-  "skipped",
-  "waiting",
-  "blocked",
-  "errored",
-]);
-
-const RuntimeGraphNodeSchema = z
-  .object({
-    id: z.string(),
-    kind: z.enum(["input", "deferred_input", "atom"]),
-    description: z.string().optional(),
-    status: ExecutionStatusSchema,
-    value: z.any().optional(),
-    deps: z.array(z.string()),
-    blockedOn: z.string().optional(),
-    waitingOn: z.string().optional(),
-    skipReason: z.string().optional(),
-    attempts: z.number(),
-  })
-  .openapi("RuntimeGraphNode");
-
-const RuntimeGraphEdgeSchema = z
-  .object({
-    id: z.string(),
-    source: z.string(),
-    target: z.string(),
-  })
-  .openapi("RuntimeGraphEdge");
-
-const RunSnapshotSchema = z
-  .object({
-    runId: z.string(),
-    workflow: WorkflowRefSchema,
-    status: z.enum([
-      "created",
-      "running",
-      "waiting",
-      "completed",
-      "failed",
-      "canceled",
-    ]),
-    nodes: z.array(RuntimeGraphNodeSchema),
-    edges: z.array(RuntimeGraphEdgeSchema),
-    queue: QueueSnapshotSchema,
-    state: RunStateSchema,
-    version: z.number(),
-  })
-  .openapi("RunSnapshot");
-
-const RunEventSchema = z
-  .discriminatedUnion("type", [
-    z.object({
-      type: z.literal("run_started"),
-      runId: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("input_received"),
-      runId: z.string(),
-      inputId: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("node_queued"),
-      runId: z.string(),
-      nodeId: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("node_started"),
-      runId: z.string(),
-      nodeId: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("edge_discovered"),
-      runId: z.string(),
-      source: z.string(),
-      target: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("node_resolved"),
-      runId: z.string(),
-      nodeId: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("node_skipped"),
-      runId: z.string(),
-      nodeId: z.string(),
-      reason: z.string().optional(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("node_waiting"),
-      runId: z.string(),
-      nodeId: z.string(),
-      waitingOn: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("node_blocked"),
-      runId: z.string(),
-      nodeId: z.string(),
-      blockedOn: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("node_errored"),
-      runId: z.string(),
-      nodeId: z.string(),
-      message: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("run_completed"),
-      runId: z.string(),
-      at: z.number(),
-    }),
-    z.object({
-      type: z.literal("run_waiting"),
-      runId: z.string(),
-      waitingOn: z.array(z.string()),
-      at: z.number(),
-    }),
-  ])
-  .openapi("RunEvent");
-
-const RunStateDocumentSchema = RunSnapshotSchema.extend({
-  events: z.array(RunEventSchema),
-  publishedAt: z.number(),
-  workflowSource: z.string(),
-  autoAdvance: z.boolean(),
-}).openapi("RunStateDocument");
-
-const RunSummarySchema = z
-  .object({
-    runId: z.string(),
-    status: z.enum([
-      "created",
-      "running",
-      "waiting",
-      "completed",
-      "failed",
-      "canceled",
-    ]),
-    startedAt: z.number(),
-    publishedAt: z.number(),
-    workflowId: z.string(),
-    version: z.number(),
-    nodeCount: z.number(),
-    terminalNodeCount: z.number(),
-    waitingOn: z.array(z.string()),
-    failedNodeCount: z.number(),
-  })
-  .openapi("RunSummary");
-
-const JsonSchemaSchema = z.record(z.any()).openapi("JsonSchema");
-
-const WorkflowInputManifestSchema = z
-  .object({
-    id: z.string(),
-    kind: z.enum(["input", "deferred_input"]),
-    secret: z.boolean().optional(),
-    description: z.string().optional(),
-    schema: JsonSchemaSchema,
-  })
-  .openapi("WorkflowInputManifest");
-
-const WorkflowManifestSchema = z
-  .object({
-    workflowId: z.string(),
-    version: z.string(),
-    codeHash: z.string().optional(),
-    name: z.string().optional(),
-    source: z.string(),
-    createdAt: z.number(),
-    inputs: z.array(WorkflowInputManifestSchema),
-  })
-  .openapi("WorkflowManifest");
-
-const CreateWorkflowRequestSchema = z
-  .object({
-    workflowSource: z.string(),
-    workflowId: z.string().optional(),
-    name: z.string().optional(),
-  })
-  .openapi("CreateWorkflowRequest");
-
-const StartWorkflowRunRequestSchema = z
-  .object({
-    inputId: z.string(),
-    payload: PayloadSchema,
-    additionalInputs: z
-      .array(z.object({ inputId: z.string(), payload: PayloadSchema }))
-      .optional(),
-    runId: z.string().optional(),
-    autoAdvance: z.boolean().optional(),
-  })
-  .openapi("StartWorkflowRunRequest");
-
-const StartBackendRunRequestSchema = z
-  .object({
-    workflowSource: z.string(),
-    inputId: z.string(),
-    payload: PayloadSchema,
-    additionalInputs: z
-      .array(z.object({ inputId: z.string(), payload: PayloadSchema }))
-      .optional(),
-    runId: z.string().optional(),
-    autoAdvance: z.boolean().optional(),
-  })
-  .openapi("StartBackendRunRequest");
-
-const SubmitBackendInputRequestSchema = z
-  .object({
-    inputId: z.string(),
-    payload: PayloadSchema,
-    autoAdvance: z.boolean().optional(),
-  })
-  .openapi("SubmitBackendInputRequest");
-
-const SetAutoAdvanceRequestSchema = z
-  .object({
-    autoAdvance: z.boolean(),
-  })
-  .openapi("SetAutoAdvanceRequest");
-
-const RunIdParamSchema = z
-  .object({
-    runId: z.string(),
-  })
-  .openapi("RunIdParam");
-
-const WorkflowIdParamSchema = z
-  .object({
-    workflowId: z.string(),
-  })
-  .openapi("WorkflowIdParam");
-
-const EmptyRequestSchema = z.object({}).openapi("EmptyRequest");
-
-const healthRoute = createRoute({
-  method: "get",
-  path: "/health",
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: HealthResponseSchema,
-        },
-      },
-      description: "Backend health status.",
+export function createApp(storage: DurableObjectStorage) {
+  const stateStore = new DurableObjectWorkflowStateStore(storage);
+  const queue = new DurableObjectWorkflowQueue(storage);
+  const manager = new WorkflowManager({
+    workflows: {},
+    stateStore,
+    queue,
+    workflow: {
+      id: WORKFLOW_ID,
+      name: WORKFLOW_NAME,
     },
-  },
-});
+  });
+  const manifest = {
+    ...manager.manifest(),
+    source: WORKFLOW_SOURCE,
+  };
 
-const listRunsRoute = createRoute({
-  method: "get",
-  path: "/runs",
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: z.array(RunSummarySchema),
-        },
-      },
-      description: "Known workflow runs ordered by most recently published.",
-    },
-  },
-});
-
-const createWorkflowRoute = createRoute({
-  method: "post",
-  path: "/workflows",
-  request: {
-    body: {
-      required: true,
-      content: {
-        "application/json": {
-          schema: CreateWorkflowRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: WorkflowManifestSchema,
-        },
-      },
-      description: "Created workflow manifest with trigger input schemas.",
-    },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorSchema,
-        },
-      },
-      description: "Invalid request or workflow source.",
-    },
-  },
-});
-
-const listWorkflowsRoute = createRoute({
-  method: "get",
-  path: "/workflows",
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: z.array(WorkflowManifestSchema),
-        },
-      },
-      description: "Known workflows ordered by most recently created.",
-    },
-  },
-});
-
-const getWorkflowRoute = createRoute({
-  method: "get",
-  path: "/workflows/{workflowId}",
-  request: {
-    params: WorkflowIdParamSchema,
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: WorkflowManifestSchema,
-        },
-      },
-      description: "Workflow manifest.",
-    },
-    404: {
-      content: {
-        "application/json": {
-          schema: ErrorSchema,
-        },
-      },
-      description: "Unknown workflow.",
-    },
-  },
-});
-
-const deleteWorkflowRoute = createRoute({
-  method: "delete",
-  path: "/workflows/{workflowId}",
-  request: {
-    params: WorkflowIdParamSchema,
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: DeleteWorkflowResponseSchema,
-        },
-      },
-      description: "Deleted workflow.",
-    },
-    404: {
-      content: {
-        "application/json": {
-          schema: ErrorSchema,
-        },
-      },
-      description: "Unknown workflow.",
-    },
-  },
-});
-
-const startWorkflowRunRoute = createRoute({
-  method: "post",
-  path: "/workflows/{workflowId}/runs",
-  request: {
-    params: WorkflowIdParamSchema,
-    body: {
-      required: true,
-      content: {
-        "application/json": {
-          schema: StartWorkflowRunRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: RunStateDocumentSchema,
-        },
-      },
-      description: "Started workflow run snapshot.",
-    },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorSchema,
-        },
-      },
-      description: "Invalid request or unknown workflow.",
-    },
-  },
-});
-
-const startRunRoute = createRoute({
-  method: "post",
-  path: "/runs",
-  request: {
-    body: {
-      required: true,
-      content: {
-        "application/json": {
-          schema: StartBackendRunRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: RunStateDocumentSchema,
-        },
-      },
-      description: "Started workflow run snapshot.",
-    },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorSchema,
-        },
-      },
-      description: "Invalid request or workflow source.",
-    },
-  },
-});
-
-const submitInputRoute = createRoute({
-  method: "post",
-  path: "/runs/{runId}/inputs",
-  request: {
-    params: RunIdParamSchema,
-    body: {
-      required: true,
-      content: {
-        "application/json": {
-          schema: SubmitBackendInputRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: RunStateDocumentSchema,
-        },
-      },
-      description: "Workflow run snapshot after enqueuing input.",
-    },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorSchema,
-        },
-      },
-      description: "Invalid request or unknown run.",
-    },
-  },
-});
-
-const advanceRunRoute = createRoute({
-  method: "post",
-  path: "/runs/{runId}/advance",
-  request: {
-    params: RunIdParamSchema,
-    body: {
-      required: false,
-      content: {
-        "application/json": {
-          schema: EmptyRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: RunStateDocumentSchema,
-        },
-      },
-      description: "Workflow run snapshot after processing one queued item.",
-    },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorSchema,
-        },
-      },
-      description: "Unknown run or processing error.",
-    },
-  },
-});
-
-const setAutoAdvanceRoute = createRoute({
-  method: "post",
-  path: "/runs/{runId}/auto-advance",
-  request: {
-    params: RunIdParamSchema,
-    body: {
-      required: true,
-      content: {
-        "application/json": {
-          schema: SetAutoAdvanceRequestSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: RunStateDocumentSchema,
-        },
-      },
-      description: "Workflow run snapshot after changing advance mode.",
-    },
-    400: {
-      content: {
-        "application/json": {
-          schema: ErrorSchema,
-        },
-      },
-      description: "Invalid request or unknown run.",
-    },
-  },
-});
-
-const getRunStateRoute = createRoute({
-  method: "get",
-  path: "/state/{runId}",
-  request: {
-    params: RunIdParamSchema,
-  },
-  responses: {
-    200: {
-      content: {
-        "application/json": {
-          schema: RunStateDocumentSchema,
-        },
-      },
-      description: "Latest published workflow run snapshot.",
-    },
-    404: {
-      content: {
-        "application/json": {
-          schema: ErrorSchema,
-        },
-      },
-      description: "Unknown run.",
-    },
-  },
-});
-
-const stateManager = new JsonStateManager();
-const runManager = new BackendRunManager(stateManager);
-
-export function createApp() {
-  const app = new OpenAPIHono();
-
+  const app = new Hono();
   app.use(
     "/*",
     cors({
@@ -706,128 +49,376 @@ export function createApp() {
       allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
     }),
   );
-  const routes = app
-    .openapi(healthRoute, (c) => c.json({ ok: true }, 200))
-    .openapi(createWorkflowRoute, (c) => {
-      try {
-        const body = c.req.valid("json") as CreateWorkflowRequest;
-        const response = runManager.createWorkflow(body);
-        return c.json(response, 200);
-      } catch (e) {
-        const err = e as Error;
-        return c.json({ message: err.message }, 400);
-      }
-    })
-    .openapi(listWorkflowsRoute, (c) => c.json(runManager.listWorkflows(), 200))
-    .openapi(getWorkflowRoute, (c) => {
-      const { workflowId } = c.req.valid("param");
-      const manifest = runManager.getWorkflow(workflowId);
-      if (!manifest) return c.json({ message: "Unknown workflow" }, 404);
-      return c.json(manifest, 200);
-    })
-    .openapi(deleteWorkflowRoute, (c) => {
-      const { workflowId } = c.req.valid("param");
-      if (!runManager.deleteWorkflow(workflowId)) {
-        return c.json({ message: "Unknown workflow" }, 404);
-      }
-      return c.json({ ok: true as const }, 200);
-    })
-    .openapi(startWorkflowRunRoute, async (c) => {
-      try {
-        const { workflowId } = c.req.valid("param");
-        const body = c.req.valid("json") as StartWorkflowRunRequest;
-        const response = await runManager.startWorkflowRun(workflowId, body);
-        return c.json(response, 200);
-      } catch (e) {
-        const err = e as Error;
-        return c.json({ message: err.message }, 400);
-      }
-    })
-    .openapi(listRunsRoute, (c) => c.json(runManager.listRuns(), 200))
-    .openapi(startRunRoute, async (c) => {
-      try {
-        const body = c.req.valid("json") as StartBackendRunRequest;
-        const response = await runManager.startRun(body);
-        return c.json(response, 200);
-      } catch (e) {
-        const err = e as Error;
-        return c.json({ message: err.message }, 400);
-      }
-    })
-    .openapi(submitInputRoute, async (c) => {
-      try {
-        const { runId } = c.req.valid("param");
-        const body = c.req.valid("json") as SubmitBackendInputRequest;
-        const response = await runManager.submitInput(runId, body);
-        return c.json(response, 200);
-      } catch (e) {
-        const err = e as Error;
-        return c.json({ message: err.message }, 400);
-      }
-    })
-    .openapi(advanceRunRoute, async (c) => {
-      try {
-        const { runId } = c.req.valid("param");
-        const response = await runManager.advanceRun(runId);
-        return c.json(response, 200);
-      } catch (e) {
-        const err = e as Error;
-        return c.json({ message: err.message }, 400);
-      }
-    })
-    .openapi(setAutoAdvanceRoute, async (c) => {
-      try {
-        const { runId } = c.req.valid("param");
-        const body = c.req.valid("json");
-        const response = await runManager.setAutoAdvance(runId, body);
-        return c.json(response, 200);
-      } catch (e) {
-        const err = e as Error;
-        return c.json({ message: err.message }, 400);
-      }
-    })
-    .openapi(getRunStateRoute, (c) => {
-      const { runId } = c.req.valid("param");
-      const document = runManager.getState(runId);
-      if (!document) return c.json({ message: "Unknown run" }, 404);
-      return c.json(document, 200);
+
+  app.get("/health", (c) => c.json({ ok: true }));
+
+  app.get("/workflows", async (c) => {
+    if (!(await workflowExists(storage))) return c.json([]);
+    return c.json([await workflowManifest(storage, manifest)]);
+  });
+
+  app.post("/workflows", async (c) => {
+    const body = await readBody(c.req);
+    const requestedId = stringValue(body, "workflowId") ?? WORKFLOW_ID;
+    if (requestedId !== WORKFLOW_ID) {
+      return c.json(
+        {
+          message:
+            "The Cloudflare Worker backend currently supports the bundled default workflow only.",
+        },
+        400,
+      );
+    }
+
+    await storage.put<StoredWorkflow>(workflowKey(), {
+      createdAt: Date.now(),
+      name: stringValue(body, "name") ?? WORKFLOW_NAME,
+      source: stringValue(body, "workflowSource") ?? WORKFLOW_SOURCE,
     });
 
-  const openApiOptions = {
-    openapi: "3.0.0",
-    info: {
-      title: "Hylo Backend",
-      version: "0.0.0",
-    },
-  } as const;
+    return c.json(await workflowManifest(storage, manifest));
+  });
 
-  routes.doc("/openapi", openApiOptions);
-  routes.doc("/doc", openApiOptions);
-  routes.get("/swagger", (c) => c.html(swaggerHtml("openapi")));
+  app.get("/workflows/:workflowId", async (c) => {
+    const workflowId = c.req.param("workflowId");
+    if (workflowId !== WORKFLOW_ID || !(await workflowExists(storage))) {
+      return c.json({ message: "Unknown workflow" }, 404);
+    }
+    return c.json(await workflowManifest(storage, manifest));
+  });
 
-  return routes;
+  app.delete("/workflows/:workflowId", async (c) => {
+    const workflowId = c.req.param("workflowId");
+    if (workflowId !== WORKFLOW_ID || !(await workflowExists(storage))) {
+      return c.json({ message: "Unknown workflow" }, 404);
+    }
+
+    await clearWorkflow(storage);
+    return c.json({ ok: true as const });
+  });
+
+  app.get("/runs", async (c) => c.json(await stateStore.listRunSummaries()));
+
+  app.post("/workflows/:workflowId/runs", async (c) => {
+    try {
+      const workflowId = c.req.param("workflowId");
+      if (workflowId !== WORKFLOW_ID || !(await workflowExists(storage))) {
+        return c.json({ message: "Unknown workflow" }, 404);
+      }
+      return c.json(await manager.startRun(await readBody(c.req)));
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
+
+  app.post("/runs", async (c) => {
+    try {
+      await ensureWorkflow(storage);
+      return c.json(await manager.startRun(await readBody(c.req)));
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
+
+  app.get("/runs/:runId", async (c) => runDocument(c, stateStore));
+  app.get("/state/:runId", async (c) => runDocument(c, stateStore));
+
+  app.post("/runs/:runId/inputs", async (c) => {
+    try {
+      return c.json(
+        await manager.submitInput(c.req.param("runId"), await readBody(c.req)),
+      );
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
+
+  app.post("/runs/:runId/advance", async (c) => {
+    try {
+      return c.json(await manager.advanceRun(c.req.param("runId")));
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
+
+  app.post("/runs/:runId/auto-advance", async (c) => {
+    try {
+      return c.json(
+        await manager.setAutoAdvance(
+          c.req.param("runId"),
+          await readBody(c.req),
+        ),
+      );
+    } catch (e) {
+      return errorResponse(c, e);
+    }
+  });
+
+  return app;
 }
 
-function swaggerHtml(openApiUrl: string): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Hylo Backend API</title>
-    <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
-  </head>
-  <body>
-    <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-    <script>
-      window.ui = SwaggerUIBundle({
-        url: ${JSON.stringify(openApiUrl)},
-        dom_id: "#swagger-ui"
-      });
-    </script>
-  </body>
-</html>`;
+async function runDocument(
+  c: {
+    req: { param(name: string): string };
+    json(body: unknown, status?: number): Response;
+  },
+  stateStore: DurableObjectWorkflowStateStore,
+): Promise<Response> {
+  const document = await stateStore.getRunDocument(c.req.param("runId"));
+  if (!document) return c.json({ message: "Unknown run" }, 404);
+  return c.json(document);
+}
+
+async function readBody(req: { json(): Promise<unknown> }): Promise<never> {
+  try {
+    return (await req.json()) as never;
+  } catch {
+    return {} as never;
+  }
+}
+
+function errorResponse(
+  c: { json(body: { message: string }, status: 400): Response },
+  error: unknown,
+): Response {
+  const message = error instanceof Error ? error.message : String(error);
+  return c.json({ message }, 400);
+}
+
+function stringValue(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === "string" ? candidate : undefined;
+}
+
+type StoredWorkflow = {
+  createdAt: number;
+  name: string;
+  source: string;
+};
+
+function workflowKey(): string {
+  return "workflow:default";
+}
+
+async function workflowExists(storage: DurableObjectStorage): Promise<boolean> {
+  return Boolean(await storage.get<StoredWorkflow>(workflowKey()));
+}
+
+async function ensureWorkflow(storage: DurableObjectStorage): Promise<void> {
+  if (await workflowExists(storage)) return;
+  await storage.put<StoredWorkflow>(workflowKey(), {
+    createdAt: Date.now(),
+    name: WORKFLOW_NAME,
+    source: WORKFLOW_SOURCE,
+  });
+}
+
+async function workflowManifest(
+  storage: DurableObjectStorage,
+  manifest: ReturnType<WorkflowManager["manifest"]> & { source: string },
+) {
+  const stored = await storage.get<StoredWorkflow>(workflowKey());
+  return {
+    ...manifest,
+    name: stored?.name ?? manifest.name,
+    source: stored?.source ?? manifest.source,
+    createdAt: stored?.createdAt ?? manifest.createdAt,
+  };
+}
+
+async function clearWorkflow(storage: DurableObjectStorage): Promise<void> {
+  const keys = await storage.list();
+  await Promise.all([...keys.keys()].map((key) => storage.delete(key)));
+}
+
+class DurableObjectWorkflowStateStore implements WorkflowStateStore {
+  constructor(private readonly storage: DurableObjectStorage) {}
+
+  async load(runId: string): Promise<StoredRunState | undefined> {
+    return this.storage.get<StoredRunState>(runStateKey(runId));
+  }
+
+  async save(
+    runId: string,
+    state: RunState,
+    expectedVersion?: number,
+  ): Promise<SaveResult> {
+    const current = await this.load(runId);
+    if (
+      expectedVersion !== undefined &&
+      current &&
+      current.version !== expectedVersion
+    ) {
+      return { ok: false, reason: "conflict" };
+    }
+    if (expectedVersion !== undefined && !current && expectedVersion !== 0) {
+      return { ok: false, reason: "missing" };
+    }
+
+    const version = (current?.version ?? 0) + 1;
+    await this.storage.put<StoredRunState>(runStateKey(runId), {
+      version,
+      state,
+    });
+    return { ok: true, version };
+  }
+
+  publishEvent(event: RunEvent): Promise<void> {
+    return this.publishEvents([event]);
+  }
+
+  async publishEvents(events: RunEvent[]): Promise<void> {
+    await Promise.all(
+      events.map((event) =>
+        this.storage.put(eventKey(event.runId, event), event),
+      ),
+    );
+  }
+
+  async listEvents(runId: string): Promise<RunEvent[]> {
+    const rows = await this.storage.list<RunEvent>({
+      prefix: eventPrefix(runId),
+    });
+    return [...rows.values()].sort((a, b) => a.at - b.at);
+  }
+
+  async saveRunDocument(document: WorkflowRunDocument): Promise<void> {
+    await this.storage.put(runDocumentKey(document.runId), document);
+    await this.storage.put(
+      runSummaryKey(document.runId),
+      summarizeRun(document),
+    );
+  }
+
+  getRunDocument(runId: string): Promise<WorkflowRunDocument | undefined> {
+    return this.storage.get<WorkflowRunDocument>(runDocumentKey(runId));
+  }
+
+  async listRunSummaries(): Promise<WorkflowRunSummary[]> {
+    const rows = await this.storage.list<WorkflowRunSummary>({
+      prefix: runSummaryPrefix(),
+    });
+    return [...rows.values()].sort(
+      (a, b) => b.startedAt - a.startedAt || b.publishedAt - a.publishedAt,
+    );
+  }
+}
+
+class DurableObjectWorkflowQueue implements WorkflowQueue {
+  constructor(private readonly storage: DurableObjectStorage) {}
+
+  async enqueue(event: QueueEvent): Promise<void> {
+    const key = queueKey(event.eventId);
+    if (await this.storage.get<QueueItem>(key)) return;
+    await this.storage.put<QueueItem>(key, {
+      event,
+      status: "pending",
+      enqueuedAt: Date.now(),
+    });
+  }
+
+  async enqueueMany(events: QueueEvent[]): Promise<void> {
+    for (const event of events) await this.enqueue(event);
+  }
+
+  async claimNext(runId: string): Promise<QueueItem | undefined> {
+    const item = (await this.items(runId))
+      .filter((candidate) => candidate.status === "pending")
+      .sort((a, b) => a.enqueuedAt - b.enqueuedAt)[0];
+    if (!item) return undefined;
+
+    const claimed: QueueItem = {
+      ...item,
+      status: "running",
+      startedAt: Date.now(),
+    };
+    await this.storage.put(queueKey(item.event.eventId), claimed);
+    return structuredClone(claimed);
+  }
+
+  async complete(eventId: string): Promise<void> {
+    const item = await this.storage.get<QueueItem>(queueKey(eventId));
+    if (!item) return;
+    await this.storage.put<QueueItem>(queueKey(eventId), {
+      ...item,
+      status: "completed",
+      finishedAt: Date.now(),
+    });
+  }
+
+  async fail(eventId: string, error: Error): Promise<void> {
+    const item = await this.storage.get<QueueItem>(queueKey(eventId));
+    if (!item) return;
+    await this.storage.put<QueueItem>(queueKey(eventId), {
+      ...item,
+      status: "failed",
+      finishedAt: Date.now(),
+      error: error.message,
+    });
+  }
+
+  async snapshot(runId: string): Promise<QueueSnapshot> {
+    const items = await this.items(runId);
+    return {
+      pending: filterQueue(items, "pending"),
+      running: filterQueue(items, "running"),
+      completed: filterQueue(items, "completed"),
+      failed: filterQueue(items, "failed"),
+    };
+  }
+
+  async size(runId: string): Promise<number> {
+    return (await this.items(runId)).filter((item) => item.status === "pending")
+      .length;
+  }
+
+  private async items(runId: string): Promise<QueueItem[]> {
+    const rows = await this.storage.list<QueueItem>({ prefix: queuePrefix() });
+    return [...rows.values()].filter((item) => item.event.runId === runId);
+  }
+}
+
+function filterQueue(items: QueueItem[], status: QueueItemStatus): QueueItem[] {
+  return items.filter((item) => item.status === status);
+}
+
+function runStateKey(runId: string): string {
+  return `run-state:${runId}`;
+}
+
+function eventPrefix(runId: string): string {
+  return `run-event:${runId}:`;
+}
+
+function eventKey(runId: string, event: RunEvent): string {
+  return `${eventPrefix(runId)}${event.at}:${randomId()}`;
+}
+
+function runDocumentKey(runId: string): string {
+  return `run-document:${runId}`;
+}
+
+function runSummaryPrefix(): string {
+  return "run-summary:";
+}
+
+function runSummaryKey(runId: string): string {
+  return `${runSummaryPrefix()}${runId}`;
+}
+
+function queuePrefix(): string {
+  return "queue:";
+}
+
+function queueKey(eventId: string): string {
+  return `${queuePrefix()}${eventId}`;
+}
+
+function randomId(): string {
+  return (
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+  );
 }
 
 export type AppType = ReturnType<typeof createApp>;

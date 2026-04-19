@@ -1,15 +1,14 @@
-import { serve } from "@hono/node-server";
-import { createApp } from "./app";
+import { BackendDurableObject } from "./worker";
 
-const app = createApp();
-const port = Number(process.env.PORT ?? 8787);
+export { BackendDurableObject };
 
-serve(
-  {
-    fetch: app.fetch,
-    port,
+export default {
+  fetch(request, env) {
+    const id = env.BACKEND.idFromName("default");
+    return env.BACKEND.get(id).fetch(request);
   },
-  (info) => {
-    console.log(`Backend listening on http://localhost:${info.port}`);
-  },
-);
+} satisfies ExportedHandler<Env>;
+
+export type Env = {
+  BACKEND: DurableObjectNamespace<BackendDurableObject>;
+};

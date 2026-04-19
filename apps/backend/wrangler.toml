@@ -1,0 +1,11 @@
+name = "hylo-backend"
+main = "src/index.ts"
+compatibility_date = "2026-04-19"
+
+[[durable_objects.bindings]]
+name = "BACKEND"
+class_name = "BackendDurableObject"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BackendDurableObject"]
