@@ -56,6 +56,7 @@ const queryKeys = {
 function useRunsQuery() {
   return useQuery({
     queryKey: queryKeys.runs,
+    refetchInterval: 500,
     queryFn: async () =>
       readJsonResponse<RunSummary[]>(await client.runs.$get({})),
   });
