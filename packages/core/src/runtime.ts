@@ -233,8 +233,19 @@ class RunSession {
         };
         return secretValue;
       }
-      this.registerWaiter(depId, readerStepId);
-      throw new WaitError(depId);
+      const message = `Secret "${depId}" could not be resolved`;
+      const existingRecord = this.state.nodes[depId];
+      if (existingRecord?.status !== "errored") {
+        this.state.nodes[depId] = {
+          status: "errored",
+          deps: [],
+          duration_ms: 0,
+          attempts: (existingRecord?.attempts ?? 0) + 1,
+          error: { message },
+        };
+        this.opts.onStepErrored?.({ id: depId, error: new Error(message) });
+      }
+      throw new SkipError(depId, message);
     }
 
     if (inputDef && depId in this.state.inputs) {

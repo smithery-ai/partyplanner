@@ -853,8 +853,18 @@ class RunSession {
         }
         return secretValues[depId];
       }
-      this.registerWaiter(depId, readerStepId);
-      throw new WaitError(depId);
+      const message = 'Secret "' + depId + '" could not be resolved';
+      const existingRecord = this.state.nodes[depId];
+      if (!existingRecord || existingRecord.status !== "errored") {
+        this.state.nodes[depId] = {
+          status: "errored",
+          deps: [],
+          duration_ms: 0,
+          attempts: ((existingRecord && existingRecord.attempts) || 0) + 1,
+          error: { message }
+        };
+      }
+      throw new SkipError(depId, message);
     }
     if (inputDef && Object.prototype.hasOwnProperty.call(this.state.inputs, depId)) {
       return this.state.inputs[depId];
