@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
+  SecretVaultApp,
   WorkflowIndexApp,
   type WorkflowNavigation,
   WorkflowRunnerApp,
@@ -10,6 +11,7 @@ function useWorkflowNavigation(): WorkflowNavigation {
 
   return {
     home: () => void navigate({ to: "/" }),
+    vault: () => void navigate({ to: "/vault" }),
     workflow: (workflowId, options) =>
       void navigate({
         to: "/workflows/$workflowId",
@@ -26,6 +28,10 @@ function useWorkflowNavigation(): WorkflowNavigation {
 
 export function IndexApp() {
   return <WorkflowIndexApp navigation={useWorkflowNavigation()} />;
+}
+
+export function VaultApp() {
+  return <SecretVaultApp navigation={useWorkflowNavigation()} />;
 }
 
 export function WorkflowApp() {

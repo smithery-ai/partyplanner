@@ -19,6 +19,7 @@ export type StartWorkflowRunRequest = {
     inputId: string;
     payload: unknown;
   }[];
+  secretBindings?: Record<string, string | { vaultEntryId: string }>;
   runId?: string;
   autoAdvance?: boolean;
 };

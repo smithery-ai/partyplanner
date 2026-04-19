@@ -27,6 +27,7 @@ export type StartWorkflowArgs = {
     inputId: string;
     payload: unknown;
   }[];
+  secretBindings?: Record<string, string | { vaultEntryId: string }>;
   autoAdvance?: boolean;
 };
 
@@ -83,6 +84,7 @@ export class BackendRuntime implements WorkflowRuntime {
         inputId: args.inputId,
         payload: args.payload,
         additionalInputs: args.additionalInputs,
+        secretBindings: args.secretBindings,
         autoAdvance: args.autoAdvance,
       },
     );

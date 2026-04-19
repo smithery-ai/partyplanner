@@ -9,6 +9,7 @@ export type WorkflowRef = {
   workflowId: string;
   version: string;
   codeHash?: string;
+  organizationId?: string;
 };
 
 export type WorkflowDefinition = {
@@ -126,6 +127,18 @@ export type ExecuteRequest = {
 };
 
 export type ExecuteResult = DispatchResult;
+
+export type SecretResolutionRequest = {
+  workflow: WorkflowRef;
+  registry: Registry;
+  event: QueueEvent;
+  state: RunState;
+  logicalName: string;
+};
+
+export interface SecretResolver {
+  resolve(request: SecretResolutionRequest): Promise<string | undefined>;
+}
 
 export interface Executor {
   execute(request: ExecuteRequest): Promise<ExecuteResult>;

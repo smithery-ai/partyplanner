@@ -1,8 +1,10 @@
 import type { Registry } from "@workflow/core";
 import { X } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { ZodSchemaForm } from "../components/zod-schema-form";
 import { cn } from "../lib/utils";
+import type { SecretVaultEntry } from "../types";
 
 /**
  * Seed / immediate inputs only. Per SPEC, deferred inputs are separate queue events
@@ -16,6 +18,11 @@ export function StartWorkflowSheet({
   onInputValuesChange,
   seedInputId,
   onSeedInputIdChange,
+  vaultEntries = [],
+  secretBindings,
+  onSecretBindingChange,
+  newSecretValues,
+  onNewSecretValueChange,
   canSubmitSeed,
   onSubmitSeed,
   error,
@@ -27,6 +34,11 @@ export function StartWorkflowSheet({
   onInputValuesChange: (id: string, value: unknown) => void;
   seedInputId: string;
   onSeedInputIdChange: (id: string) => void;
+  vaultEntries?: SecretVaultEntry[];
+  secretBindings: Record<string, string>;
+  onSecretBindingChange: (logicalName: string, vaultEntryId: string) => void;
+  newSecretValues: Record<string, string>;
+  onNewSecretValueChange: (logicalName: string, value: string) => void;
   canSubmitSeed: boolean;
   onSubmitSeed: () => void;
   error?: string;
@@ -138,27 +150,48 @@ export function StartWorkflowSheet({
                   <h3 className="font-medium text-xs text-foreground">
                     Secrets
                   </h3>
-                  {secrets.map((inp) => (
-                    <div key={inp.id} className="space-y-2">
-                      <div className="space-y-1">
-                        <code className="block text-[11px] text-foreground">
-                          {inp.id}
-                        </code>
-                        {inp.description ? (
-                          <p className="text-muted-foreground text-[11px] leading-snug">
-                            {inp.description}
-                          </p>
+                  {secrets.map((inp) => {
+                    const selectedVaultEntryId = secretBindings[inp.id] ?? "";
+                    return (
+                      <div key={inp.id} className="space-y-2">
+                        <div className="space-y-1">
+                          <code className="block text-[11px] text-foreground">
+                            {inp.id}
+                          </code>
+                          {inp.description ? (
+                            <p className="text-muted-foreground text-[11px] leading-snug">
+                              {inp.description}
+                            </p>
+                          ) : null}
+                        </div>
+                        <select
+                          className="flex h-8 w-full rounded-lg border border-input bg-background px-2 text-xs"
+                          value={selectedVaultEntryId}
+                          onChange={(e) =>
+                            onSecretBindingChange(inp.id, e.target.value)
+                          }
+                        >
+                          <option value="">Choose vault secret</option>
+                          {vaultEntries.map((entry) => (
+                            <option key={entry.id} value={entry.id}>
+                              {entry.name}
+                              {entry.key ? ` (${entry.key})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        {!selectedVaultEntryId ? (
+                          <Input
+                            type="password"
+                            value={newSecretValues[inp.id] ?? ""}
+                            onChange={(e) =>
+                              onNewSecretValueChange(inp.id, e.target.value)
+                            }
+                            placeholder="New vault value"
+                          />
                         ) : null}
                       </div>
-                      <ZodSchemaForm
-                        schema={inp.schema}
-                        value={inputValues[inp.id]}
-                        onChange={(v) => onInputValuesChange(inp.id, v)}
-                        idPrefix={inp.id}
-                        secret={inp.secret}
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
               {canSubmitSeed ? (

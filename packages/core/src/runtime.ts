@@ -70,7 +70,9 @@ class RunSession {
     const storedValue = inputDef.secret ? redactedSecretValue() : validated;
     this.state.trigger ??= event.inputId;
     this.state.payload ??= storedValue;
-    this.state.inputs[event.inputId] = validated;
+    if (!inputDef.secret) {
+      this.state.inputs[event.inputId] = validated;
+    }
     this.state.nodes[event.inputId] = {
       status: "resolved",
       value: storedValue,
@@ -219,6 +221,22 @@ class RunSession {
 
   private readValue(readerStepId: string, depId: string): unknown {
     const inputDef = this.registry.getInput(depId);
+    if (inputDef?.secret) {
+      const secretValue = this.opts.secretValues?.[depId];
+      if (secretValue !== undefined) {
+        this.state.nodes[depId] ??= {
+          status: "resolved",
+          value: redactedSecretValue(),
+          deps: [],
+          duration_ms: 0,
+          attempts: 1,
+        };
+        return secretValue;
+      }
+      this.registerWaiter(depId, readerStepId);
+      throw new WaitError(depId);
+    }
+
     if (inputDef && depId in this.state.inputs) {
       return this.state.inputs[depId];
     }
@@ -247,9 +265,6 @@ class RunSession {
       if (inputDef.kind === "deferred_input") {
         this.registerWaiter(depId, readerStepId);
         throw new WaitError(depId);
-      }
-      if (inputDef.secret) {
-        throw new Error(`Required secret "${depId}" was not provided.`);
       }
       throw new SkipError(depId);
     }

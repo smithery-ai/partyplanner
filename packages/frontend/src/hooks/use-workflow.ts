@@ -9,11 +9,14 @@ import type {
   SubmitWorkflowInputArgs,
 } from "../lib/workflow-runtimes";
 import type {
+  BindRunSecretRequest,
+  CreateSecretVaultEntryRequest,
   CreateWorkflowRequest,
   DeleteWorkflowResponse,
   JsonPayload,
   RunStateDocument,
   RunSummary,
+  SecretVaultEntry,
   SetAutoAdvanceRequest,
   StartBackendRunRequest,
   StartWorkflowRunRequest,
@@ -29,6 +32,7 @@ export type StartRunArgs = {
     inputId: string;
     payload: unknown;
   }[];
+  secretBindings?: Record<string, string | { vaultEntryId: string }>;
   autoAdvance?: boolean;
 };
 
@@ -72,7 +76,24 @@ export type WorkflowRunState = {
   setAutoAdvance(
     args: SetAutoAdvanceWorkflowArgs,
   ): Promise<WorkflowRuntimeResult>;
+  bindSecret(args: BindRunSecretArgs): Promise<WorkflowRuntimeResult>;
   clear(): void;
+};
+
+export type BindRunSecretArgs = {
+  state?: RunState;
+  logicalName: string;
+  vaultEntryId: string;
+  autoAdvance?: boolean;
+};
+
+export type SecretVaultState = {
+  entries: SecretVaultEntry[];
+  isPending: boolean;
+  error: Error | undefined;
+  create(args: CreateSecretVaultEntryRequest): Promise<SecretVaultEntry>;
+  deleteEntry(secretId: string): Promise<void>;
+  refresh(): Promise<void>;
 };
 
 const queryKeys = {
@@ -92,6 +113,8 @@ const queryKeys = {
     ] as const,
   runState: (apiMode: string, apiBaseUrl: string, runId: string) =>
     ["workflow-frontend", apiMode, apiBaseUrl, "run-state", runId] as const,
+  vault: (apiMode: string, apiBaseUrl: string) =>
+    ["workflow-frontend", apiMode, apiBaseUrl, "vault"] as const,
 };
 
 function useWorkflowsQuery() {
@@ -189,6 +212,7 @@ function useStartWorkflowRunMutation(workflowId: string | undefined) {
         additionalInputs: args.additionalInputs as
           | { inputId: string; payload: JsonPayload }[]
           | undefined,
+        secretBindings: args.secretBindings,
         autoAdvance: args.autoAdvance,
       };
       if (config.apiMode === "single") {
@@ -206,6 +230,70 @@ function useStartWorkflowRunMutation(workflowId: string | undefined) {
         await apiPost<StartBackendRunRequest, RunStateDocument>(
           config.apiBaseUrl,
           `/workflows/${encodeURIComponent(workflowId)}/runs`,
+          body,
+        ),
+      );
+    },
+  });
+}
+
+function useSecretVaultQuery() {
+  const config = useWorkflowFrontendConfig();
+  return useQuery({
+    queryKey: queryKeys.vault(config.apiMode, config.apiBaseUrl),
+    enabled: config.apiMode === "multi",
+    queryFn: () =>
+      apiGet<SecretVaultEntry[]>(config.apiBaseUrl, "/vault/secrets"),
+  });
+}
+
+function useCreateSecretVaultEntryMutation() {
+  const config = useWorkflowFrontendConfig();
+  return useMutation({
+    mutationFn: (args: CreateSecretVaultEntryRequest) => {
+      if (config.apiMode === "single") {
+        return Promise.reject(
+          new Error("This workflow server does not support secret vaults."),
+        );
+      }
+      return apiPost<CreateSecretVaultEntryRequest, SecretVaultEntry>(
+        config.apiBaseUrl,
+        "/vault/secrets",
+        args,
+      );
+    },
+  });
+}
+
+function useDeleteSecretVaultEntryMutation() {
+  const config = useWorkflowFrontendConfig();
+  return useMutation({
+    mutationFn: async (secretId: string) => {
+      if (config.apiMode === "single") {
+        throw new Error("This workflow server does not support secret vaults.");
+      }
+      await apiDelete<{ ok: true }>(
+        config.apiBaseUrl,
+        `/vault/secrets/${encodeURIComponent(secretId)}`,
+      );
+    },
+  });
+}
+
+function useBindRunSecretMutation() {
+  const config = useWorkflowFrontendConfig();
+  return useMutation({
+    mutationFn: async (args: BindRunSecretArgs) => {
+      if (!args.state)
+        throw new Error("Cannot bind a secret before a run exists.");
+      const body: BindRunSecretRequest = {
+        vaultEntryId: args.vaultEntryId,
+        autoAdvance: args.autoAdvance,
+      };
+      return documentResult(
+        await apiPut<BindRunSecretRequest, RunStateDocument>(
+          config.apiBaseUrl,
+          `/runs/${encodeURIComponent(args.state.runId)}/secret-bindings/${encodeURIComponent(args.logicalName)}`,
           body,
         ),
       );
@@ -398,6 +486,73 @@ export function useWorkflows(): WorkflowsState {
   };
 }
 
+export function useSecretVault(): SecretVaultState {
+  const config = useWorkflowFrontendConfig();
+  const queryClient = useQueryClient();
+  const vaultQuery = useSecretVaultQuery();
+  const createMutation = useCreateSecretVaultEntryMutation();
+  const deleteMutation = useDeleteSecretVaultEntryMutation();
+  const [error, setError] = useState<Error | undefined>();
+
+  const refresh = useCallback(async () => {
+    try {
+      const result = await vaultQuery.refetch();
+      if (result.error) {
+        setError(normalizeError(result.error));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error(String(e)));
+    }
+  }, [vaultQuery]);
+
+  const create = useCallback(
+    async (args: CreateSecretVaultEntryRequest) => {
+      setError(undefined);
+      try {
+        const entry = await createMutation.mutateAsync(args);
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.vault(config.apiMode, config.apiBaseUrl),
+        });
+        return entry;
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        setError(err);
+        throw err;
+      }
+    },
+    [config.apiBaseUrl, config.apiMode, createMutation, queryClient],
+  );
+
+  const deleteEntry = useCallback(
+    async (secretId: string) => {
+      setError(undefined);
+      try {
+        await deleteMutation.mutateAsync(secretId);
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.vault(config.apiMode, config.apiBaseUrl),
+        });
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        setError(err);
+        throw err;
+      }
+    },
+    [config.apiBaseUrl, config.apiMode, deleteMutation, queryClient],
+  );
+
+  return {
+    entries: vaultQuery.data ?? [],
+    isPending:
+      vaultQuery.isPending ||
+      createMutation.isPending ||
+      deleteMutation.isPending,
+    error: error ?? normalizeError(vaultQuery.error),
+    create,
+    deleteEntry,
+    refresh,
+  };
+}
+
 export function useWorkflow(workflowId: string | undefined): WorkflowState {
   const config = useWorkflowFrontendConfig();
   const queryClient = useQueryClient();
@@ -495,6 +650,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
   const submitInputMutation = useSubmitInputMutation();
   const advanceMutation = useAdvanceRunMutation();
   const setAutoAdvanceMutation = useSetAutoAdvanceMutation();
+  const bindSecretMutation = useBindRunSecretMutation();
   const [error, setError] = useState<Error | undefined>();
 
   const cacheResult = useCallback(
@@ -560,6 +716,11 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     [runMutation, setAutoAdvanceMutation],
   );
 
+  const bindSecret = useCallback(
+    (args: BindRunSecretArgs) => runMutation(bindSecretMutation, args),
+    [bindSecretMutation, runMutation],
+  );
+
   const clear = useCallback(() => {
     setError(undefined);
   }, []);
@@ -569,9 +730,11 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
       submitInputMutation.isPending ||
       advanceMutation.isPending ||
       setAutoAdvanceMutation.isPending ||
+      bindSecretMutation.isPending ||
       (Boolean(runId) && stateQuery.isPending),
     [
       advanceMutation.isPending,
+      bindSecretMutation.isPending,
       setAutoAdvanceMutation.isPending,
       stateQuery.isPending,
       runId,
@@ -594,6 +757,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     submitInput,
     advance,
     setAutoAdvance,
+    bindSecret,
     clear,
   };
 }
@@ -717,6 +881,20 @@ async function apiPost<TRequest, TResponse>(
   return readJsonResponse<TResponse>(
     await fetch(apiUrl(apiBaseUrl, path), {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(json),
+    }),
+  );
+}
+
+async function apiPut<TRequest, TResponse>(
+  apiBaseUrl: string,
+  path: string,
+  json: TRequest,
+): Promise<TResponse> {
+  return readJsonResponse<TResponse>(
+    await fetch(apiUrl(apiBaseUrl, path), {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(json),
     }),

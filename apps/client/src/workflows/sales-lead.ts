@@ -1,4 +1,4 @@
-import { atom, input } from "@workflow/core";
+import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
 
 export const lead = input(
@@ -21,6 +21,14 @@ export const aeReview = input.deferred(
   }),
   { description: "AE acceptance for qualified opportunities." },
 );
+
+export const crmApiKey = secret("CRM_API_KEY", {
+  description: "CRM API key used to create opportunity and nurture records.",
+});
+
+export const calendarApiKey = secret("CALENDAR_API_KEY", {
+  description: "Calendar API key used to schedule accepted demos.",
+});
 
 export const scoreLead = atom(
   (get) => {
@@ -52,10 +60,12 @@ export const scheduleDemo = atom(
     if (route.lane === "nurture") return get.skip("Lead is not sales-ready.");
     const review = get(aeReview);
     if (!review.accepted) return get.skip("AE did not accept the lead.");
+    const calendarKey = get(calendarApiKey);
     return {
       company: route.company,
       owner: review.owner,
       calendar: route.lane === "enterprise" ? "exec-demo" : "standard-demo",
+      credential: calendarKey.length > 0 ? "CALENDAR_API_KEY" : undefined,
     };
   },
   { name: "scheduleDemo" },
@@ -65,7 +75,12 @@ export const nurture = atom(
   (get) => {
     const route = get(routeLead);
     if (route.lane !== "nurture") return get.skip("Lead is sales-ready.");
-    return { company: route.company, campaign: "product-education" };
+    const crmKey = get(crmApiKey);
+    return {
+      company: route.company,
+      campaign: "product-education",
+      credential: crmKey.length > 0 ? "CRM_API_KEY" : undefined,
+    };
   },
   { name: "nurture" },
 );

@@ -1,4 +1,4 @@
-import { atom, input } from "@workflow/core";
+import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
 
 export const ticket = input(
@@ -24,6 +24,10 @@ export const managerReview = input.deferred(
   }),
   { description: "Manager review for urgent or enterprise tickets." },
 );
+
+export const supportDeskApiKey = secret("SUPPORT_DESK_API_KEY", {
+  description: "Support desk API key used to send replies and update tickets.",
+});
 
 export const classify = atom(
   (get) => {
@@ -77,10 +81,12 @@ export const closeLoop = atom(
   (get) => {
     const reply = get(draftReply);
     const escalation = get.maybe(escalate);
+    const apiKey = get(supportDeskApiKey);
     return {
       reply,
       escalation,
       nextAction: escalation ? "page-owner" : "send-reply",
+      credential: apiKey.length > 0 ? "SUPPORT_DESK_API_KEY" : undefined,
     };
   },
   { name: "closeLoop" },

@@ -13,6 +13,7 @@ export type WorkflowInputManifest = {
 
 export type WorkflowManifest = {
   workflowId: string;
+  organizationId?: string;
   version: string;
   codeHash?: string;
   name?: string;
@@ -22,6 +23,7 @@ export type WorkflowManifest = {
 
 export function buildWorkflowManifest(args: {
   workflowId: string;
+  organizationId?: string;
   version: string;
   codeHash?: string;
   name?: string;
@@ -30,6 +32,7 @@ export function buildWorkflowManifest(args: {
 }): WorkflowManifest {
   return {
     workflowId: args.workflowId,
+    organizationId: args.organizationId,
     version: args.version,
     codeHash: args.codeHash,
     name: args.name,

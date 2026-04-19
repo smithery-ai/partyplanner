@@ -22,6 +22,8 @@ export type {
   RunSnapshot,
   SaveResult,
   Scheduler,
+  SecretResolutionRequest,
+  SecretResolver,
   StartRunRequest,
   StateStore,
   StoredRunState,

@@ -1,4 +1,4 @@
-import { atom, input } from "@workflow/core";
+import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
 
 export const brief = input(
@@ -21,6 +21,10 @@ export const legalReview = input.deferred(
   }),
   { description: "Legal review for sensitive content." },
 );
+
+export const cmsApiKey = secret("CMS_API_KEY", {
+  description: "CMS API key used to schedule approved content.",
+});
 
 export const draftOutline = atom(
   (get) => {
@@ -60,11 +64,13 @@ export const schedulePublish = atom(
     const b = get(brief);
     const legal = get.maybe(approveLegal);
     if (b.needsLegal && !legal) return get.skip("Waiting on legal approval.");
+    const cmsKey = get(cmsApiKey);
     return {
       title: b.title,
       format: get(chooseFormat),
       launchWeek: b.launchWeek,
       outline: get(draftOutline),
+      credential: cmsKey.length > 0 ? "CMS_API_KEY" : undefined,
     };
   },
   { name: "schedulePublish" },

@@ -80,6 +80,7 @@ export type StepBlockedEvent = { id: string; blockedOn: string };
 
 export type RuntimeOptions = {
   registry?: Registry;
+  secretValues?: Record<string, string>;
   onEventEmitted?: (ev: QueueEvent) => void;
   onStepResolved?: (ev: StepResolvedEvent) => void;
   onStepErrored?: (ev: StepErroredEvent) => void;

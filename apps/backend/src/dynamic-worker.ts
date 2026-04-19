@@ -3,6 +3,7 @@ import type {
   ExecuteRequest,
   ExecuteResult,
   Executor,
+  SecretResolver,
 } from "@workflow/runtime";
 import type { WorkflowApiManifest } from "@workflow/server";
 import { z } from "zod";
@@ -14,6 +15,7 @@ export type StoredWorkflowAtom = {
 
 export type StoredWorkflow = {
   workflowId: string;
+  organizationId?: string;
   name?: string;
   source: string;
   manifest: WorkflowApiManifest;
@@ -28,6 +30,7 @@ type DynamicWorkflowDescription = {
 
 export type CreateStoredDynamicWorkflowRequest = {
   workflowId: string;
+  organizationId?: string;
   name?: string;
   source: string;
 };
@@ -44,12 +47,14 @@ export async function createStoredDynamicWorkflow(
   const createdAt = Date.now();
   return {
     workflowId: request.workflowId,
+    organizationId: request.organizationId,
     name: request.name,
     source: request.source,
     atoms: description.atoms,
     createdAt,
     manifest: {
       workflowId: request.workflowId,
+      organizationId: request.organizationId,
       version: codeHash,
       codeHash,
       name: request.name,
@@ -66,6 +71,7 @@ export class DynamicWorkerExecutor implements Executor {
     private readonly loadWorkflow: (
       workflowId: string,
     ) => Promise<StoredWorkflow | undefined>,
+    private readonly secretResolver?: SecretResolver,
   ) {}
 
   async execute(request: ExecuteRequest): Promise<ExecuteResult> {
@@ -88,10 +94,28 @@ export class DynamicWorkerExecutor implements Executor {
         body: JSON.stringify({
           event: request.event,
           state: request.state,
+          secretValues: await this.resolveSecrets(request),
         }),
       });
     if (!response.ok) throw new Error(await errorMessage(response));
     return (await response.json()) as ExecuteResult;
+  }
+
+  private async resolveSecrets(
+    request: ExecuteRequest,
+  ): Promise<Record<string, string>> {
+    if (!this.secretResolver) return {};
+
+    const values: Record<string, string> = {};
+    for (const input of request.registry.allInputs()) {
+      if (!input.secret) continue;
+      const value = await this.secretResolver.resolve({
+        ...request,
+        logicalName: input.id,
+      });
+      if (value !== undefined) values[input.id] = value;
+    }
+    return values;
   }
 }
 
@@ -271,7 +295,10 @@ export default {
       }
       if (url.pathname === "/execute") {
         const body = await request.json();
-        const runtime = createRuntime({ registry: globalRegistry });
+        const runtime = createRuntime({
+          registry: globalRegistry,
+          secretValues: body.secretValues || {}
+        });
         return json(await runtime.process(body.event, body.state));
       }
       return json({ message: "Not found" }, 404);
@@ -674,7 +701,7 @@ export function createRuntime(opts) {
   return {
     async process(event, state) {
       const registry = opts && opts.registry ? opts.registry : globalRegistry;
-      const session = new RunSession(registry, state || makeEmptyRunState(event.runId));
+      const session = new RunSession(registry, opts || {}, state || makeEmptyRunState(event.runId));
       if (session.hasProcessed(event.eventId)) {
         return { state: session.snapshot(), emitted: [], trace: session.buildTrace() };
       }
@@ -688,8 +715,9 @@ export function createRuntime(opts) {
 }
 
 class RunSession {
-  constructor(registry, state) {
+  constructor(registry, opts, state) {
     this.registry = registry;
+    this.opts = opts;
     this.state = state;
   }
   hasProcessed(eventId) {
@@ -705,7 +733,7 @@ class RunSession {
     const storedValue = inputDef.secret ? "[secret]" : validated;
     if (this.state.trigger === undefined) this.state.trigger = event.inputId;
     if (this.state.payload === undefined) this.state.payload = storedValue;
-    this.state.inputs[event.inputId] = validated;
+    if (!inputDef.secret) this.state.inputs[event.inputId] = validated;
     this.state.nodes[event.inputId] = {
       status: "resolved",
       value: storedValue,
@@ -811,6 +839,23 @@ class RunSession {
   }
   readValue(readerStepId, depId) {
     const inputDef = this.registry.getInput(depId);
+    if (inputDef && inputDef.secret) {
+      const secretValues = this.opts && this.opts.secretValues ? this.opts.secretValues : {};
+      if (Object.prototype.hasOwnProperty.call(secretValues, depId)) {
+        if (!this.state.nodes[depId]) {
+          this.state.nodes[depId] = {
+            status: "resolved",
+            value: "[secret]",
+            deps: [],
+            duration_ms: 0,
+            attempts: 1
+          };
+        }
+        return secretValues[depId];
+      }
+      this.registerWaiter(depId, readerStepId);
+      throw new WaitError(depId);
+    }
     if (inputDef && Object.prototype.hasOwnProperty.call(this.state.inputs, depId)) {
       return this.state.inputs[depId];
     }
@@ -828,7 +873,6 @@ class RunSession {
         this.registerWaiter(depId, readerStepId);
         throw new WaitError(depId);
       }
-      if (inputDef.secret) throw new Error('Required secret "' + depId + '" was not provided.');
       throw new SkipError(depId);
     }
     const atomDef = this.registry.getAtom(depId);

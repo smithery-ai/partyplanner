@@ -5,11 +5,14 @@ import { globalRegistry } from "@workflow/core";
 import type { QueueSnapshot } from "@workflow/runtime";
 import {
   AlertTriangle,
+  ArrowLeft,
   Check,
   Clock3,
   History,
+  KeyRound,
   Pause,
   Play,
+  Plus,
   RefreshCw,
   SkipForward,
   Trash2,
@@ -28,11 +31,14 @@ import {
 } from "./components/queue-visualizer";
 import { RunStateJsonSheet } from "./components/run-state-json-sheet";
 import { StartWorkflowSheet } from "./components/start-workflow-sheet";
+import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
 import { WorkflowCodeSheet } from "./components/workflow-code-sheet";
 import { defaultForSchema } from "./components/zod-schema-form";
 import { useWorkflowFrontendConfig, WorkflowFrontendRoot } from "./config";
 import {
+  useSecretVault,
   useWorkflow,
   useWorkflowRun,
   useWorkflows,
@@ -45,12 +51,14 @@ type SidePane = null | "workflow" | "start" | "pending" | "state";
 
 export type WorkflowNavigation = {
   home(): void;
+  vault?(): void;
   workflow(workflowId: string, options?: { replace?: boolean }): void;
   run(workflowId: string, runId: string): void;
 };
 
 const noopNavigation: WorkflowNavigation = {
   home() {},
+  vault() {},
   workflow() {},
   run() {},
 };
@@ -328,6 +336,14 @@ export function WorkflowIndexApp({
             <div className="grid w-full gap-2">
               <Button
                 type="button"
+                variant="outline"
+                onClick={() => navigation.vault?.()}
+              >
+                <KeyRound className="size-4" aria-hidden />
+                Open vault
+              </Button>
+              <Button
+                type="button"
                 onClick={() => void uploadMissingExamples()}
                 disabled={uploading}
               >
@@ -366,18 +382,29 @@ export function WorkflowIndexApp({
         <h1 className="text-sm font-semibold tracking-tight md:text-base">
           Workflows
         </h1>
-        {missingExampleWorkflows.length > 0 ? (
+        <div className="flex items-center gap-1.5">
           <Button
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => void uploadMissingExamples()}
-            disabled={uploading || isPending}
+            onClick={() => navigation.vault?.()}
           >
-            <Upload className="size-3.5" aria-hidden />
-            {uploading ? "Uploading..." : "Upload examples"}
+            <KeyRound className="size-3.5" aria-hidden />
+            Vault
           </Button>
-        ) : null}
+          {missingExampleWorkflows.length > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => void uploadMissingExamples()}
+              disabled={uploading || isPending}
+            >
+              <Upload className="size-3.5" aria-hidden />
+              {uploading ? "Uploading..." : "Upload examples"}
+            </Button>
+          ) : null}
+        </div>
       </header>
       <div className="flex-1 overflow-y-auto p-4">
         <ul className="mx-auto flex max-w-2xl flex-col gap-2">
@@ -425,6 +452,207 @@ export function WorkflowIndexApp({
   );
 }
 
+export function SecretVaultApp({
+  navigation = noopNavigation,
+}: {
+  navigation?: Pick<WorkflowNavigation, "home">;
+}) {
+  const vault = useSecretVault();
+  const [name, setName] = useState("");
+  const [key, setKey] = useState("");
+  const [value, setValue] = useState("");
+  const [scope, setScope] = useState<"user" | "organization">("user");
+  const [formError, setFormError] = useState<string | undefined>();
+
+  async function createSecret() {
+    setFormError(undefined);
+    if (!name.trim()) {
+      setFormError("Name is required.");
+      return;
+    }
+    if (!value) {
+      setFormError("Value is required.");
+      return;
+    }
+
+    try {
+      await vault.create({
+        name: name.trim(),
+        key: key.trim() || undefined,
+        value,
+        scope,
+      });
+      setName("");
+      setKey("");
+      setValue("");
+      setScope("user");
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Unable to create secret.");
+    }
+  }
+
+  async function deleteSecret(secretId: string) {
+    setFormError(undefined);
+    try {
+      await vault.deleteEntry(secretId);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Unable to delete secret.");
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            onClick={() => navigation.home()}
+            aria-label="Back to workflows"
+            title="Back to workflows"
+          >
+            <ArrowLeft className="size-3.5" aria-hidden />
+          </Button>
+          <div className="flex min-w-0 items-center gap-2">
+            <KeyRound className="size-4 shrink-0" aria-hidden />
+            <h1 className="truncate text-sm font-semibold tracking-tight md:text-base">
+              Secret Vault
+            </h1>
+          </div>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => void vault.refresh()}
+          disabled={vault.isPending}
+        >
+          <RefreshCw className="size-3.5" aria-hidden />
+          Refresh
+        </Button>
+      </header>
+
+      <main className="mx-auto grid w-full max-w-4xl flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[20rem_minmax(0,1fr)]">
+        <form
+          className="grid content-start gap-3 border-border border-b pb-4 lg:border-r lg:border-b-0 lg:pr-4 lg:pb-0"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void createSecret();
+          }}
+        >
+          <div className="grid gap-1.5">
+            <label className="text-xs font-medium" htmlFor="vault-name">
+              Name
+            </label>
+            <Input
+              id="vault-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Prod LLM Gateway"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <label className="text-xs font-medium" htmlFor="vault-key">
+              Key
+            </label>
+            <Input
+              id="vault-key"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder="LLM_GATEWAY_API_KEY"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <label className="text-xs font-medium" htmlFor="vault-value">
+              Value
+            </label>
+            <Input
+              id="vault-value"
+              type="password"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Secret value"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <label className="text-xs font-medium" htmlFor="vault-scope">
+              Scope
+            </label>
+            <select
+              id="vault-scope"
+              className="flex h-8 w-full rounded-lg border border-input bg-background px-2 text-sm dark:bg-input/30"
+              value={scope}
+              onChange={(e) =>
+                setScope(
+                  e.target.value === "organization" ? "organization" : "user",
+                )
+              }
+            >
+              <option value="user">User</option>
+              <option value="organization">Organization</option>
+            </select>
+          </div>
+          <Button type="submit" disabled={vault.isPending}>
+            <Plus className="size-4" aria-hidden />
+            Add Secret
+          </Button>
+          {formError || vault.error ? (
+            <p className="text-destructive text-xs">
+              {formError ?? vault.error?.message}
+            </p>
+          ) : null}
+        </form>
+
+        <section className="min-w-0">
+          {vault.entries.length === 0 ? (
+            <div className="flex min-h-40 items-center justify-center rounded-lg border border-border bg-card p-6 text-muted-foreground text-sm">
+              No secrets
+            </div>
+          ) : (
+            <ul className="grid gap-2">
+              {vault.entries.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="grid min-h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg border border-border bg-card px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="truncate font-medium text-sm">
+                        {entry.name}
+                      </span>
+                      <Badge variant="outline">{entry.scope}</Badge>
+                    </div>
+                    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-muted-foreground text-xs">
+                      {entry.key ? (
+                        <code className="rounded bg-muted px-1 py-0.5">
+                          {entry.key}
+                        </code>
+                      ) : null}
+                      <span>{formatRunTime(entry.updatedAt)}</span>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="outline"
+                    aria-label={`Delete ${entry.name}`}
+                    title={`Delete ${entry.name}`}
+                    onClick={() => void deleteSecret(entry.id)}
+                    disabled={vault.isPending}
+                  >
+                    <Trash2 className="size-3.5" aria-hidden />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </main>
+    </div>
+  );
+}
+
 function NotFoundScreen({
   workflowId,
   navigation,
@@ -462,6 +690,7 @@ export function WorkflowRunnerApp({
   const config = useWorkflowFrontendConfig();
   const workflow = useWorkflow(workflowId);
   const workflowRun = useWorkflowRun(runId);
+  const secretVault = useSecretVault();
   const { deleteWorkflow } = useWorkflows();
 
   const [pane, setPane] = useState<SidePane>(null);
@@ -469,6 +698,12 @@ export function WorkflowRunnerApp({
   const [inputValues, setInputValues] = useState<Record<string, unknown>>(() =>
     buildInitialInputValues(globalRegistry),
   );
+  const [secretBindings, setSecretBindings] = useState<Record<string, string>>(
+    {},
+  );
+  const [newSecretValues, setNewSecretValues] = useState<
+    Record<string, string>
+  >({});
   const [seedInputId, setSeedInputId] = useState(() =>
     firstSeedInputId(globalRegistry),
   );
@@ -488,6 +723,8 @@ export function WorkflowRunnerApp({
       loadWorkflowSourceIntoGlobalRegistry(activeSource);
       setAppliedSource(activeSource);
       setInputValues(buildInitialInputValues(globalRegistry));
+      setSecretBindings({});
+      setNewSecretValues({});
       setSeedInputId(firstSeedInputId(globalRegistry));
     } catch (e) {
       setPayloadError(
@@ -536,10 +773,26 @@ export function WorkflowRunnerApp({
     setInputValues((prev) => ({ ...prev, [id]: value }));
   }
 
+  function setSecretBinding(id: string, vaultEntryId: string) {
+    setSecretBindings((prev) => ({ ...prev, [id]: vaultEntryId }));
+    if (vaultEntryId) {
+      setNewSecretValues((prev) => ({ ...prev, [id]: "" }));
+    }
+  }
+
+  function setNewSecretValue(id: string, value: string) {
+    setNewSecretValues((prev) => ({ ...prev, [id]: value }));
+    if (value) {
+      setSecretBindings((prev) => ({ ...prev, [id]: "" }));
+    }
+  }
+
   function clearRun() {
     workflowRun.clear();
     setSelectedNodeId(null);
     setInputValues(buildInitialInputValues(globalRegistry));
+    setSecretBindings({});
+    setNewSecretValues({});
     setSeedInputId(firstSeedInputId(globalRegistry));
     setPayloadError("");
     setPane(null);
@@ -555,15 +808,25 @@ export function WorkflowRunnerApp({
       return;
     }
     let payload: unknown;
-    const additionalInputs: { inputId: string; payload: unknown }[] = [];
+    const resolvedSecretBindings: Record<string, string> = {};
     try {
       payload = seed.schema.parse(inputValues[seed.id]);
       for (const secretInput of globalRegistry.allInputs()) {
         if (secretInput.kind !== "input" || !secretInput.secret) continue;
-        additionalInputs.push({
-          inputId: secretInput.id,
-          payload: secretInput.schema.parse(inputValues[secretInput.id]),
-        });
+        const newValue = newSecretValues[secretInput.id]?.trim();
+        if (newValue) {
+          const entry = await secretVault.create({
+            name: secretInput.id,
+            key: secretInput.id,
+            value: newValue,
+            scope: "user",
+          });
+          resolvedSecretBindings[secretInput.id] = entry.id;
+          continue;
+        }
+
+        const vaultEntryId = secretBindings[secretInput.id];
+        if (vaultEntryId) resolvedSecretBindings[secretInput.id] = vaultEntryId;
       }
     } catch (e) {
       setPayloadError(
@@ -576,7 +839,7 @@ export function WorkflowRunnerApp({
       const result = await workflow.start({
         inputId: seed.id,
         payload,
-        additionalInputs,
+        secretBindings: resolvedSecretBindings,
         autoAdvance: pendingAutoAdvance,
       });
       navigation.run(workflowId, result.state.runId);
@@ -622,6 +885,43 @@ export function WorkflowRunnerApp({
       setPayloadError(
         errorMessage(e, "Processing failed — check input values."),
       );
+    }
+  }
+
+  async function bindPendingSecret(explicitInputId?: string) {
+    const inputId = explicitInputId ?? pendingDeferredId;
+    if (!inputId || !runState) return;
+    const def = globalRegistry.getInput(inputId);
+    if (!def?.secret) return;
+
+    setPayloadError("");
+    try {
+      let vaultEntryId = secretBindings[inputId];
+      const newValue = newSecretValues[inputId]?.trim();
+      if (newValue) {
+        const entry = await secretVault.create({
+          name: inputId,
+          key: inputId,
+          value: newValue,
+          scope: "user",
+        });
+        vaultEntryId = entry.id;
+        setSecretBinding(inputId, entry.id);
+      }
+      if (!vaultEntryId) {
+        setPayloadError(`Choose or create a vault secret for "${inputId}".`);
+        return;
+      }
+
+      await workflowRun.bindSecret({
+        state: runState,
+        logicalName: inputId,
+        vaultEntryId,
+        autoAdvance: activeAutoAdvance,
+      });
+      setPane(null);
+    } catch (e) {
+      setPayloadError(errorMessage(e, "Unable to bind the secret."));
     }
   }
 
@@ -751,6 +1051,15 @@ export function WorkflowRunnerApp({
             title="Full run state including every node record"
           >
             Run state
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="outline"
+            onClick={() => navigation.vault?.()}
+            aria-label="Open secret vault"
+            title="Open secret vault"
+          >
+            <KeyRound className="size-3.5" aria-hidden />
           </Button>
           {config.apiMode === "multi" ? (
             <Button
@@ -976,9 +1285,18 @@ export function WorkflowRunnerApp({
             onInputValuesChange={setInputValue}
             seedInputId={seedInputId}
             onSeedInputIdChange={setSeedInputId}
+            vaultEntries={secretVault.entries}
+            secretBindings={secretBindings}
+            onSecretBindingChange={setSecretBinding}
+            newSecretValues={newSecretValues}
+            onNewSecretValueChange={setNewSecretValue}
             canSubmitSeed={!runState}
             onSubmitSeed={() => void runWorkflow()}
-            error={pane === "start" ? payloadError || undefined : undefined}
+            error={
+              pane === "start"
+                ? payloadError || secretVault.error?.message || undefined
+                : undefined
+            }
           />
 
           <PendingInputSheet
@@ -988,8 +1306,18 @@ export function WorkflowRunnerApp({
             pendingInputId={pendingDeferredId}
             inputValues={inputValues}
             onInputValuesChange={setInputValue}
+            vaultEntries={secretVault.entries}
+            secretBindings={secretBindings}
+            onSecretBindingChange={setSecretBinding}
+            newSecretValues={newSecretValues}
+            onNewSecretValueChange={setNewSecretValue}
             onSubmit={() => void submitDeferredInput()}
-            error={pane === "pending" ? payloadError || undefined : undefined}
+            onBindSecret={() => void bindPendingSecret()}
+            error={
+              pane === "pending"
+                ? payloadError || secretVault.error?.message || undefined
+                : undefined
+            }
           />
 
           <NodeDetailSheet
