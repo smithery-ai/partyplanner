@@ -15,6 +15,7 @@ export type WorkflowManifest = {
   version: string;
   codeHash?: string;
   name?: string;
+  source: string;
   createdAt: number;
   inputs: WorkflowInputManifest[];
 };
@@ -24,6 +25,7 @@ export function buildWorkflowManifest(args: {
   version: string;
   codeHash?: string;
   name?: string;
+  source: string;
   createdAt: number;
   registry: Registry;
 }): WorkflowManifest {
@@ -32,6 +34,7 @@ export function buildWorkflowManifest(args: {
     version: args.version,
     codeHash: args.codeHash,
     name: args.name,
+    source: args.source,
     createdAt: args.createdAt,
     inputs: args.registry.allInputs().map((input) => ({
       id: input.id,

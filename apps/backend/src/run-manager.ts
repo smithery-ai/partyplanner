@@ -152,6 +152,7 @@ export class BackendRunManager {
       version: workflow.version,
       codeHash,
       name: request.name,
+      source: request.workflowSource,
       createdAt: Date.now(),
       registry,
     });
@@ -170,6 +171,11 @@ export class BackendRunManager {
     return [...this.workflows.values()]
       .map((workflow) => structuredClone(workflow.manifest))
       .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  getWorkflow(workflowId: string): WorkflowManifest | undefined {
+    const stored = this.workflows.get(workflowId);
+    return stored ? structuredClone(stored.manifest) : undefined;
   }
 
   async startWorkflowRun(

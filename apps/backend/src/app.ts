@@ -295,6 +295,7 @@ const WorkflowManifestSchema = z
     version: z.string(),
     codeHash: z.string().optional(),
     name: z.string().optional(),
+    source: z.string(),
     createdAt: z.number(),
     inputs: z.array(WorkflowInputManifestSchema),
   })
@@ -429,6 +430,32 @@ const listWorkflowsRoute = createRoute({
         },
       },
       description: "Known workflows ordered by most recently created.",
+    },
+  },
+});
+
+const getWorkflowRoute = createRoute({
+  method: "get",
+  path: "/workflows/{workflowId}",
+  request: {
+    params: WorkflowIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: WorkflowManifestSchema,
+        },
+      },
+      description: "Workflow manifest.",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+      description: "Unknown workflow.",
     },
   },
 });
@@ -655,6 +682,12 @@ export function createApp() {
       }
     })
     .openapi(listWorkflowsRoute, (c) => c.json(runManager.listWorkflows(), 200))
+    .openapi(getWorkflowRoute, (c) => {
+      const { workflowId } = c.req.valid("param");
+      const manifest = runManager.getWorkflow(workflowId);
+      if (!manifest) return c.json({ message: "Unknown workflow" }, 404);
+      return c.json(manifest, 200);
+    })
     .openapi(startWorkflowRunRoute, async (c) => {
       try {
         const { workflowId } = c.req.valid("param");
