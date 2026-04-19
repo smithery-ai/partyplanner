@@ -51,6 +51,21 @@ describe("secret()", () => {
     ).rejects.toThrow();
   });
 
+  it("rejects empty secret payloads", async () => {
+    secret("apiKey");
+
+    const runtime = createRuntime();
+    await expect(
+      runtime.process({
+        kind: "input",
+        eventId: "evt-1",
+        runId: "run-1",
+        inputId: "apiKey",
+        payload: "",
+      }),
+    ).rejects.toThrow("Secret must not be empty.");
+  });
+
   it("does not expose a deferred secret helper", () => {
     expect("deferred" in secret).toBe(false);
   });

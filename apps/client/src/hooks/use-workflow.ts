@@ -548,11 +548,32 @@ async function readJsonResponse<TResponse>(
   response: Response,
 ): Promise<TResponse> {
   if (!response.ok) {
-    const message = await response.text();
+    const message = await errorMessageFromResponse(response);
     throw new Error(message || `Workflow request failed: ${response.status}`);
   }
 
   return response.json() as Promise<TResponse>;
+}
+
+async function errorMessageFromResponse(response: Response): Promise<string> {
+  const text = await response.text();
+  if (!text) return "";
+
+  try {
+    const body = JSON.parse(text) as unknown;
+    if (
+      body &&
+      typeof body === "object" &&
+      "message" in body &&
+      typeof body.message === "string"
+    ) {
+      return body.message;
+    }
+  } catch {
+    // Fall through to the raw response body for non-JSON errors.
+  }
+
+  return text;
 }
 
 function apiUrl(path: string): string {
