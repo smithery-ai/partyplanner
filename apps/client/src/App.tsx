@@ -14,7 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import type { ZodTypeAny } from "zod";
+import { ZodError, type ZodTypeAny } from "zod";
 import {
   type NodeDetailEditor,
   NodeDetailSheet,
@@ -110,6 +110,43 @@ function displayNodeRecord(
   const def = registry.getInput(nodeId);
   if (!def?.secret || record.value === undefined) return record;
   return { ...record, value: "[secret]" };
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  const issues = zodIssues(error);
+  if (issues) {
+    return issues
+      .map((issue) => {
+        const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
+        return `${path}${issue.message}`;
+      })
+      .join("\n");
+  }
+  return error instanceof Error ? error.message : fallback;
+}
+
+type ZodIssueLike = {
+  message: string;
+  path: (string | number)[];
+};
+
+function zodIssues(error: unknown): ZodIssueLike[] | undefined {
+  if (error instanceof ZodError) return error.issues;
+  if (!error || typeof error !== "object") return undefined;
+  const issues = (error as { issues?: unknown }).issues;
+  if (!Array.isArray(issues)) return undefined;
+  if (
+    !issues.every(
+      (issue): issue is ZodIssueLike =>
+        issue &&
+        typeof issue === "object" &&
+        typeof (issue as { message?: unknown }).message === "string" &&
+        Array.isArray((issue as { path?: unknown }).path),
+    )
+  ) {
+    return undefined;
+  }
+  return issues;
 }
 
 type NextQueuedWork = {
@@ -477,9 +514,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
       }
     } catch (e) {
       setPayloadError(
-        e instanceof Error
-          ? e.message
-          : "Validation failed for the initial inputs.",
+        errorMessage(e, "Validation failed for the initial inputs."),
       );
       return;
     }
@@ -498,9 +533,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
       setPane(null);
     } catch (e) {
       setPayloadError(
-        e instanceof Error
-          ? e.message
-          : "Processing failed — check input values.",
+        errorMessage(e, "Processing failed — check input values."),
       );
     }
   }
@@ -522,9 +555,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
     try {
       payload = def.schema.parse(inputValues[inputId]);
     } catch (e) {
-      setPayloadError(
-        e instanceof Error ? e.message : `Validation failed for "${inputId}".`,
-      );
+      setPayloadError(errorMessage(e, `Validation failed for "${inputId}".`));
       return;
     }
 
@@ -539,9 +570,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
       setPane(null);
     } catch (e) {
       setPayloadError(
-        e instanceof Error
-          ? e.message
-          : "Processing failed — check input values.",
+        errorMessage(e, "Processing failed — check input values."),
       );
     }
   }
@@ -557,9 +586,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
       setPane(null);
     } catch (e) {
       setPayloadError(
-        e instanceof Error
-          ? e.message
-          : "Processing failed — check workflow code.",
+        errorMessage(e, "Processing failed — check workflow code."),
       );
     }
   }
@@ -577,9 +604,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
       });
     } catch (e) {
       setPendingAutoAdvance(!nextAutoAdvance);
-      setPayloadError(
-        e instanceof Error ? e.message : "Unable to change advance mode.",
-      );
+      setPayloadError(errorMessage(e, "Unable to change advance mode."));
     }
   }
 
@@ -591,9 +616,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
       workflowRun.clear();
       void navigate({ to: "/", replace: true });
     } catch (e) {
-      setPayloadError(
-        e instanceof Error ? e.message : `Failed to delete ${workflowId}.`,
-      );
+      setPayloadError(errorMessage(e, `Failed to delete ${workflowId}.`));
     } finally {
       setDeletingWorkflow(false);
     }

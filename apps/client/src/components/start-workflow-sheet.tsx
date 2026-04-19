@@ -174,7 +174,14 @@ export function StartWorkflowSheet({
             </>
           )}
 
-          {error ? <p className="text-destructive text-xs">{error}</p> : null}
+          {error ? (
+            <p
+              className="whitespace-pre-line text-destructive text-xs"
+              role="alert"
+            >
+              {error}
+            </p>
+          ) : null}
         </div>
       </aside>
     </>

@@ -78,7 +78,12 @@ export function NodeDetailSheet({
                 secret={editor.secret}
               />
               {editor.error ? (
-                <p className="text-destructive text-xs">{editor.error}</p>
+                <p
+                  className="whitespace-pre-line text-destructive text-xs"
+                  role="alert"
+                >
+                  {editor.error}
+                </p>
               ) : null}
               <Button
                 type="button"

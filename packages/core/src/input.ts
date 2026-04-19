@@ -36,7 +36,7 @@ export function secret(name: string, opts?: InputOpts): Input<string> {
   globalRegistry.registerInput({
     kind: "input",
     id: name,
-    schema: z.string(),
+    schema: z.string().min(1, "Secret must not be empty."),
     description: opts?.description,
     secret: true,
   });
