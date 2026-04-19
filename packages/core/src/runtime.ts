@@ -67,12 +67,13 @@ class RunSession {
     if (!inputDef) throw new Error(`Unknown input: ${event.inputId}`);
 
     const validated = inputDef.schema.parse(event.payload);
+    const storedValue = inputDef.secret ? redactedSecretValue() : validated;
     this.state.trigger ??= event.inputId;
-    this.state.payload ??= validated;
+    this.state.payload ??= storedValue;
     this.state.inputs[event.inputId] = validated;
     this.state.nodes[event.inputId] = {
       status: "resolved",
-      value: validated,
+      value: storedValue,
       deps: [],
       duration_ms: 0,
       attempts: 1,
@@ -217,6 +218,11 @@ class RunSession {
   }
 
   private readValue(readerStepId: string, depId: string): unknown {
+    const inputDef = this.registry.getInput(depId);
+    if (inputDef && depId in this.state.inputs) {
+      return this.state.inputs[depId];
+    }
+
     const existing = this.state.nodes[depId];
     if (existing?.status === "resolved") return existing.value;
     if (existing?.status === "skipped")
@@ -237,11 +243,7 @@ class RunSession {
       throw new NotReadyError(depId);
     }
 
-    const inputDef = this.registry.getInput(depId);
     if (inputDef) {
-      if (depId in this.state.inputs) {
-        return this.state.inputs[depId];
-      }
       if (inputDef.kind === "deferred_input") {
         this.registerWaiter(depId, readerStepId);
         throw new WaitError(depId);
@@ -349,4 +351,8 @@ function makeEmptyRunState(runId: string): RunState {
 
 export function createRuntime(opts: RuntimeOptions = {}): Runtime {
   return new RuntimeImpl(opts);
+}
+
+function redactedSecretValue(): string {
+  return "[secret]";
 }

@@ -33,6 +33,10 @@ export type StartWorkflowArgs = {
   workflowSource: string;
   inputId: string;
   payload: unknown;
+  additionalInputs?: {
+    inputId: string;
+    payload: unknown;
+  }[];
   autoAdvance?: boolean;
 };
 
@@ -84,6 +88,7 @@ export class BackendRuntime implements WorkflowRuntime {
         workflowSource: args.workflowSource,
         inputId: args.inputId,
         payload: args.payload,
+        additionalInputs: args.additionalInputs,
         autoAdvance: args.autoAdvance,
       },
     );
@@ -212,6 +217,7 @@ export class LocalRuntime implements WorkflowRuntime {
         inputId: args.inputId,
         payload: args.payload,
       },
+      additionalInputs: args.additionalInputs,
     });
     return this.finalize(snapshot.runId, snapshot);
   }

@@ -144,6 +144,7 @@ export type ExecutionStatus =
 export type GraphNode = {
   id: string;
   kind: "input" | "deferred_input" | "atom";
+  secret?: boolean;
   description?: string;
   status: ExecutionStatus;
   value?: unknown;
@@ -185,6 +186,11 @@ export type StartRunRequest = {
     payload: unknown;
     eventId?: string;
   };
+  additionalInputs?: {
+    inputId: string;
+    payload: unknown;
+    eventId?: string;
+  }[];
 };
 
 export type SubmitInputRequest = {

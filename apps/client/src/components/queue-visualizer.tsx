@@ -90,6 +90,7 @@ type WorkflowNodeData = {
   label: string;
   kind: "input" | "atom";
   deferred?: boolean;
+  secret?: boolean;
   /** Waiting on this deferred input (no node record in state until submitted). */
   pendingDeferred?: boolean;
   status?: NodeRecord["status"] | QueueNodeStatus;
@@ -253,9 +254,11 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
 
   const kindLabel =
     data.kind === "input"
-      ? data.deferred
-        ? "Deferred input"
-        : "Input"
+      ? data.secret
+        ? "Secret"
+        : data.deferred
+          ? "Deferred input"
+          : "Input"
       : "Atom";
 
   return (
@@ -590,6 +593,7 @@ function buildFlow(
     const inputDef = registry.getInput(id);
     const kind: WorkflowNodeData["kind"] = inputDef ? "input" : "atom";
     const deferred = Boolean(inputDef?.kind === "deferred_input");
+    const secret = Boolean(inputDef?.secret);
     const pendingDeferred = Boolean(
       runState &&
         deferred &&
@@ -600,6 +604,7 @@ function buildFlow(
       label: id,
       kind,
       deferred,
+      secret,
       pendingDeferred,
       status: runningIds.has(id)
         ? "running"

@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { atom, globalRegistry, input, Registry } from "@rxwf/core";
+import { atom, globalRegistry, input, Registry, secret } from "@rxwf/core";
 
 export function evaluateWorkflowSource(source: string): Registry {
   globalRegistry.clear();
@@ -12,8 +12,8 @@ export function evaluateWorkflowSource(source: string): Registry {
     .replace(/\bexport\s+const\s+/g, "const ")
     .replace(/^\s*export\s+\{[^}]+\};?\s*$/gm, "");
   const moduleBody = `${body}\nreturn { ${exportNames.join(", ")} };`;
-  const load = new Function("z", "atom", "input", moduleBody);
-  load(z, atom, input);
+  const load = new Function("z", "atom", "input", "secret", moduleBody);
+  load(z, atom, input, secret);
 
   const registry = new Registry();
   for (const def of globalRegistry.allInputs()) registry.registerInput(def);

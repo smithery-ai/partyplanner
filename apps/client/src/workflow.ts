@@ -1,4 +1,4 @@
-import { atom, input } from "@rxwf/core";
+import { atom, input, secret } from "@rxwf/core";
 import { z } from "zod";
 
 // ── Inputs ────────────────────────────────────────────────────
@@ -86,6 +86,11 @@ export const prodApproval = input.deferred(
       "Final sign-off before production deploy—separate from overlay review.",
   },
 );
+
+export const prodDeployToken = secret("prodDeployToken", {
+  description:
+    "Deployment token required by the final production promotion step.",
+});
 
 // ── Discovery & Assessment ───────────────────────────────────
 
@@ -192,10 +197,17 @@ export const deployProd = atom(
           : path === "dispatch-worker"
             ? get(scanTools)
             : get.skip("No deployable integration path was selected");
+    const deployToken = get(prodDeployToken);
     const approval = get(prodApproval);
     if (!approval.approved)
       return get.skip("Production approval was not granted");
-    return { action: "deploy-prod", provider: target.provider };
+    if (deployToken.trim().length === 0)
+      return get.skip("Production deployment token was not provided");
+    return {
+      action: "deploy-prod",
+      provider: target.provider,
+      credential: "prodDeployToken",
+    };
   },
   { name: "deployProd" },
 );

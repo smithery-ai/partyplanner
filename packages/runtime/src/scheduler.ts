@@ -64,6 +64,15 @@ export class LocalScheduler implements Scheduler {
         payload: request.input.payload,
       });
     }
+    for (const input of request.additionalInputs ?? []) {
+      await this.enqueueAndPublish({
+        kind: "input",
+        eventId: input.eventId ?? `evt_${randomId()}`,
+        runId,
+        inputId: input.inputId,
+        payload: input.payload,
+      });
+    }
 
     return this.buildSnapshot(
       runId,
@@ -360,13 +369,15 @@ function buildGraphNodes(
     return {
       id,
       kind: inputDef?.kind ?? "atom",
+      secret: inputDef?.secret,
       description: inputDef?.description ?? atomDef?.description,
       status: running.has(id)
         ? "running"
         : pending.has(id)
           ? "queued"
           : rec.status,
-      value: rec.value,
+      value:
+        inputDef?.secret && rec.value !== undefined ? "[secret]" : rec.value,
       deps: rec.deps,
       blockedOn: rec.blockedOn,
       waitingOn: rec.waitingOn,

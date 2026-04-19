@@ -123,6 +123,7 @@ function ZodFieldInner({
   value,
   onChange,
   path,
+  secret,
   optionalOuter,
   inheritedDescription,
 }: {
@@ -130,6 +131,7 @@ function ZodFieldInner({
   value: unknown;
   onChange: (v: unknown) => void;
   path: string;
+  secret?: boolean;
   optionalOuter?: boolean;
   /** Merged describe() from ancestor wrappers (optional/default/effects) before unwrapping. */
   inheritedDescription?: string;
@@ -144,6 +146,7 @@ function ZodFieldInner({
         value={value}
         onChange={onChange}
         path={path}
+        secret={secret}
         optionalOuter={optionalOuter}
         inheritedDescription={mergedFromThisWrapper}
       />
@@ -162,6 +165,7 @@ function ZodFieldInner({
         }
         onChange={(v) => onChange(v)}
         path={path}
+        secret={secret}
         optionalOuter={true}
         inheritedDescription={mergedFromThisWrapper}
       />
@@ -176,6 +180,7 @@ function ZodFieldInner({
         value={value ?? defaultForSchema(schema)}
         onChange={onChange}
         path={path}
+        secret={secret}
         optionalOuter={optionalOuter}
         inheritedDescription={mergedFromThisWrapper}
       />
@@ -203,6 +208,7 @@ function ZodFieldInner({
                 value={obj[key]}
                 onChange={(v) => onChange({ ...obj, [key]: v })}
                 path={`${path}.${key}`}
+                secret={secret}
               />
             </div>
           );
@@ -223,6 +229,7 @@ function ZodFieldInner({
       >
         <Input
           id={id}
+          type={secret ? "password" : undefined}
           className="h-8 font-mono text-xs"
           value={typeof value === "string" ? value : ""}
           onChange={(e) => onChange(e.target.value)}
@@ -337,6 +344,7 @@ function ZodFieldInner({
               // biome-ignore lint/suspicious/noArrayIndexKey: The editor treats array positions as the mutable item identity.
               <div key={i} className="flex gap-2">
                 <Input
+                  type={secret ? "password" : undefined}
                   className="h-8 flex-1 font-mono text-xs"
                   value={typeof item === "string" ? item : ""}
                   onChange={(e) => {
@@ -383,11 +391,13 @@ export function ZodSchemaForm({
   value,
   onChange,
   idPrefix = "field",
+  secret,
 }: {
   schema: ZodTypeAny;
   value: unknown;
   onChange: (value: unknown) => void;
   idPrefix?: string;
+  secret?: boolean;
 }) {
   return (
     <ZodFieldInner
@@ -395,6 +405,7 @@ export function ZodSchemaForm({
       value={value}
       onChange={onChange}
       path={idPrefix}
+      secret={secret}
     />
   );
 }

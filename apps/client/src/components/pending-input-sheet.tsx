@@ -80,6 +80,7 @@ export function PendingInputSheet({
               value={inputValues[pendingInputId]}
               onChange={(v) => onInputValuesChange(pendingInputId, v)}
               idPrefix={pendingInputId}
+              secret={def.secret}
             />
             <Button type="button" size="sm" onClick={() => onSubmit()}>
               Submit “{pendingInputId}”

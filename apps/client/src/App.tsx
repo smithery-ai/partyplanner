@@ -11,6 +11,7 @@ import {
   Play,
   RefreshCw,
   SkipForward,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ZodTypeAny } from "zod";
@@ -49,7 +50,9 @@ function buildInitialInputValues(registry: Registry): Record<string, unknown> {
 }
 
 function firstSeedInputId(registry: Registry): string {
-  const im = registry.allInputs().filter((i) => i.kind === "input");
+  const im = registry
+    .allInputs()
+    .filter((i) => i.kind === "input" && !i.secret);
   return im[0]?.id ?? "";
 }
 
@@ -72,7 +75,7 @@ function immediateInputNeedsForm(
 ): boolean {
   if (!nodeId) return false;
   const def = globalRegistry.getInput(nodeId);
-  if (!def || def.kind !== "input") return false;
+  if (!def || def.kind !== "input" || def.secret) return false;
   return !runState?.nodes[nodeId];
 }
 
@@ -96,6 +99,17 @@ function isRunComplete(runState: RunState | undefined): boolean {
     if (n.status === "errored") return false;
   }
   return true;
+}
+
+function displayNodeRecord(
+  registry: Registry,
+  nodeId: string | null,
+  record: RunState["nodes"][string] | undefined,
+): RunState["nodes"][string] | undefined {
+  if (!nodeId || !record) return record;
+  const def = registry.getInput(nodeId);
+  if (!def?.secret || record.value === undefined) return record;
+  return { ...record, value: "[secret]" };
 }
 
 type NextQueuedWork = {
@@ -172,10 +186,14 @@ function runStatusClass(status: RunSummary["status"]): string {
 }
 
 export function IndexApp() {
-  const { workflows, isPending, createWorkflow, error } = useWorkflows();
+  const { workflows, isPending, createWorkflow, deleteWorkflow, error } =
+    useWorkflows();
   const navigate = useNavigate();
   const [uploadError, setUploadError] = useState<string | undefined>();
   const [uploading, setUploading] = useState(false);
+  const [deletingWorkflowId, setDeletingWorkflowId] = useState<
+    string | undefined
+  >();
 
   async function uploadDefault() {
     setUploadError(undefined);
@@ -196,6 +214,20 @@ export function IndexApp() {
       );
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function removeWorkflow(workflowId: string) {
+    setUploadError(undefined);
+    setDeletingWorkflowId(workflowId);
+    try {
+      await deleteWorkflow(workflowId);
+    } catch (e) {
+      setUploadError(
+        e instanceof Error ? e.message : `Failed to delete ${workflowId}.`,
+      );
+    } finally {
+      setDeletingWorkflowId(undefined);
     }
   }
 
@@ -237,11 +269,23 @@ export function IndexApp() {
         <h1 className="text-sm font-semibold tracking-tight md:text-base">
           Workflows
         </h1>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => void uploadDefault()}
+          disabled={uploading || isPending}
+        >
+          {uploading ? "Uploading..." : "Upload default"}
+        </Button>
       </header>
       <div className="flex-1 overflow-y-auto p-4">
         <ul className="mx-auto flex max-w-2xl flex-col gap-2">
           {workflows.map((w) => (
-            <li key={w.workflowId}>
+            <li
+              key={w.workflowId}
+              className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"
+            >
               <button
                 type="button"
                 onClick={() =>
@@ -262,9 +306,25 @@ export function IndexApp() {
                   <span>{formatRunTime(w.createdAt)}</span>
                 </span>
               </button>
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                aria-label={`Delete ${w.workflowId}`}
+                title={`Delete ${w.workflowId}`}
+                disabled={isPending || deletingWorkflowId === w.workflowId}
+                onClick={() => void removeWorkflow(w.workflowId)}
+              >
+                <Trash2 className="size-4" aria-hidden />
+              </Button>
             </li>
           ))}
         </ul>
+        {uploadError || error ? (
+          <p className="mx-auto mt-3 max-w-2xl text-destructive text-xs">
+            {uploadError ?? error?.message}
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -309,6 +369,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
   const navigate = useNavigate();
   const workflow = useWorkflow(workflowId);
   const workflowRun = useWorkflowRun(runId);
+  const { deleteWorkflow } = useWorkflows();
 
   const [pane, setPane] = useState<SidePane>(null);
   const [appliedSource, setAppliedSource] = useState<string | undefined>();
@@ -321,6 +382,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [pendingAutoAdvance, setPendingAutoAdvance] = useState(false);
+  const [deletingWorkflow, setDeletingWorkflow] = useState(false);
 
   const manifestSource = workflow.manifest?.source;
   const runSource = workflowRun.workflowSource;
@@ -398,18 +460,26 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
     setPayloadError("");
     const id = seedOverride ?? seedInputId;
     const seed = globalRegistry.getInput(id);
-    if (!seed || seed.kind !== "input") {
+    if (!seed || seed.kind !== "input" || seed.secret) {
       setPayloadError("No initial input is registered for this workflow.");
       return;
     }
     let payload: unknown;
+    const additionalInputs: { inputId: string; payload: unknown }[] = [];
     try {
       payload = seed.schema.parse(inputValues[seed.id]);
+      for (const secretInput of globalRegistry.allInputs()) {
+        if (secretInput.kind !== "input" || !secretInput.secret) continue;
+        additionalInputs.push({
+          inputId: secretInput.id,
+          payload: secretInput.schema.parse(inputValues[secretInput.id]),
+        });
+      }
     } catch (e) {
       setPayloadError(
         e instanceof Error
           ? e.message
-          : "Validation failed for the initial input.",
+          : "Validation failed for the initial inputs.",
       );
       return;
     }
@@ -418,6 +488,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
       const result = await workflow.start({
         inputId: seed.id,
         payload,
+        additionalInputs,
         autoAdvance: pendingAutoAdvance,
       });
       void navigate({
@@ -512,7 +583,27 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
     }
   }
 
-  const selectedRecord = selectedNodeId ? nodes[selectedNodeId] : undefined;
+  async function deleteCurrentWorkflow() {
+    setPayloadError("");
+    setDeletingWorkflow(true);
+    try {
+      await deleteWorkflow(workflowId);
+      workflowRun.clear();
+      void navigate({ to: "/", replace: true });
+    } catch (e) {
+      setPayloadError(
+        e instanceof Error ? e.message : `Failed to delete ${workflowId}.`,
+      );
+    } finally {
+      setDeletingWorkflow(false);
+    }
+  }
+
+  const selectedRecord = displayNodeRecord(
+    globalRegistry,
+    selectedNodeId,
+    selectedNodeId ? nodes[selectedNodeId] : undefined,
+  );
 
   let nodeEditor: NodeDetailEditor | null = null;
   if (selectedNodeId) {
@@ -523,6 +614,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
         description:
           "Submit this payload as the seed input event (same as Start Workflow).",
         schema: def.schema as ZodTypeAny,
+        secret: def.secret,
         value: inputValues[selectedNodeId],
         onChange: (v) => setInputValue(selectedNodeId, v),
         onSubmit: () => void runWorkflow(selectedNodeId),
@@ -536,6 +628,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
         description:
           "Deferred input: delivered as a separate queue event when this step is waiting (SPEC: WaitError).",
         schema: def.schema as ZodTypeAny,
+        secret: def.secret,
         value: inputValues[id],
         onChange: (v) => setInputValue(id, v),
         onSubmit: () => void submitDeferredInput(id),
@@ -583,6 +676,16 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
             title="Full run state including every node record"
           >
             Run state
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="outline"
+            onClick={() => void deleteCurrentWorkflow()}
+            disabled={deletingWorkflow}
+            aria-label="Delete workflow"
+            title="Delete workflow"
+          >
+            <Trash2 className="size-3.5" aria-hidden />
           </Button>
           <fieldset
             aria-label="Advance mode"
@@ -790,6 +893,7 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
             open={pane === "state"}
             onOpenChange={(o) => setPane(o ? "state" : null)}
             runState={runState}
+            registry={globalRegistry}
           />
 
           <StartWorkflowSheet

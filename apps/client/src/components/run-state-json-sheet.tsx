@@ -1,4 +1,4 @@
-import type { RunState } from "@rxwf/core";
+import type { Registry, RunState } from "@rxwf/core";
 import { Check, Copy, X } from "lucide-react";
 import { useState } from "react";
 
@@ -9,16 +9,20 @@ export function RunStateJsonSheet({
   open,
   onOpenChange,
   runState,
+  registry,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   runState: RunState | undefined;
+  registry: Registry;
 }) {
   const [copied, setCopied] = useState(false);
 
   if (!open) return null;
 
-  const jsonText = runState ? JSON.stringify(runState, null, 2) : "";
+  const jsonText = runState
+    ? JSON.stringify(redactSecrets(runState, registry), null, 2)
+    : "";
 
   async function copy() {
     if (!jsonText) return;
@@ -105,4 +109,21 @@ export function RunStateJsonSheet({
       </aside>
     </>
   );
+}
+
+function redactSecrets(runState: RunState, registry: Registry): RunState {
+  const redacted = structuredClone(runState);
+  for (const input of registry.allInputs()) {
+    if (!input.secret) continue;
+    if (input.id in redacted.inputs) redacted.inputs[input.id] = "[secret]";
+    const node = redacted.nodes[input.id];
+    if (node?.value !== undefined) {
+      redacted.nodes[input.id] = {
+        ...node,
+        value: "[secret]",
+      };
+    }
+    if (redacted.trigger === input.id) redacted.payload = "[secret]";
+  }
+  return redacted;
 }

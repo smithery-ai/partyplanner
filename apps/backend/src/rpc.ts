@@ -7,9 +7,17 @@ export type CreateWorkflowRequest = {
   name?: string;
 };
 
+export type DeleteWorkflowResponse = {
+  ok: true;
+};
+
 export type StartWorkflowRunRequest = {
   inputId: string;
   payload: unknown;
+  additionalInputs?: {
+    inputId: string;
+    payload: unknown;
+  }[];
   runId?: string;
   autoAdvance?: boolean;
 };
@@ -18,6 +26,10 @@ export type StartBackendRunRequest = {
   workflowSource: string;
   inputId: string;
   payload: unknown;
+  additionalInputs?: {
+    inputId: string;
+    payload: unknown;
+  }[];
   runId?: string;
   autoAdvance?: boolean;
 };

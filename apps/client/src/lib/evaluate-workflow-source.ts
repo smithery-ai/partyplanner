@@ -1,4 +1,4 @@
-import { atom, globalRegistry, input } from "@rxwf/core";
+import { atom, globalRegistry, input, secret } from "@rxwf/core";
 import { z } from "zod";
 
 export function loadWorkflowSourceIntoGlobalRegistry(source: string): void {
@@ -11,6 +11,6 @@ export function loadWorkflowSourceIntoGlobalRegistry(source: string): void {
     .replace(/\bexport\s+const\s+/g, "const ")
     .replace(/^\s*export\s+\{[^}]+\};?\s*$/gm, "");
   const moduleBody = `${body}\nreturn { ${exportNames.join(", ")} };`;
-  const load = new Function("z", "atom", "input", moduleBody);
-  load(z, atom, input);
+  const load = new Function("z", "atom", "input", "secret", moduleBody);
+  load(z, atom, input, secret);
 }
