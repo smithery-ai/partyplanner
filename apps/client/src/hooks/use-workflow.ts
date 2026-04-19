@@ -283,13 +283,19 @@ function mergeRunSummary(
 ): RunSummary[] {
   const existingIndex = runs.findIndex((run) => run.runId === summary.runId);
   if (existingIndex === -1) {
-    return [summary, ...runs];
+    return sortRunsByStartedAtDesc([summary, ...runs]);
   }
 
-  return runs.map((run, index) => {
-    if (index !== existingIndex) return run;
-    return { ...run, ...summary, publishedAt: run.publishedAt };
-  });
+  return sortRunsByStartedAtDesc(
+    runs.map((run, index) => {
+      if (index !== existingIndex) return run;
+      return { ...run, ...summary, publishedAt: run.publishedAt };
+    }),
+  );
+}
+
+function sortRunsByStartedAtDesc(runs: RunSummary[]): RunSummary[] {
+  return [...runs].sort((a, b) => b.startedAt - a.startedAt);
 }
 
 function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
