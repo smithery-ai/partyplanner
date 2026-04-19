@@ -3,7 +3,7 @@ import type {
   QueueEvent,
   Registry,
   RunState,
-} from "@rxwf/core";
+} from "@workflow/core";
 
 export type WorkflowRef = {
   workflowId: string;

@@ -1,4 +1,4 @@
-import type { Registry } from "@rxwf/core";
+import type { Registry } from "@workflow/core";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ZodSchemaForm } from "@/components/zod-schema-form";

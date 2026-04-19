@@ -1,4 +1,4 @@
-import { atom, input, secret } from "@rxwf/core";
+import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
 
 // ── Inputs ────────────────────────────────────────────────────

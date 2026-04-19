@@ -1,4 +1,4 @@
-import type { QueueEvent, RunState } from "@rxwf/core";
+import type { QueueEvent, RunState } from "@workflow/core";
 import type {
   EventSink,
   InspectableWorkQueue,

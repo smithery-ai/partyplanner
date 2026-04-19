@@ -12,8 +12,8 @@
   "dependencies": {
     "@base-ui/react": "^1.4.0",
     "@fontsource-variable/geist": "^5.2.8",
-    "@rxwf/core": "workspace:*",
-    "@rxwf/runtime": "workspace:*",
+    "@workflow/core": "workspace:*",
+    "@workflow/runtime": "workspace:*",
     "@tanstack/react-query": "^5.99.1",
     "@tanstack/react-router": "^1.168.23",
     "@xyflow/react": "^12.10.2",

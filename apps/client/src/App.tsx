@@ -1,7 +1,7 @@
-import type { Registry, RunState } from "@rxwf/core";
-import { globalRegistry } from "@rxwf/core";
-import type { QueueSnapshot } from "@rxwf/runtime";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import type { Registry, RunState } from "@workflow/core";
+import { globalRegistry } from "@workflow/core";
+import type { QueueSnapshot } from "@workflow/runtime";
 import {
   AlertTriangle,
   Check,

@@ -1,4 +1,4 @@
-import type { RunEvent, RunSnapshot } from "@rxwf/runtime";
+import type { RunEvent, RunSnapshot } from "@workflow/runtime";
 import type { WorkflowManifest } from "./workflow-manifest";
 
 export type CreateWorkflowRequest = {

@@ -1,5 +1,5 @@
 import { z } from "@hono/zod-openapi";
-import { atom, globalRegistry, input, Registry, secret } from "@rxwf/core";
+import { atom, globalRegistry, input, Registry, secret } from "@workflow/core";
 
 export function evaluateWorkflowSource(source: string): Registry {
   globalRegistry.clear();

@@ -1,4 +1,4 @@
-import { createRuntime } from "@rxwf/core";
+import { createRuntime } from "@workflow/core";
 import type { ExecuteRequest, ExecuteResult, Executor } from "./types";
 
 export class RuntimeExecutor implements Executor {

@@ -4,7 +4,7 @@ import {
   input,
   type QueueEvent,
   secret,
-} from "@rxwf/core";
+} from "@workflow/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
