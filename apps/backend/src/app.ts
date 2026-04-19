@@ -1,5 +1,6 @@
 import "@workflow/demo-workflow";
 import type { QueueEvent, RunState } from "@workflow/core";
+import { createRemoteRuntimeServer } from "@workflow/remote";
 import type {
   QueueItem,
   QueueItemStatus,
@@ -90,6 +91,15 @@ export function createApp(
   );
 
   app.get("/health", (c) => c.json({ ok: true }));
+
+  app.route(
+    "/runtime",
+    createRemoteRuntimeServer({
+      basePath: "/",
+      stateStore,
+      queue,
+    }),
+  );
 
   app.get("/vault/secrets", async (c) =>
     c.json(await listSecretVaultEntries(storage, DEFAULT_ORGANIZATION_ID)),

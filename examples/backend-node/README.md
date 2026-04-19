@@ -7,6 +7,12 @@ slot can host the Cloudflare Worker implementation.
 pnpm --filter workflow-backend-node-example dev
 ```
 
+This legacy example is exposed through Portless at:
+
+```txt
+https://api-legacy.hylo.localhost
+```
+
 This example supports the legacy uploaded-source development flow. The client
 can send workflow source to the backend, and the Node server can evaluate it to
 create a workflow manifest and run atoms.
