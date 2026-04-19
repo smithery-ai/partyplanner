@@ -13,6 +13,7 @@ import {
   RefreshCw,
   SkipForward,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ZodError, type ZodTypeAny } from "zod";
@@ -243,30 +244,53 @@ export function WorkflowIndexApp({
   const config = useWorkflowFrontendConfig();
   const { workflows, isPending, createWorkflow, deleteWorkflow, error } =
     useWorkflows();
+  const exampleWorkflows = config.defaultWorkflows ?? [];
   const [uploadError, setUploadError] = useState<string | undefined>();
-  const [uploading, setUploading] = useState(false);
+  const [uploadingWorkflowId, setUploadingWorkflowId] = useState<
+    string | undefined
+  >();
   const [deletingWorkflowId, setDeletingWorkflowId] = useState<
     string | undefined
   >();
 
-  async function uploadDefault() {
-    if (!config.defaultWorkflow) return;
+  const uploading = uploadingWorkflowId !== undefined;
+  const existingWorkflowIds = new Set(workflows.map((w) => w.workflowId));
+  const missingExampleWorkflows = exampleWorkflows.filter(
+    (workflow) =>
+      !workflow.workflowId || !existingWorkflowIds.has(workflow.workflowId),
+  );
+
+  async function uploadWorkflow(
+    workflow: (typeof exampleWorkflows)[number],
+    options: { navigate?: boolean } = { navigate: true },
+  ) {
     setUploadError(undefined);
-    setUploading(true);
+    setUploadingWorkflowId(workflow.workflowId ?? workflow.name ?? "workflow");
     try {
       const manifest = await createWorkflow({
-        workflowSource: config.defaultWorkflow.source,
-        workflowId: config.defaultWorkflow.workflowId,
-        name: config.defaultWorkflow.name,
+        workflowSource: workflow.source,
+        workflowId: workflow.workflowId,
+        name: workflow.name,
       });
-      navigation.workflow(manifest.workflowId);
+      if (options.navigate) navigation.workflow(manifest.workflowId);
+      return manifest;
     } catch (e) {
       setUploadError(
         e instanceof Error ? e.message : "Failed to upload workflow.",
       );
+      return undefined;
     } finally {
-      setUploading(false);
+      setUploadingWorkflowId(undefined);
     }
+  }
+
+  async function uploadMissingExamples() {
+    let firstWorkflowId: string | undefined;
+    for (const workflow of missingExampleWorkflows) {
+      const manifest = await uploadWorkflow(workflow, { navigate: false });
+      firstWorkflowId ??= manifest?.workflowId;
+    }
+    if (firstWorkflowId) navigation.workflow(firstWorkflowId);
   }
 
   async function removeWorkflow(workflowId: string) {
@@ -296,18 +320,35 @@ export function WorkflowIndexApp({
       <div className="flex h-screen items-center justify-center p-6">
         <div className="flex max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-card p-8 text-center shadow-sm">
           <p className="text-sm text-muted-foreground leading-relaxed">
-            {config.defaultWorkflow
-              ? "No workflows yet. Upload the bundled default to get started."
+            {exampleWorkflows.length > 0
+              ? "No workflows yet. Upload example workflows to get started."
               : "No workflows yet."}
           </p>
-          {config.defaultWorkflow ? (
-            <Button
-              type="button"
-              onClick={() => void uploadDefault()}
-              disabled={uploading}
-            >
-              {uploading ? "Uploading..." : "Upload default workflow"}
-            </Button>
+          {exampleWorkflows.length > 0 ? (
+            <div className="grid w-full gap-2">
+              <Button
+                type="button"
+                onClick={() => void uploadMissingExamples()}
+                disabled={uploading}
+              >
+                <Upload className="size-4" aria-hidden />
+                {uploading ? "Uploading..." : "Upload all examples"}
+              </Button>
+              <div className="grid gap-2">
+                {exampleWorkflows.map((workflow) => (
+                  <Button
+                    key={workflow.workflowId ?? workflow.name}
+                    type="button"
+                    variant="outline"
+                    onClick={() => void uploadWorkflow(workflow)}
+                    disabled={uploading}
+                  >
+                    <Upload className="size-4" aria-hidden />
+                    {workflow.name ?? workflow.workflowId ?? "Workflow"}
+                  </Button>
+                ))}
+              </div>
+            </div>
           ) : null}
           {uploadError || error ? (
             <p className="text-destructive text-xs">
@@ -325,15 +366,16 @@ export function WorkflowIndexApp({
         <h1 className="text-sm font-semibold tracking-tight md:text-base">
           Workflows
         </h1>
-        {config.defaultWorkflow ? (
+        {missingExampleWorkflows.length > 0 ? (
           <Button
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => void uploadDefault()}
+            onClick={() => void uploadMissingExamples()}
             disabled={uploading || isPending}
           >
-            {uploading ? "Uploading..." : "Upload default"}
+            <Upload className="size-3.5" aria-hidden />
+            {uploading ? "Uploading..." : "Upload examples"}
           </Button>
         ) : null}
       </header>

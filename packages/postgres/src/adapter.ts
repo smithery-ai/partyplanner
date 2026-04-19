@@ -207,15 +207,16 @@ class PostgresWorkflowStateStore implements WorkflowStateStore {
     return parseJson<WorkflowRunDocument>(row.documentJson);
   }
 
-  async listRunSummaries(): Promise<WorkflowRunSummary[]> {
+  async listRunSummaries(workflowId?: string): Promise<WorkflowRunSummary[]> {
     await this.ensureReady();
-    const rows = await asDb(this.db)
-      .select()
-      .from(workflowRunDocuments)
-      .orderBy(
-        sql`${workflowRunDocuments.startedAt} desc`,
-        sql`${workflowRunDocuments.publishedAt} desc`,
-      );
+    const baseQuery = asDb(this.db).select().from(workflowRunDocuments);
+    const rows = await (workflowId
+      ? baseQuery.where(eq(workflowRunDocuments.workflowId, workflowId))
+      : baseQuery
+    ).orderBy(
+      sql`${workflowRunDocuments.startedAt} desc`,
+      sql`${workflowRunDocuments.publishedAt} desc`,
+    );
     return (rows as RunDocumentRow[]).map((row) =>
       parseJson<WorkflowRunSummary>(row.summaryJson),
     );

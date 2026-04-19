@@ -80,8 +80,16 @@ const queryKeys = {
     ["workflow-frontend", apiMode, apiBaseUrl, "workflows"] as const,
   workflow: (apiMode: string, apiBaseUrl: string, workflowId: string) =>
     ["workflow-frontend", apiMode, apiBaseUrl, "workflow", workflowId] as const,
-  runs: (apiMode: string, apiBaseUrl: string) =>
+  runsRoot: (apiMode: string, apiBaseUrl: string) =>
     ["workflow-frontend", apiMode, apiBaseUrl, "runs"] as const,
+  runs: (apiMode: string, apiBaseUrl: string, workflowId: string | undefined) =>
+    [
+      "workflow-frontend",
+      apiMode,
+      apiBaseUrl,
+      "runs",
+      workflowId ?? "all",
+    ] as const,
   runState: (apiMode: string, apiBaseUrl: string, runId: string) =>
     ["workflow-frontend", apiMode, apiBaseUrl, "run-state", runId] as const,
 };
@@ -126,12 +134,22 @@ function useWorkflowManifestQuery(workflowId: string | undefined) {
   });
 }
 
-function useRunsQuery() {
+function useRunsQuery(workflowId: string | undefined) {
   const config = useWorkflowFrontendConfig();
   return useQuery({
-    queryKey: queryKeys.runs(config.apiMode, config.apiBaseUrl),
+    queryKey: queryKeys.runs(config.apiMode, config.apiBaseUrl, workflowId),
+    enabled: config.apiMode === "single" || Boolean(workflowId),
     refetchInterval: 500,
-    queryFn: async () => apiGet<RunSummary[]>(config.apiBaseUrl, "/runs"),
+    queryFn: async () => {
+      if (config.apiMode === "single") {
+        return apiGet<RunSummary[]>(config.apiBaseUrl, "/runs");
+      }
+      if (!workflowId) throw new Error("workflowId required.");
+      return apiGet<RunSummary[]>(
+        config.apiBaseUrl,
+        `/workflows/${encodeURIComponent(workflowId)}/runs`,
+      );
+    },
   });
 }
 
@@ -356,7 +374,7 @@ export function useWorkflows(): WorkflowsState {
           queryKey: queryKeys.workflows(config.apiMode, config.apiBaseUrl),
         });
         await queryClient.invalidateQueries({
-          queryKey: queryKeys.runs(config.apiMode, config.apiBaseUrl),
+          queryKey: queryKeys.runsRoot(config.apiMode, config.apiBaseUrl),
         });
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -384,7 +402,7 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
   const config = useWorkflowFrontendConfig();
   const queryClient = useQueryClient();
   const manifestQuery = useWorkflowManifestQuery(workflowId);
-  const runsQuery = useRunsQuery();
+  const runsQuery = useRunsQuery(workflowId);
   const startMutation = useStartWorkflowRunMutation(workflowId);
   const [error, setError] = useState<Error | undefined>();
 
@@ -409,12 +427,16 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
           result,
         );
         queryClient.setQueryData(
-          queryKeys.runs(config.apiMode, config.apiBaseUrl),
+          queryKeys.runs(config.apiMode, config.apiBaseUrl, workflowId),
           (existing: RunSummary[] = []) =>
             mergeRunSummary(existing, summarizeRunResult(result)),
         );
         await queryClient.invalidateQueries({
-          queryKey: queryKeys.runs(config.apiMode, config.apiBaseUrl),
+          queryKey: queryKeys.runs(
+            config.apiMode,
+            config.apiBaseUrl,
+            workflowId,
+          ),
         });
         return result;
       } catch (e) {
@@ -423,7 +445,7 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
         throw err;
       }
     },
-    [config.apiBaseUrl, config.apiMode, queryClient, startMutation],
+    [config.apiBaseUrl, config.apiMode, queryClient, startMutation, workflowId],
   );
 
   const refreshRuns = useCallback(async () => {
@@ -486,7 +508,11 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
         result,
       );
       queryClient.setQueryData(
-        queryKeys.runs(config.apiMode, config.apiBaseUrl),
+        queryKeys.runs(
+          config.apiMode,
+          config.apiBaseUrl,
+          result.snapshot?.workflow.workflowId,
+        ),
         (existing: RunSummary[] = []) =>
           mergeRunSummary(existing, summarizeRunResult(result)),
       );
@@ -506,7 +532,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
         const result = await mutation.mutateAsync(args);
         cacheResult(result);
         await queryClient.invalidateQueries({
-          queryKey: queryKeys.runs(config.apiMode, config.apiBaseUrl),
+          queryKey: queryKeys.runsRoot(config.apiMode, config.apiBaseUrl),
         });
         return result;
       } catch (e) {

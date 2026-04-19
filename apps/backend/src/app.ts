@@ -18,15 +18,23 @@ import {
 } from "@workflow/server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import {
+  createStoredDynamicWorkflow,
+  DynamicWorkerExecutor,
+  registryFromStoredWorkflow,
+  type StoredWorkflow,
+} from "./dynamic-worker";
 
 const WORKFLOW_ID = "default";
 const WORKFLOW_NAME = "Onboarding demo";
-const WORKFLOW_SOURCE = "bundled-default";
 
-export function createApp(storage: DurableObjectStorage) {
+export function createApp(
+  storage: DurableObjectStorage,
+  workerLoader: WorkerLoader,
+) {
   const stateStore = new DurableObjectWorkflowStateStore(storage);
   const queue = new DurableObjectWorkflowQueue(storage);
-  const manager = new WorkflowManager({
+  const staticManager = new WorkflowManager({
     workflows: {},
     stateStore,
     queue,
@@ -35,10 +43,10 @@ export function createApp(storage: DurableObjectStorage) {
       name: WORKFLOW_NAME,
     },
   });
-  const manifest = {
-    ...manager.manifest(),
-    source: WORKFLOW_SOURCE,
-  };
+  const dynamicExecutor = new DynamicWorkerExecutor(
+    workerLoader,
+    (workflowId) => loadWorkflow(storage, workflowId),
+  );
 
   const app = new Hono();
   app.use(
@@ -53,58 +61,72 @@ export function createApp(storage: DurableObjectStorage) {
   app.get("/health", (c) => c.json({ ok: true }));
 
   app.get("/workflows", async (c) => {
-    if (!(await workflowExists(storage))) return c.json([]);
-    return c.json([await workflowManifest(storage, manifest)]);
+    return c.json(
+      (await listWorkflows(storage))
+        .map((workflow) => workflow.manifest)
+        .sort((a, b) => b.createdAt - a.createdAt),
+    );
   });
 
   app.post("/workflows", async (c) => {
-    const body = await readBody(c.req);
-    const requestedId = stringValue(body, "workflowId") ?? WORKFLOW_ID;
-    if (requestedId !== WORKFLOW_ID) {
-      return c.json(
-        {
-          message:
-            "The Cloudflare Worker backend currently supports the bundled default workflow only.",
-        },
-        400,
-      );
+    try {
+      const body = await readBody(c.req);
+      const source = stringValue(body, "workflowSource");
+      if (!source) return c.json({ message: "Missing workflowSource" }, 400);
+
+      const workflowId =
+        stringValue(body, "workflowId") ?? `workflow_${randomId()}`;
+      if (await loadWorkflow(storage, workflowId)) {
+        return c.json(
+          { message: `Workflow already exists: ${workflowId}` },
+          400,
+        );
+      }
+
+      const workflow = await createStoredDynamicWorkflow(workerLoader, {
+        workflowId,
+        name: stringValue(body, "name"),
+        source,
+      });
+      await storage.put<StoredWorkflow>(workflowKey(workflowId), workflow);
+      return c.json(workflow.manifest);
+    } catch (e) {
+      return errorResponse(c, e);
     }
-
-    await storage.put<StoredWorkflow>(workflowKey(), {
-      createdAt: Date.now(),
-      name: stringValue(body, "name") ?? WORKFLOW_NAME,
-      source: stringValue(body, "workflowSource") ?? WORKFLOW_SOURCE,
-    });
-
-    return c.json(await workflowManifest(storage, manifest));
   });
 
   app.get("/workflows/:workflowId", async (c) => {
     const workflowId = c.req.param("workflowId");
-    if (workflowId !== WORKFLOW_ID || !(await workflowExists(storage))) {
-      return c.json({ message: "Unknown workflow" }, 404);
-    }
-    return c.json(await workflowManifest(storage, manifest));
+    const workflow = await loadWorkflow(storage, workflowId);
+    if (!workflow) return c.json({ message: "Unknown workflow" }, 404);
+    return c.json(workflow.manifest);
   });
 
   app.delete("/workflows/:workflowId", async (c) => {
     const workflowId = c.req.param("workflowId");
-    if (workflowId !== WORKFLOW_ID || !(await workflowExists(storage))) {
+    if (!(await loadWorkflow(storage, workflowId))) {
       return c.json({ message: "Unknown workflow" }, 404);
     }
-
-    await clearWorkflow(storage);
+    await deleteWorkflow(storage, workflowId);
     return c.json({ ok: true as const });
   });
 
   app.get("/runs", async (c) => c.json(await stateStore.listRunSummaries()));
 
+  app.get("/workflows/:workflowId/runs", async (c) => {
+    const workflowId = c.req.param("workflowId");
+    if (!(await managerForWorkflow(workflowId))) {
+      return c.json({ message: "Unknown workflow" }, 404);
+    }
+    return c.json(await stateStore.listRunSummaries(workflowId));
+  });
+
   app.post("/workflows/:workflowId/runs", async (c) => {
     try {
       const workflowId = c.req.param("workflowId");
-      if (workflowId !== WORKFLOW_ID || !(await workflowExists(storage))) {
+      const manager = await managerForWorkflow(workflowId);
+      if (!manager || !(await loadWorkflow(storage, workflowId)))
         return c.json({ message: "Unknown workflow" }, 404);
-      }
       return c.json(await manager.startRun(await readBody(c.req)));
     } catch (e) {
       return errorResponse(c, e);
@@ -113,7 +135,7 @@ export function createApp(storage: DurableObjectStorage) {
 
   app.post("/runs", async (c) => {
     try {
-      await ensureWorkflow(storage);
+      const manager = (await managerForWorkflow(WORKFLOW_ID)) ?? staticManager;
       return c.json(await manager.startRun(await readBody(c.req)));
     } catch (e) {
       return errorResponse(c, e);
@@ -125,6 +147,7 @@ export function createApp(storage: DurableObjectStorage) {
 
   app.post("/runs/:runId/inputs", async (c) => {
     try {
+      const manager = await managerForRun(c.req.param("runId"));
       return c.json(
         await manager.submitInput(c.req.param("runId"), await readBody(c.req)),
       );
@@ -135,6 +158,7 @@ export function createApp(storage: DurableObjectStorage) {
 
   app.post("/runs/:runId/advance", async (c) => {
     try {
+      const manager = await managerForRun(c.req.param("runId"));
       return c.json(await manager.advanceRun(c.req.param("runId")));
     } catch (e) {
       return errorResponse(c, e);
@@ -143,6 +167,7 @@ export function createApp(storage: DurableObjectStorage) {
 
   app.post("/runs/:runId/auto-advance", async (c) => {
     try {
+      const manager = await managerForRun(c.req.param("runId"));
       return c.json(
         await manager.setAutoAdvance(
           c.req.param("runId"),
@@ -155,6 +180,37 @@ export function createApp(storage: DurableObjectStorage) {
   });
 
   return app;
+
+  async function managerForRun(runId: string): Promise<WorkflowManager> {
+    const document = await stateStore.getRunDocument(runId);
+    if (!document) throw new Error(`Unknown run: ${runId}`);
+    const manager = await managerForWorkflow(document.workflow.workflowId);
+    if (!manager)
+      throw new Error(`Unknown workflow: ${document.workflow.workflowId}`);
+    return manager;
+  }
+
+  async function managerForWorkflow(
+    workflowId: string,
+  ): Promise<WorkflowManager | undefined> {
+    const workflow = await loadWorkflow(storage, workflowId);
+    if (!workflow) {
+      return workflowId === WORKFLOW_ID ? staticManager : undefined;
+    }
+    return new WorkflowManager({
+      workflows: {},
+      stateStore,
+      queue,
+      registry: registryFromStoredWorkflow(workflow),
+      executor: dynamicExecutor,
+      workflow: {
+        id: workflow.workflowId,
+        name: workflow.name,
+        version: workflow.manifest.version,
+        codeHash: workflow.manifest.codeHash,
+      },
+    });
+  }
 }
 
 async function runDocument(
@@ -191,45 +247,90 @@ function stringValue(value: unknown, key: string): string | undefined {
   return typeof candidate === "string" ? candidate : undefined;
 }
 
-type StoredWorkflow = {
-  createdAt: number;
-  name: string;
-  source: string;
-};
-
-function workflowKey(): string {
-  return "workflow:default";
+function workflowPrefix(): string {
+  return "workflow:";
 }
 
-async function workflowExists(storage: DurableObjectStorage): Promise<boolean> {
-  return Boolean(await storage.get<StoredWorkflow>(workflowKey()));
+function workflowKey(workflowId: string): string {
+  return `${workflowPrefix()}${workflowId}`;
 }
 
-async function ensureWorkflow(storage: DurableObjectStorage): Promise<void> {
-  if (await workflowExists(storage)) return;
-  await storage.put<StoredWorkflow>(workflowKey(), {
-    createdAt: Date.now(),
-    name: WORKFLOW_NAME,
-    source: WORKFLOW_SOURCE,
-  });
-}
-
-async function workflowManifest(
+async function loadWorkflow(
   storage: DurableObjectStorage,
-  manifest: ReturnType<WorkflowManager["manifest"]> & { source: string },
-) {
-  const stored = await storage.get<StoredWorkflow>(workflowKey());
-  return {
-    ...manifest,
-    name: stored?.name ?? manifest.name,
-    source: stored?.source ?? manifest.source,
-    createdAt: stored?.createdAt ?? manifest.createdAt,
-  };
+  workflowId: string,
+): Promise<StoredWorkflow | undefined> {
+  const value = await storage.get<unknown>(workflowKey(workflowId));
+  return isStoredWorkflow(value) ? value : undefined;
 }
 
-async function clearWorkflow(storage: DurableObjectStorage): Promise<void> {
-  const keys = await storage.list();
-  await Promise.all([...keys.keys()].map((key) => storage.delete(key)));
+async function listWorkflows(
+  storage: DurableObjectStorage,
+): Promise<StoredWorkflow[]> {
+  const rows = await storage.list<StoredWorkflow>({ prefix: workflowPrefix() });
+  return [...rows.values()].filter(isStoredWorkflow);
+}
+
+function isStoredWorkflow(value: unknown): value is StoredWorkflow {
+  if (!value || typeof value !== "object") return false;
+  const workflow = value as Partial<StoredWorkflow>;
+  return (
+    typeof workflow.workflowId === "string" &&
+    typeof workflow.source === "string" &&
+    Boolean(workflow.manifest) &&
+    Array.isArray(workflow.atoms)
+  );
+}
+
+async function deleteWorkflow(
+  storage: DurableObjectStorage,
+  workflowId: string,
+): Promise<void> {
+  const summaries = await storage.list<WorkflowRunSummary>({
+    prefix: runSummaryPrefix(),
+  });
+  const runIds = [...summaries.values()]
+    .filter((summary) => summary.workflowId === workflowId)
+    .map((summary) => summary.runId);
+
+  await Promise.all([
+    storage.delete(workflowKey(workflowId)),
+    ...runIds.flatMap((runId) => deleteRun(storage, runId)),
+  ]);
+}
+
+function deleteRun(
+  storage: DurableObjectStorage,
+  runId: string,
+): Promise<boolean>[] {
+  return [
+    storage.delete(runStateKey(runId)),
+    storage.delete(runDocumentKey(runId)),
+    storage.delete(runSummaryKey(runId)),
+    deleteByPrefix(storage, eventPrefix(runId)),
+    deleteQueueItems(storage, runId),
+  ];
+}
+
+async function deleteByPrefix(
+  storage: DurableObjectStorage,
+  prefix: string,
+): Promise<boolean> {
+  const rows = await storage.list({ prefix });
+  await Promise.all([...rows.keys()].map((key) => storage.delete(key)));
+  return true;
+}
+
+async function deleteQueueItems(
+  storage: DurableObjectStorage,
+  runId: string,
+): Promise<boolean> {
+  const rows = await storage.list<QueueItem>({ prefix: queuePrefix() });
+  await Promise.all(
+    [...rows.entries()]
+      .filter(([, item]) => item.event.runId === runId)
+      .map(([key]) => storage.delete(key)),
+  );
+  return true;
 }
 
 class DurableObjectWorkflowStateStore implements WorkflowStateStore {
@@ -295,13 +396,15 @@ class DurableObjectWorkflowStateStore implements WorkflowStateStore {
     return this.storage.get<WorkflowRunDocument>(runDocumentKey(runId));
   }
 
-  async listRunSummaries(): Promise<WorkflowRunSummary[]> {
+  async listRunSummaries(workflowId?: string): Promise<WorkflowRunSummary[]> {
     const rows = await this.storage.list<WorkflowRunSummary>({
       prefix: runSummaryPrefix(),
     });
-    return [...rows.values()].sort(
-      (a, b) => b.startedAt - a.startedAt || b.publishedAt - a.publishedAt,
-    );
+    return [...rows.values()]
+      .filter((summary) => !workflowId || summary.workflowId === workflowId)
+      .sort(
+        (a, b) => b.startedAt - a.startedAt || b.publishedAt - a.publishedAt,
+      );
   }
 }
 
