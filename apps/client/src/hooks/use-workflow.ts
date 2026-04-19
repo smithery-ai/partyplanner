@@ -45,7 +45,7 @@ export type WorkflowState = {
   clear(): void;
 };
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "";
+const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "/api";
 const client = hc<AppType>(backendUrl);
 
 const queryKeys = {

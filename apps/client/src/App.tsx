@@ -1,6 +1,7 @@
 import type { Registry, RunState } from "@rxwf/core";
 import { globalRegistry } from "@rxwf/core";
 import type { QueueSnapshot } from "@rxwf/runtime";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Check,
@@ -11,7 +12,7 @@ import {
   RefreshCw,
   SkipForward,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ZodTypeAny } from "zod";
 import {
   type NodeDetailEditor,
@@ -170,6 +171,8 @@ function runStatusClass(status: RunSummary["status"]): string {
 }
 
 export default function App() {
+  const params = useParams({ strict: false }) as { runId?: string };
+  const navigate = useNavigate();
   const [pane, setPane] = useState<SidePane>(null);
   const [workflowCode, setWorkflowCode] = useState(workflowRaw);
   const [appliedWorkflowCode, setAppliedWorkflowCode] = useState(workflowRaw);
@@ -183,9 +186,13 @@ export default function App() {
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [autoAdvance, setAutoAdvance] = useState(false);
+  const requestedRouteRunIdRef = useRef<string | undefined>(undefined);
 
   const workflow = useWorkflow();
   const runState = workflow.runState;
+  const { isPending, loadRun } = workflow;
+  const routeRunId =
+    typeof params.runId === "string" ? params.runId : undefined;
 
   const wait = findDeferredWait(runState);
   const pendingDeferredId = wait?.inputId;
@@ -229,6 +236,7 @@ export default function App() {
     setSeedInputId(firstSeedInputId(globalRegistry));
     setPayloadError("");
     setPane(null);
+    void navigate({ to: "/" });
   }
 
   function applyWorkflowCodeForStart() {
@@ -283,11 +291,15 @@ export default function App() {
     }
 
     try {
-      await workflow.start({
+      const result = await workflow.start({
         workflowSource: workflowCode,
         inputId: seed.id,
         payload,
         autoAdvance,
+      });
+      void navigate({
+        to: "/runs/$runId",
+        params: { runId: result.state.runId },
       });
       setPane(null);
     } catch (e) {
@@ -377,27 +389,47 @@ export default function App() {
     }
   }
 
-  async function loadHistoricalRun(runId: string) {
-    if (workflow.isPending) return;
-    setPayloadError("");
-    try {
-      const result = await workflow.loadRun({ runId });
-      if (result.workflowSource) {
-        loadWorkflowSourceIntoGlobalRegistry(result.workflowSource);
-        setWorkflowCode(result.workflowSource);
-        setAppliedWorkflowCode(result.workflowSource);
-        setInputValues(buildInitialInputValues(globalRegistry));
-        setSeedInputId(firstSeedInputId(globalRegistry));
+  const loadHistoricalRun = useCallback(
+    async (runId: string) => {
+      if (isPending) return;
+      setPayloadError("");
+      try {
+        const result = await loadRun({ runId });
+        if (result.workflowSource) {
+          loadWorkflowSourceIntoGlobalRegistry(result.workflowSource);
+          setWorkflowCode(result.workflowSource);
+          setAppliedWorkflowCode(result.workflowSource);
+          setInputValues(buildInitialInputValues(globalRegistry));
+          setSeedInputId(firstSeedInputId(globalRegistry));
+        }
+        if (result.autoAdvance !== undefined)
+          setAutoAdvance(result.autoAdvance);
+        setSelectedNodeId(null);
+        setPane(null);
+      } catch (e) {
+        setPayloadError(
+          e instanceof Error ? e.message : "Unable to load the selected run.",
+        );
       }
-      if (result.autoAdvance !== undefined) setAutoAdvance(result.autoAdvance);
-      setSelectedNodeId(null);
-      setPane(null);
-    } catch (e) {
-      setPayloadError(
-        e instanceof Error ? e.message : "Unable to load the selected run.",
-      );
+    },
+    [isPending, loadRun],
+  );
+
+  useEffect(() => {
+    if (!routeRunId) {
+      requestedRouteRunIdRef.current = undefined;
+      return;
     }
-  }
+    if (routeRunId === runState?.runId) {
+      requestedRouteRunIdRef.current = routeRunId;
+      return;
+    }
+    if (isPending || requestedRouteRunIdRef.current === routeRunId) {
+      return;
+    }
+    requestedRouteRunIdRef.current = routeRunId;
+    void loadHistoricalRun(routeRunId);
+  }, [isPending, loadHistoricalRun, routeRunId, runState?.runId]);
 
   const selectedRecord = selectedNodeId ? nodes[selectedNodeId] : undefined;
 
@@ -592,7 +624,12 @@ export default function App() {
                     <button
                       key={run.runId}
                       type="button"
-                      onClick={() => void loadHistoricalRun(run.runId)}
+                      onClick={() =>
+                        void navigate({
+                          to: "/runs/$runId",
+                          params: { runId: run.runId },
+                        })
+                      }
                       disabled={workflow.isPending}
                       aria-current={active ? "true" : undefined}
                       className={cn(
