@@ -1,5 +1,6 @@
 import { globalRegistry, Registry } from "@workflow/core";
 import {
+  type Executor,
   type InspectableWorkQueue,
   LocalScheduler,
   type QueueItem,
@@ -28,9 +29,11 @@ export type WorkflowManagerOptions = {
   stateStore: WorkflowStateStore;
   queue: WorkflowQueue;
   registry?: Registry;
+  executor?: Executor;
   workflow?: {
     id?: string;
     version?: string;
+    codeHash?: string;
     name?: string;
   };
 };
@@ -39,14 +42,16 @@ export class WorkflowManager {
   readonly definition: WorkflowServerDefinition;
   private readonly stateStore: WorkflowStateStore;
   private readonly queue: WorkflowQueue;
+  private readonly executor: Executor;
 
   constructor(options: WorkflowManagerOptions) {
     void options.workflows;
     this.stateStore = options.stateStore;
     this.queue = options.queue;
+    this.executor = options.executor ?? new RuntimeExecutor();
 
     const registry = cloneRegistry(options.registry ?? globalRegistry);
-    const codeHash = hashRegistry(registry);
+    const codeHash = options.workflow?.codeHash ?? hashRegistry(registry);
     const workflow: WorkflowRef = {
       workflowId: options.workflow?.id ?? "workflow",
       version: options.workflow?.version ?? codeHash,
@@ -176,7 +181,7 @@ export class WorkflowManager {
       stateStore: this.stateStore,
       queue: new ScopedWorkflowQueue(this.queue, runId),
       events: new StoreWorkflowEventSink(this.stateStore),
-      executor: new RuntimeExecutor(),
+      executor: this.executor,
     });
   }
 

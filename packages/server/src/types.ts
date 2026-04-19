@@ -64,7 +64,7 @@ export interface WorkflowStateStore extends StateStore {
   listEvents(runId: string): Promise<RunEvent[]>;
   saveRunDocument(document: WorkflowRunDocument): Promise<void>;
   getRunDocument(runId: string): Promise<WorkflowRunDocument | undefined>;
-  listRunSummaries(): Promise<WorkflowRunSummary[]>;
+  listRunSummaries(workflowId?: string): Promise<WorkflowRunSummary[]>;
 }
 
 export interface WorkflowQueue {

@@ -21,12 +21,14 @@ export type WorkflowFrontendConfig = {
   apiBaseUrl?: string;
   apiMode?: WorkflowFrontendApiMode;
   defaultWorkflow?: DefaultWorkflowUpload;
+  defaultWorkflows?: DefaultWorkflowUpload[];
 };
 
 export type ResolvedWorkflowFrontendConfig = {
   apiBaseUrl: string;
   apiMode: WorkflowFrontendApiMode;
   defaultWorkflow?: DefaultWorkflowUpload;
+  defaultWorkflows?: DefaultWorkflowUpload[];
 };
 
 const defaultConfig: ResolvedWorkflowFrontendConfig = {
@@ -44,14 +46,17 @@ export function WorkflowFrontendProvider({
   config?: WorkflowFrontendConfig;
   children: ReactNode;
 }) {
-  const value = useMemo<ResolvedWorkflowFrontendConfig>(
-    () => ({
+  const value = useMemo<ResolvedWorkflowFrontendConfig>(() => {
+    const defaultWorkflows =
+      config?.defaultWorkflows ??
+      (config?.defaultWorkflow ? [config.defaultWorkflow] : undefined);
+    return {
       ...defaultConfig,
       ...config,
+      defaultWorkflows,
       apiBaseUrl: normalizeApiBaseUrl(config?.apiBaseUrl ?? "/api"),
-    }),
-    [config],
-  );
+    };
+  }, [config]);
 
   return (
     <WorkflowFrontendConfigContext.Provider value={value}>

@@ -6,6 +6,16 @@ This example runs a Workflow backend inside a Next.js route handler using:
 - `@workflow/postgres` for separate state-store and queue adapters
 - Drizzle with PGlite as the Postgres-compatible local database
 
+This represents the user-managed runtime model: workflow atoms are imported and
+executed by the user's application instead of being uploaded to Hylo for
+execution.
+
+The future hybrid variant keeps this execution ownership in the user's app, but
+uses `apps/backend` for shared queue and run state. To get there, the local
+state-store and queue adapters in this example would be replaced with remote
+adapters that register workflow manifests, lease queue work, and commit
+idempotent step results to the backend.
+
 ## Run
 
 ```sh
