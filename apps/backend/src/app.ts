@@ -575,7 +575,7 @@ export function createApp() {
 
   routes.doc("/openapi", openApiOptions);
   routes.doc("/doc", openApiOptions);
-  routes.get("/swagger", (c) => c.html(swaggerHtml("/openapi")));
+  routes.get("/swagger", (c) => c.html(swaggerHtml("openapi")));
 
   return routes;
 }

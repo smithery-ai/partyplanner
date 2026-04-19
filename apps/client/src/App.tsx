@@ -1,6 +1,7 @@
 import type { Registry, RunState } from "@rxwf/core";
 import { globalRegistry } from "@rxwf/core";
 import type { QueueSnapshot } from "@rxwf/runtime";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Check,
@@ -11,7 +12,7 @@ import {
   RefreshCw,
   SkipForward,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ZodTypeAny } from "zod";
 import {
   type NodeDetailEditor,
@@ -169,7 +170,19 @@ function runStatusClass(status: RunSummary["status"]): string {
   }
 }
 
+export function IndexApp() {
+  return <App />;
+}
+
+export function RunApp() {
+  return <App />;
+}
+
 export default function App() {
+  const params = useParams({ strict: false }) as { runId?: string };
+  const navigate = useNavigate();
+  const routeRunId =
+    typeof params.runId === "string" ? params.runId : undefined;
   const [pane, setPane] = useState<SidePane>(null);
   const [workflowCode, setWorkflowCode] = useState(workflowRaw);
   const [appliedWorkflowCode, setAppliedWorkflowCode] = useState(workflowRaw);
@@ -184,9 +197,9 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [autoAdvance, setAutoAdvance] = useState(false);
 
-  const workflow = useWorkflow();
+  const workflow = useWorkflow(routeRunId);
   const runState = workflow.runState;
-
+  const { clear: clearWorkflow } = workflow;
   const wait = findDeferredWait(runState);
   const pendingDeferredId = wait?.inputId;
   const inputPending = Boolean(pendingDeferredId);
@@ -196,8 +209,10 @@ export default function App() {
   const runComplete = workflow.snapshot
     ? workflow.snapshot.status === "completed"
     : isRunComplete(runState);
+  const activeAutoAdvance = workflow.autoAdvance ?? autoAdvance;
+  const activeWorkflowCode = workflow.workflowSource ?? workflowCode;
   const canManualAdvance = Boolean(
-    runState && !runComplete && !autoAdvance && nextWork,
+    runState && !runComplete && !activeAutoAdvance && nextWork,
   );
 
   useEffect(() => {
@@ -218,17 +233,28 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [pane]);
 
+  useEffect(() => {
+    if (!workflow.workflowSource) return;
+    if (workflow.workflowSource === appliedWorkflowCode) return;
+    loadWorkflowSourceIntoGlobalRegistry(workflow.workflowSource);
+  }, [appliedWorkflowCode, workflow.workflowSource]);
+
   function setInputValue(id: string, value: unknown) {
     setInputValues((prev) => ({ ...prev, [id]: value }));
   }
 
-  function clearRun() {
-    workflow.clear();
+  const resetRunView = useCallback(() => {
+    clearWorkflow();
     setSelectedNodeId(null);
     setInputValues(buildInitialInputValues(globalRegistry));
     setSeedInputId(firstSeedInputId(globalRegistry));
     setPayloadError("");
     setPane(null);
+  }, [clearWorkflow]);
+
+  function clearRun() {
+    resetRunView();
+    void navigate({ to: "/" });
   }
 
   function applyWorkflowCodeForStart() {
@@ -241,7 +267,7 @@ export default function App() {
     }
 
     try {
-      workflow.clear();
+      clearWorkflow();
       loadWorkflowSourceIntoGlobalRegistry(workflowCode);
       setAppliedWorkflowCode(workflowCode);
       setSelectedNodeId(null);
@@ -283,11 +309,15 @@ export default function App() {
     }
 
     try {
-      await workflow.start({
+      const result = await workflow.start({
         workflowSource: workflowCode,
         inputId: seed.id,
         payload,
-        autoAdvance,
+        autoAdvance: activeAutoAdvance,
+      });
+      void navigate({
+        to: "/runs/$runId",
+        params: { runId: result.state.runId },
       });
       setPane(null);
     } catch (e) {
@@ -324,11 +354,11 @@ export default function App() {
 
     try {
       await workflow.submitInput({
-        workflowSource: workflowCode,
+        workflowSource: activeWorkflowCode,
         state: runState,
         inputId,
         payload,
-        autoAdvance,
+        autoAdvance: activeAutoAdvance,
       });
       setPane(null);
     } catch (e) {
@@ -345,7 +375,7 @@ export default function App() {
     setPayloadError("");
     try {
       await workflow.advance({
-        workflowSource: workflowCode,
+        workflowSource: activeWorkflowCode,
         state: runState,
       });
       setPane(null);
@@ -359,7 +389,7 @@ export default function App() {
   }
 
   async function changeAdvanceMode(nextAutoAdvance: boolean) {
-    if (nextAutoAdvance === autoAdvance) return;
+    if (nextAutoAdvance === activeAutoAdvance) return;
     setAutoAdvance(nextAutoAdvance);
     if (!runState) return;
 
@@ -373,28 +403,6 @@ export default function App() {
       setAutoAdvance(!nextAutoAdvance);
       setPayloadError(
         e instanceof Error ? e.message : "Unable to change advance mode.",
-      );
-    }
-  }
-
-  async function loadHistoricalRun(runId: string) {
-    if (workflow.isPending) return;
-    setPayloadError("");
-    try {
-      const result = await workflow.loadRun({ runId });
-      if (result.workflowSource) {
-        loadWorkflowSourceIntoGlobalRegistry(result.workflowSource);
-        setWorkflowCode(result.workflowSource);
-        setAppliedWorkflowCode(result.workflowSource);
-        setInputValues(buildInitialInputValues(globalRegistry));
-        setSeedInputId(firstSeedInputId(globalRegistry));
-      }
-      if (result.autoAdvance !== undefined) setAutoAdvance(result.autoAdvance);
-      setSelectedNodeId(null);
-      setPane(null);
-    } catch (e) {
-      setPayloadError(
-        e instanceof Error ? e.message : "Unable to load the selected run.",
       );
     }
   }
@@ -432,13 +440,19 @@ export default function App() {
     }
   }
 
-  const activeRunId = runState?.runId;
+  const activeRunId = routeRunId;
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background">
       <header className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <h1 className="min-w-0 text-sm font-semibold tracking-tight md:text-base">
-          Workflow
+        <h1 className="min-w-0">
+          <button
+            type="button"
+            onClick={() => void navigate({ to: "/" })}
+            className="rounded-sm text-sm font-semibold tracking-tight outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50 md:text-base"
+          >
+            Workflow
+          </button>
         </h1>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
           {runState && (
@@ -469,13 +483,13 @@ export default function App() {
           >
             <button
               type="button"
-              aria-pressed={!autoAdvance}
+              aria-pressed={!activeAutoAdvance}
               title="Manual advance"
               disabled={workflow.isPending}
               onClick={() => void changeAdvanceMode(false)}
               className={cn(
                 "inline-flex h-full w-[4.9rem] items-center justify-center gap-1 px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-                !autoAdvance
+                !activeAutoAdvance
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
@@ -485,13 +499,13 @@ export default function App() {
             </button>
             <button
               type="button"
-              aria-pressed={autoAdvance}
+              aria-pressed={activeAutoAdvance}
               title="Auto advance"
               disabled={workflow.isPending}
               onClick={() => void changeAdvanceMode(true)}
               className={cn(
                 "inline-flex h-full w-[4.4rem] items-center justify-center gap-1 border-l border-border px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:border-input",
-                autoAdvance
+                activeAutoAdvance
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
@@ -584,15 +598,16 @@ export default function App() {
               <div className="flex flex-col gap-1">
                 {workflow.runs.map((run) => {
                   const active = run.runId === activeRunId;
-                  const nodesLeft = Math.max(
-                    0,
-                    run.nodeCount - run.terminalNodeCount,
-                  );
                   return (
                     <button
                       key={run.runId}
                       type="button"
-                      onClick={() => void loadHistoricalRun(run.runId)}
+                      onClick={() =>
+                        void navigate({
+                          to: "/runs/$runId",
+                          params: { runId: run.runId },
+                        })
+                      }
                       disabled={workflow.isPending}
                       aria-current={active ? "true" : undefined}
                       className={cn(
@@ -623,14 +638,11 @@ export default function App() {
                             {formatRunTime(run.startedAt)}
                           </span>
                         </span>
-                        <span className="mt-1 block truncate text-xs text-muted-foreground">
-                          {nodesLeft === 0
-                            ? "complete"
-                            : `${nodesLeft} ${nodesLeft === 1 ? "node" : "nodes"} left`}
-                          {run.waitingOn.length > 0
-                            ? ` · waiting on ${run.waitingOn.join(", ")}`
-                            : ""}
-                        </span>
+                        {run.waitingOn.length > 0 && (
+                          <span className="mt-1 block truncate text-xs text-muted-foreground">
+                            Waiting on {run.waitingOn.join(", ")}
+                          </span>
+                        )}
                       </span>
                     </button>
                   );
@@ -665,7 +677,7 @@ export default function App() {
           <WorkflowCodeSheet
             open={pane === "workflow"}
             onOpenChange={(o) => setPane(o ? "workflow" : null)}
-            workflowCode={workflowCode}
+            workflowCode={activeWorkflowCode}
             onWorkflowCodeChange={setWorkflowCode}
             onPreviewInput={applyWorkflowCodeForStart}
             error={pane === "workflow" ? payloadError || undefined : undefined}

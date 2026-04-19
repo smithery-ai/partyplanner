@@ -12,6 +12,8 @@ const backendProxy = {
   target: backendTarget,
   changeOrigin: true,
   secure: false,
+  rewrite: (proxyPath: string) =>
+    proxyPath.replace(/^\/api(?=\/|$)/, "") || "/",
 };
 
 export default defineConfig({
@@ -23,12 +25,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/doc": backendProxy,
-      "/health": backendProxy,
-      "/openapi": backendProxy,
-      "/runs": backendProxy,
-      "/swagger": backendProxy,
-      "/state": backendProxy,
+      "/api": backendProxy,
     },
   },
 });

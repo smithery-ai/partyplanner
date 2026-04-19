@@ -96,7 +96,7 @@ export class JsonStateManager {
   list(): RunSummary[] {
     return [...this.documents.values()]
       .map((document) => summarizeRun(document))
-      .sort((a, b) => b.publishedAt - a.publishedAt);
+      .sort((a, b) => b.startedAt - a.startedAt);
   }
 }
 
