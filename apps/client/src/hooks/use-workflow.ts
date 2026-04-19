@@ -1,7 +1,6 @@
 import type { RunState } from "@rxwf/core";
 import type { QueueSnapshot, RunEvent, RunSnapshot } from "@rxwf/runtime";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { hc } from "hono/client";
 import { useCallback, useMemo, useState } from "react";
 import type {
   AdvanceWorkflowArgs,
@@ -10,10 +9,12 @@ import type {
   WorkflowRuntimeResult,
 } from "@/lib/workflow-runtimes";
 import type {
-  AppType,
+  CreateWorkflowRequest,
   RunStateDocument,
   RunSummary,
   SetAutoAdvanceRequest,
+  StartWorkflowRunRequest,
+  SubmitBackendInputRequest,
   WorkflowManifest,
 } from "../../../backend/src/rpc";
 
@@ -74,7 +75,6 @@ export type WorkflowRunState = {
 };
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "/api";
-const client = hc<AppType>(backendUrl);
 
 const queryKeys = {
   workflows: ["workflows"] as const,
@@ -86,8 +86,7 @@ const queryKeys = {
 function useWorkflowsQuery() {
   return useQuery({
     queryKey: queryKeys.workflows,
-    queryFn: async () =>
-      readJsonResponse<WorkflowManifest[]>(await client.workflows.$get({})),
+    queryFn: async () => apiGet<WorkflowManifest[]>("/workflows"),
   });
 }
 
@@ -100,10 +99,9 @@ function useWorkflowManifestQuery(workflowId: string | undefined) {
     retry: false,
     queryFn: async () => {
       if (!workflowId) throw new Error("workflowId required.");
-      const response = await client.workflows[":workflowId"].$get({
-        param: { workflowId },
-      });
-      return readJsonResponse<WorkflowManifest>(response);
+      return apiGet<WorkflowManifest>(
+        `/workflows/${encodeURIComponent(workflowId)}`,
+      );
     },
   });
 }
@@ -112,8 +110,7 @@ function useRunsQuery() {
   return useQuery({
     queryKey: queryKeys.runs,
     refetchInterval: 500,
-    queryFn: async () =>
-      readJsonResponse<RunSummary[]>(await client.runs.$get({})),
+    queryFn: async () => apiGet<RunSummary[]>("/runs"),
   });
 }
 
@@ -124,10 +121,9 @@ function useRunStateQuery(runId: string | undefined) {
     refetchInterval: 500,
     queryFn: async () => {
       if (!runId) throw new Error("Cannot poll before a run exists.");
-      const response = await client.state[":runId"].$get({
-        param: { runId },
-      });
-      return documentResult(await readJsonResponse<RunStateDocument>(response));
+      return documentResult(
+        await apiGet<RunStateDocument>(`/state/${encodeURIComponent(runId)}`),
+      );
     },
   });
 }
@@ -136,16 +132,17 @@ function useStartWorkflowRunMutation(workflowId: string | undefined) {
   return useMutation({
     mutationFn: async (args: StartRunArgs) => {
       if (!workflowId) throw new Error("workflowId required to start a run.");
-      const body = {
+      const body: StartWorkflowRunRequest = {
         inputId: args.inputId,
         payload: args.payload as JsonPayload,
         autoAdvance: args.autoAdvance,
       };
-      const response = await client.workflows[":workflowId"].runs.$post({
-        param: { workflowId },
-        json: body,
-      });
-      return documentResult(await readJsonResponse<RunStateDocument>(response));
+      return documentResult(
+        await apiPost<StartWorkflowRunRequest, RunStateDocument>(
+          `/workflows/${encodeURIComponent(workflowId)}/runs`,
+          body,
+        ),
+      );
     },
   });
 }
@@ -156,16 +153,17 @@ function useSubmitInputMutation() {
       if (!args.state)
         throw new Error("Cannot submit input before a run exists.");
 
-      const body = {
+      const body: SubmitBackendInputRequest = {
         inputId: args.inputId,
         payload: args.payload as JsonPayload,
         autoAdvance: args.autoAdvance,
       };
-      const response = await client.runs[":runId"].inputs.$post({
-        param: { runId: args.state.runId },
-        json: body,
-      });
-      return documentResult(await readJsonResponse<RunStateDocument>(response));
+      return documentResult(
+        await apiPost<SubmitBackendInputRequest, RunStateDocument>(
+          `/runs/${encodeURIComponent(args.state.runId)}/inputs`,
+          body,
+        ),
+      );
     },
   });
 }
@@ -175,11 +173,12 @@ function useAdvanceRunMutation() {
     mutationFn: async (args: AdvanceWorkflowArgs) => {
       if (!args.state) throw new Error("Cannot advance before a run exists.");
 
-      const response = await client.runs[":runId"].advance.$post({
-        param: { runId: args.state.runId },
-        json: {},
-      });
-      return documentResult(await readJsonResponse<RunStateDocument>(response));
+      return documentResult(
+        await apiPost<Record<string, never>, RunStateDocument>(
+          `/runs/${encodeURIComponent(args.state.runId)}/advance`,
+          {},
+        ),
+      );
     },
   });
 }
@@ -193,11 +192,12 @@ function useSetAutoAdvanceMutation() {
       const body: SetAutoAdvanceRequest = {
         autoAdvance: args.autoAdvance,
       };
-      const response = await client.runs[":runId"]["auto-advance"].$post({
-        param: { runId: args.state.runId },
-        json: body,
-      });
-      return documentResult(await readJsonResponse<RunStateDocument>(response));
+      return documentResult(
+        await apiPost<SetAutoAdvanceRequest, RunStateDocument>(
+          `/runs/${encodeURIComponent(args.state.runId)}/auto-advance`,
+          body,
+        ),
+      );
     },
   });
 }
@@ -205,14 +205,11 @@ function useSetAutoAdvanceMutation() {
 function useCreateWorkflowMutation() {
   return useMutation({
     mutationFn: async (args: CreateWorkflowArgs) => {
-      const response = await client.workflows.$post({
-        json: {
-          workflowSource: args.workflowSource,
-          workflowId: args.workflowId,
-          name: args.name,
-        },
+      return apiPost<CreateWorkflowRequest, WorkflowManifest>("/workflows", {
+        workflowSource: args.workflowSource,
+        workflowId: args.workflowId,
+        name: args.name,
       });
-      return readJsonResponse<WorkflowManifest>(response);
     },
   });
 }
@@ -515,6 +512,27 @@ async function readJsonResponse<TResponse>(
   }
 
   return response.json() as Promise<TResponse>;
+}
+
+function apiUrl(path: string): string {
+  return `${backendUrl.replace(/\/$/, "")}${path}`;
+}
+
+async function apiGet<TResponse>(path: string): Promise<TResponse> {
+  return readJsonResponse<TResponse>(await fetch(apiUrl(path)));
+}
+
+async function apiPost<TRequest, TResponse>(
+  path: string,
+  json: TRequest,
+): Promise<TResponse> {
+  return readJsonResponse<TResponse>(
+    await fetch(apiUrl(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(json),
+    }),
+  );
 }
 
 function documentResult(document: RunStateDocument): WorkflowRuntimeResult {
