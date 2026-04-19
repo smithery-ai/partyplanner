@@ -4,8 +4,6 @@ import {
   MemoryEventSink,
   MemoryStateStore,
   MemoryWorkQueue,
-  type QueueSnapshot,
-  type RunEvent,
   type RunSnapshot,
   RuntimeExecutor,
   StaticWorkflowLoader,
@@ -18,16 +16,8 @@ import type {
   SetAutoAdvanceRequest,
   StartBackendRunRequest,
   SubmitBackendInputRequest,
-} from "../../../backend/src/rpc";
-
-export type WorkflowRuntimeResult = {
-  state: RunState;
-  snapshot?: RunSnapshot;
-  queue?: QueueSnapshot;
-  events?: RunEvent[];
-  workflowSource?: string;
-  autoAdvance?: boolean;
-};
+  WorkflowRuntimeResult,
+} from "../types";
 
 export type StartWorkflowArgs = {
   workflowSource: string;
@@ -41,7 +31,7 @@ export type StartWorkflowArgs = {
 };
 
 export type SubmitWorkflowInputArgs = {
-  workflowSource: string;
+  workflowSource?: string;
   state?: RunState;
   inputId: string;
   payload: unknown;
@@ -49,7 +39,7 @@ export type SubmitWorkflowInputArgs = {
 };
 
 export type AdvanceWorkflowArgs = {
-  workflowSource: string;
+  workflowSource?: string;
   state?: RunState;
 };
 
@@ -74,9 +64,13 @@ export interface WorkflowRuntime {
   reset?(): void;
 }
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "/api";
-
 export class BackendRuntime implements WorkflowRuntime {
+  private readonly backendUrl: string;
+
+  constructor(backendUrl = "/api") {
+    this.backendUrl = backendUrl;
+  }
+
   async listRuns(): Promise<RunSummary[]> {
     return this.get<RunSummary[]>("/runs");
   }
@@ -145,7 +139,7 @@ export class BackendRuntime implements WorkflowRuntime {
     path: string,
     json: TRequest,
   ): Promise<TResponse> {
-    const response = await fetch(`${backendUrl}${path}`, {
+    const response = await fetch(`${this.backendUrl}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(json),
@@ -154,7 +148,7 @@ export class BackendRuntime implements WorkflowRuntime {
   }
 
   private async get<TResponse>(path: string): Promise<TResponse> {
-    const response = await fetch(`${backendUrl}${path}`);
+    const response = await fetch(`${this.backendUrl}${path}`);
     return readJsonResponse<TResponse>(response);
   }
 }

@@ -1,9 +1,9 @@
 import type { NodeRecord } from "@workflow/core";
 import { X } from "lucide-react";
 import type { ZodTypeAny } from "zod";
-import { Button } from "@/components/ui/button";
-import { ZodSchemaForm } from "@/components/zod-schema-form";
-import { cn } from "@/lib/utils";
+import { Button } from "../components/ui/button";
+import { ZodSchemaForm } from "../components/zod-schema-form";
+import { cn } from "../lib/utils";
 
 export type NodeDetailEditor = {
   /** From `input(..., { description })` in the workflow registry. */

@@ -19,7 +19,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Canvas } from "@/components/ai-elements/canvas";
+import { Canvas } from "../components/ai-elements/canvas";
 import {
   NodeContent,
   NodeDescription,
@@ -27,9 +27,9 @@ import {
   NodeHeader,
   NodeTitle,
   Node as WorkflowCard,
-} from "@/components/ai-elements/node";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+} from "../components/ai-elements/node";
+import { Button } from "../components/ui/button";
+import { cn } from "../lib/utils";
 
 /** Visual bucket for theming (includes deferred-input gate) */
 type QueueNodeStatus = "queued" | "running";

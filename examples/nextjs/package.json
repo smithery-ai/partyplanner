@@ -11,6 +11,7 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.3.14",
     "@workflow/core": "workspace:*",
+    "@workflow/frontend": "workspace:*",
     "@workflow/postgres": "workspace:*",
     "@workflow/server": "workspace:*",
     "drizzle-orm": "^0.45.1",
@@ -21,9 +22,11 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "postcss": "^8.5.6",
     "typescript": "~6.0.2"
   }
 }

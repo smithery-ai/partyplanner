@@ -1,10 +1,10 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
+import { WorkflowFrontendRoot } from "@workflow/frontend";
+import "@workflow/frontend/styles.css";
 import { createRoot } from "react-dom/client";
-import "./index.css";
 import { router } from "./router";
+import workflowRaw from "./workflow.ts?raw";
 
-const queryClient = new QueryClient();
 const root = document.getElementById("root");
 
 if (!root) {
@@ -12,7 +12,17 @@ if (!root) {
 }
 
 createRoot(root).render(
-  <QueryClientProvider client={queryClient}>
+  <WorkflowFrontendRoot
+    config={{
+      apiBaseUrl: import.meta.env.VITE_BACKEND_URL ?? "/api",
+      apiMode: "multi",
+      defaultWorkflow: {
+        source: workflowRaw,
+        workflowId: "default",
+        name: "Onboarding demo",
+      },
+    }}
+  >
     <RouterProvider router={router} />
-  </QueryClientProvider>,
+  </WorkflowFrontendRoot>,
 );

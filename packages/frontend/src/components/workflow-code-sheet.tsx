@@ -1,8 +1,8 @@
 import { X } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { Button } from "../components/ui/button";
+import { Textarea } from "../components/ui/textarea";
+import { cn } from "../lib/utils";
 
 export function WorkflowCodeSheet({
   open,
