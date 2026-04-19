@@ -4,8 +4,9 @@ import { atom } from "../src/atom";
 import { input, secret } from "../src/input";
 import { createRuntime } from "../src/runtime";
 import {
+  assertErrored,
   assertResolved,
-  assertWaiting,
+  assertSkipped,
   resetRegistry,
   runToIdle,
 } from "./helpers";
@@ -76,7 +77,7 @@ describe("secret()", () => {
     ).rejects.toThrow("Secret must not be empty.");
   });
 
-  it("waits when a step reads a missing secret", async () => {
+  it("errors the secret and skips downstream when a secret is unresolved", async () => {
     const seed = input("seed", z.string());
     const apiKey = secret("apiKey");
 
@@ -88,6 +89,14 @@ describe("secret()", () => {
       { name: "useSecret" },
     );
 
+    atom(
+      (get) => {
+        const key = get(apiKey);
+        return `downstream:${key}`;
+      },
+      { name: "downstream" },
+    );
+
     const runtime = createRuntime();
     const { trace } = await runToIdle(runtime, {
       kind: "input",
@@ -97,7 +106,15 @@ describe("secret()", () => {
       payload: "start",
     });
 
-    assertWaiting(trace, "useSecret", "apiKey");
+    assertErrored(trace, "apiKey", 'Secret "apiKey" could not be resolved');
+    assertSkipped(trace, "useSecret");
+    assertSkipped(trace, "downstream");
+    expect(trace.nodes.useSecret?.skipReason).toBe(
+      'Secret "apiKey" could not be resolved',
+    );
+    expect(trace.nodes.downstream?.skipReason).toBe(
+      'Secret "apiKey" could not be resolved',
+    );
   });
 
   it("does not expose a deferred secret helper", () => {
