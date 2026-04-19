@@ -2,30 +2,25 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RunState } from "@workflow/core";
 import type { QueueSnapshot, RunEvent, RunSnapshot } from "@workflow/runtime";
 import { useCallback, useMemo, useState } from "react";
+import { useWorkflowFrontendConfig } from "../config";
 import type {
   AdvanceWorkflowArgs,
   SetAutoAdvanceWorkflowArgs,
   SubmitWorkflowInputArgs,
-  WorkflowRuntimeResult,
-} from "@/lib/workflow-runtimes";
+} from "../lib/workflow-runtimes";
 import type {
   CreateWorkflowRequest,
   DeleteWorkflowResponse,
+  JsonPayload,
   RunStateDocument,
   RunSummary,
   SetAutoAdvanceRequest,
+  StartBackendRunRequest,
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
   WorkflowManifest,
-} from "../../../backend/src/rpc";
-
-type JsonPayload =
-  | string
-  | number
-  | boolean
-  | null
-  | JsonPayload[]
-  | { [key: string]: JsonPayload };
+  WorkflowRuntimeResult,
+} from "../types";
 
 export type StartRunArgs = {
   inputId: string;
@@ -80,32 +75,51 @@ export type WorkflowRunState = {
   clear(): void;
 };
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "/api";
-
 const queryKeys = {
-  workflows: ["workflows"] as const,
-  workflow: (workflowId: string) => ["workflow", workflowId] as const,
-  runs: ["runs"] as const,
-  runState: (runId: string) => ["run-state", runId] as const,
+  workflows: (apiMode: string, apiBaseUrl: string) =>
+    ["workflow-frontend", apiMode, apiBaseUrl, "workflows"] as const,
+  workflow: (apiMode: string, apiBaseUrl: string, workflowId: string) =>
+    ["workflow-frontend", apiMode, apiBaseUrl, "workflow", workflowId] as const,
+  runs: (apiMode: string, apiBaseUrl: string) =>
+    ["workflow-frontend", apiMode, apiBaseUrl, "runs"] as const,
+  runState: (apiMode: string, apiBaseUrl: string, runId: string) =>
+    ["workflow-frontend", apiMode, apiBaseUrl, "run-state", runId] as const,
 };
 
 function useWorkflowsQuery() {
+  const config = useWorkflowFrontendConfig();
   return useQuery({
-    queryKey: queryKeys.workflows,
-    queryFn: async () => apiGet<WorkflowManifest[]>("/workflows"),
+    queryKey: queryKeys.workflows(config.apiMode, config.apiBaseUrl),
+    queryFn: async () => {
+      if (config.apiMode === "single") {
+        return [await apiGet<WorkflowManifest>(config.apiBaseUrl, "/manifest")];
+      }
+      return apiGet<WorkflowManifest[]>(config.apiBaseUrl, "/workflows");
+    },
   });
 }
 
 function useWorkflowManifestQuery(workflowId: string | undefined) {
+  const config = useWorkflowFrontendConfig();
   return useQuery({
     queryKey: workflowId
-      ? queryKeys.workflow(workflowId)
-      : ["workflow", "none"],
-    enabled: Boolean(workflowId),
+      ? queryKeys.workflow(config.apiMode, config.apiBaseUrl, workflowId)
+      : [
+          "workflow-frontend",
+          config.apiMode,
+          config.apiBaseUrl,
+          "workflow",
+          "none",
+        ],
+    enabled: config.apiMode === "single" || Boolean(workflowId),
     retry: false,
     queryFn: async () => {
+      if (config.apiMode === "single") {
+        return apiGet<WorkflowManifest>(config.apiBaseUrl, "/manifest");
+      }
       if (!workflowId) throw new Error("workflowId required.");
       return apiGet<WorkflowManifest>(
+        config.apiBaseUrl,
         `/workflows/${encodeURIComponent(workflowId)}`,
       );
     },
@@ -113,31 +127,44 @@ function useWorkflowManifestQuery(workflowId: string | undefined) {
 }
 
 function useRunsQuery() {
+  const config = useWorkflowFrontendConfig();
   return useQuery({
-    queryKey: queryKeys.runs,
+    queryKey: queryKeys.runs(config.apiMode, config.apiBaseUrl),
     refetchInterval: 500,
-    queryFn: async () => apiGet<RunSummary[]>("/runs"),
+    queryFn: async () => apiGet<RunSummary[]>(config.apiBaseUrl, "/runs"),
   });
 }
 
 function useRunStateQuery(runId: string | undefined) {
+  const config = useWorkflowFrontendConfig();
   return useQuery({
-    queryKey: runId ? queryKeys.runState(runId) : ["run-state", "none"],
+    queryKey: runId
+      ? queryKeys.runState(config.apiMode, config.apiBaseUrl, runId)
+      : [
+          "workflow-frontend",
+          config.apiMode,
+          config.apiBaseUrl,
+          "run-state",
+          "none",
+        ],
     enabled: Boolean(runId),
     refetchInterval: 500,
     queryFn: async () => {
       if (!runId) throw new Error("Cannot poll before a run exists.");
       return documentResult(
-        await apiGet<RunStateDocument>(`/state/${encodeURIComponent(runId)}`),
+        await apiGet<RunStateDocument>(
+          config.apiBaseUrl,
+          `/state/${encodeURIComponent(runId)}`,
+        ),
       );
     },
   });
 }
 
 function useStartWorkflowRunMutation(workflowId: string | undefined) {
+  const config = useWorkflowFrontendConfig();
   return useMutation({
     mutationFn: async (args: StartRunArgs) => {
-      if (!workflowId) throw new Error("workflowId required to start a run.");
       const body: StartWorkflowRunRequest = {
         inputId: args.inputId,
         payload: args.payload as JsonPayload,
@@ -146,8 +173,20 @@ function useStartWorkflowRunMutation(workflowId: string | undefined) {
           | undefined,
         autoAdvance: args.autoAdvance,
       };
+      if (config.apiMode === "single") {
+        return documentResult(
+          await apiPost<StartWorkflowRunRequest, RunStateDocument>(
+            config.apiBaseUrl,
+            "/runs",
+            body,
+          ),
+        );
+      }
+
+      if (!workflowId) throw new Error("workflowId required to start a run.");
       return documentResult(
-        await apiPost<StartWorkflowRunRequest, RunStateDocument>(
+        await apiPost<StartBackendRunRequest, RunStateDocument>(
+          config.apiBaseUrl,
           `/workflows/${encodeURIComponent(workflowId)}/runs`,
           body,
         ),
@@ -157,6 +196,7 @@ function useStartWorkflowRunMutation(workflowId: string | undefined) {
 }
 
 function useSubmitInputMutation() {
+  const config = useWorkflowFrontendConfig();
   return useMutation({
     mutationFn: async (args: SubmitWorkflowInputArgs) => {
       if (!args.state)
@@ -169,6 +209,7 @@ function useSubmitInputMutation() {
       };
       return documentResult(
         await apiPost<SubmitBackendInputRequest, RunStateDocument>(
+          config.apiBaseUrl,
           `/runs/${encodeURIComponent(args.state.runId)}/inputs`,
           body,
         ),
@@ -178,12 +219,14 @@ function useSubmitInputMutation() {
 }
 
 function useAdvanceRunMutation() {
+  const config = useWorkflowFrontendConfig();
   return useMutation({
     mutationFn: async (args: AdvanceWorkflowArgs) => {
       if (!args.state) throw new Error("Cannot advance before a run exists.");
 
       return documentResult(
         await apiPost<Record<string, never>, RunStateDocument>(
+          config.apiBaseUrl,
           `/runs/${encodeURIComponent(args.state.runId)}/advance`,
           {},
         ),
@@ -193,6 +236,7 @@ function useAdvanceRunMutation() {
 }
 
 function useSetAutoAdvanceMutation() {
+  const config = useWorkflowFrontendConfig();
   return useMutation({
     mutationFn: async (args: SetAutoAdvanceWorkflowArgs) => {
       if (!args.state)
@@ -203,6 +247,7 @@ function useSetAutoAdvanceMutation() {
       };
       return documentResult(
         await apiPost<SetAutoAdvanceRequest, RunStateDocument>(
+          config.apiBaseUrl,
           `/runs/${encodeURIComponent(args.state.runId)}/auto-advance`,
           body,
         ),
@@ -212,21 +257,34 @@ function useSetAutoAdvanceMutation() {
 }
 
 function useCreateWorkflowMutation() {
+  const config = useWorkflowFrontendConfig();
   return useMutation({
     mutationFn: async (args: CreateWorkflowArgs) => {
-      return apiPost<CreateWorkflowRequest, WorkflowManifest>("/workflows", {
-        workflowSource: args.workflowSource,
-        workflowId: args.workflowId,
-        name: args.name,
-      });
+      if (config.apiMode === "single") {
+        throw new Error("This workflow server does not support uploads.");
+      }
+      return apiPost<CreateWorkflowRequest, WorkflowManifest>(
+        config.apiBaseUrl,
+        "/workflows",
+        {
+          workflowSource: args.workflowSource,
+          workflowId: args.workflowId,
+          name: args.name,
+        },
+      );
     },
   });
 }
 
 function useDeleteWorkflowMutation() {
+  const config = useWorkflowFrontendConfig();
   return useMutation({
     mutationFn: async (workflowId: string) => {
+      if (config.apiMode === "single") {
+        throw new Error("This workflow server does not support deletion.");
+      }
       await apiDelete<DeleteWorkflowResponse>(
+        config.apiBaseUrl,
         `/workflows/${encodeURIComponent(workflowId)}`,
       );
     },
@@ -234,6 +292,7 @@ function useDeleteWorkflowMutation() {
 }
 
 export function useWorkflows(): WorkflowsState {
+  const config = useWorkflowFrontendConfig();
   const queryClient = useQueryClient();
   const workflowsQuery = useWorkflowsQuery();
   const createMutation = useCreateWorkflowMutation();
@@ -261,10 +320,16 @@ export function useWorkflows(): WorkflowsState {
       try {
         const manifest = await createMutation.mutateAsync(args);
         queryClient.setQueryData(
-          queryKeys.workflow(manifest.workflowId),
+          queryKeys.workflow(
+            config.apiMode,
+            config.apiBaseUrl,
+            manifest.workflowId,
+          ),
           manifest,
         );
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workflows });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.workflows(config.apiMode, config.apiBaseUrl),
+        });
         return manifest;
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -272,7 +337,7 @@ export function useWorkflows(): WorkflowsState {
         throw err;
       }
     },
-    [createMutation, queryClient],
+    [config.apiBaseUrl, config.apiMode, createMutation, queryClient],
   );
 
   const deleteWorkflow = useCallback(
@@ -280,16 +345,26 @@ export function useWorkflows(): WorkflowsState {
       setError(undefined);
       try {
         await deleteMutation.mutateAsync(workflowId);
-        queryClient.removeQueries({ queryKey: queryKeys.workflow(workflowId) });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.workflows });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.runs });
+        queryClient.removeQueries({
+          queryKey: queryKeys.workflow(
+            config.apiMode,
+            config.apiBaseUrl,
+            workflowId,
+          ),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.workflows(config.apiMode, config.apiBaseUrl),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.runs(config.apiMode, config.apiBaseUrl),
+        });
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         setError(err);
         throw err;
       }
     },
-    [deleteMutation, queryClient],
+    [config.apiBaseUrl, config.apiMode, deleteMutation, queryClient],
   );
 
   return {
@@ -306,6 +381,7 @@ export function useWorkflows(): WorkflowsState {
 }
 
 export function useWorkflow(workflowId: string | undefined): WorkflowState {
+  const config = useWorkflowFrontendConfig();
   const queryClient = useQueryClient();
   const manifestQuery = useWorkflowManifestQuery(workflowId);
   const runsQuery = useRunsQuery();
@@ -325,15 +401,21 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
       try {
         const result = await startMutation.mutateAsync(args);
         queryClient.setQueryData(
-          queryKeys.runState(result.state.runId),
+          queryKeys.runState(
+            config.apiMode,
+            config.apiBaseUrl,
+            result.state.runId,
+          ),
           result,
         );
         queryClient.setQueryData(
-          queryKeys.runs,
+          queryKeys.runs(config.apiMode, config.apiBaseUrl),
           (existing: RunSummary[] = []) =>
             mergeRunSummary(existing, summarizeRunResult(result)),
         );
-        await queryClient.invalidateQueries({ queryKey: queryKeys.runs });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.runs(config.apiMode, config.apiBaseUrl),
+        });
         return result;
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -341,7 +423,7 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
         throw err;
       }
     },
-    [queryClient, startMutation],
+    [config.apiBaseUrl, config.apiMode, queryClient, startMutation],
   );
 
   const refreshRuns = useCallback(async () => {
@@ -360,7 +442,9 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
   }, [runsQuery]);
 
   const isPending =
-    (Boolean(workflowId) && manifestQuery.isPending) || startMutation.isPending;
+    ((config.apiMode === "single" || Boolean(workflowId)) &&
+      manifestQuery.isPending) ||
+    startMutation.isPending;
 
   const activeError =
     error ?? normalizeError(manifestQuery.error ?? runsQuery.error);
@@ -383,6 +467,7 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
 }
 
 export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
+  const config = useWorkflowFrontendConfig();
   const queryClient = useQueryClient();
   const stateQuery = useRunStateQuery(runId);
   const submitInputMutation = useSubmitInputMutation();
@@ -392,12 +477,21 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
 
   const cacheResult = useCallback(
     (result: WorkflowRuntimeResult) => {
-      queryClient.setQueryData(queryKeys.runState(result.state.runId), result);
-      queryClient.setQueryData(queryKeys.runs, (existing: RunSummary[] = []) =>
-        mergeRunSummary(existing, summarizeRunResult(result)),
+      queryClient.setQueryData(
+        queryKeys.runState(
+          config.apiMode,
+          config.apiBaseUrl,
+          result.state.runId,
+        ),
+        result,
+      );
+      queryClient.setQueryData(
+        queryKeys.runs(config.apiMode, config.apiBaseUrl),
+        (existing: RunSummary[] = []) =>
+          mergeRunSummary(existing, summarizeRunResult(result)),
       );
     },
-    [queryClient],
+    [config.apiBaseUrl, config.apiMode, queryClient],
   );
 
   const runMutation = useCallback(
@@ -411,7 +505,9 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
       try {
         const result = await mutation.mutateAsync(args);
         cacheResult(result);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.runs });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.runs(config.apiMode, config.apiBaseUrl),
+        });
         return result;
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
@@ -419,7 +515,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
         throw err;
       }
     },
-    [cacheResult, queryClient],
+    [cacheResult, config.apiBaseUrl, config.apiMode, queryClient],
   );
 
   const submitInput = useCallback(
@@ -576,20 +672,24 @@ async function errorMessageFromResponse(response: Response): Promise<string> {
   return text;
 }
 
-function apiUrl(path: string): string {
-  return `${backendUrl.replace(/\/$/, "")}${path}`;
+function apiUrl(apiBaseUrl: string, path: string): string {
+  return `${apiBaseUrl}${path}`;
 }
 
-async function apiGet<TResponse>(path: string): Promise<TResponse> {
-  return readJsonResponse<TResponse>(await fetch(apiUrl(path)));
+async function apiGet<TResponse>(
+  apiBaseUrl: string,
+  path: string,
+): Promise<TResponse> {
+  return readJsonResponse<TResponse>(await fetch(apiUrl(apiBaseUrl, path)));
 }
 
 async function apiPost<TRequest, TResponse>(
+  apiBaseUrl: string,
   path: string,
   json: TRequest,
 ): Promise<TResponse> {
   return readJsonResponse<TResponse>(
-    await fetch(apiUrl(path), {
+    await fetch(apiUrl(apiBaseUrl, path), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(json),
@@ -597,9 +697,12 @@ async function apiPost<TRequest, TResponse>(
   );
 }
 
-async function apiDelete<TResponse>(path: string): Promise<TResponse> {
+async function apiDelete<TResponse>(
+  apiBaseUrl: string,
+  path: string,
+): Promise<TResponse> {
   return readJsonResponse<TResponse>(
-    await fetch(apiUrl(path), {
+    await fetch(apiUrl(apiBaseUrl, path), {
       method: "DELETE",
     }),
   );

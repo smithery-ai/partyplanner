@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import type { ZodTypeAny } from "zod";
 import { z } from "zod";
 
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { Input } from "../components/ui/input";
+import { cn } from "../lib/utils";
 
 /** Default value suitable for controlled form state (Zod parse may still refine). */
 export function defaultForSchema(schema: ZodTypeAny): unknown {

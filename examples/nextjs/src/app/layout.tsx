@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import "@workflow/frontend/styles.css";
 
 export const metadata = {
   title: "Workflow Next.js Example",

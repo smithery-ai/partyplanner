@@ -1,8 +1,8 @@
 import type { Registry } from "@workflow/core";
 import { X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ZodSchemaForm } from "@/components/zod-schema-form";
-import { cn } from "@/lib/utils";
+import { Button } from "../components/ui/button";
+import { ZodSchemaForm } from "../components/zod-schema-form";
+import { cn } from "../lib/utils";
 
 /**
  * Seed / immediate inputs only. Per SPEC, deferred inputs are separate queue events

@@ -1,8 +1,8 @@
 import type { Registry } from "@workflow/core";
 import { X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { ZodSchemaForm } from "@/components/zod-schema-form";
-import { cn } from "@/lib/utils";
+import { Button } from "../components/ui/button";
+import { ZodSchemaForm } from "../components/zod-schema-form";
+import { cn } from "../lib/utils";
 
 /** Only the deferred input the run is currently waiting on (SPEC: WaitError → queue event). */
 export function PendingInputSheet({
