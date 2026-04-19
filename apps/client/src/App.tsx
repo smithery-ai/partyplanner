@@ -598,10 +598,6 @@ export default function App() {
               <div className="flex flex-col gap-1">
                 {workflow.runs.map((run) => {
                   const active = run.runId === activeRunId;
-                  const nodesLeft = Math.max(
-                    0,
-                    run.nodeCount - run.terminalNodeCount,
-                  );
                   return (
                     <button
                       key={run.runId}
@@ -642,14 +638,11 @@ export default function App() {
                             {formatRunTime(run.startedAt)}
                           </span>
                         </span>
-                        <span className="mt-1 block truncate text-xs text-muted-foreground">
-                          {nodesLeft === 0
-                            ? "complete"
-                            : `${nodesLeft} ${nodesLeft === 1 ? "node" : "nodes"} left`}
-                          {run.waitingOn.length > 0
-                            ? ` · waiting on ${run.waitingOn.join(", ")}`
-                            : ""}
-                        </span>
+                        {run.waitingOn.length > 0 && (
+                          <span className="mt-1 block truncate text-xs text-muted-foreground">
+                            Waiting on {run.waitingOn.join(", ")}
+                          </span>
+                        )}
                       </span>
                     </button>
                   );
