@@ -469,8 +469,14 @@ export default function App() {
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background">
       <header className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <h1 className="min-w-0 text-sm font-semibold tracking-tight md:text-base">
-          Workflow
+        <h1 className="min-w-0">
+          <button
+            type="button"
+            onClick={() => void navigate({ to: "/" })}
+            className="rounded-sm text-sm font-semibold tracking-tight outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50 md:text-base"
+          >
+            Workflow
+          </button>
         </h1>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
           {runState && (
