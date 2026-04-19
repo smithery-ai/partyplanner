@@ -8,17 +8,12 @@ export function WorkflowCodeSheet({
   open,
   onOpenChange,
   workflowCode,
-  onWorkflowCodeChange,
-  onPreviewInput,
-  error,
+  readOnly,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workflowCode: string;
-  onWorkflowCodeChange: (v: string) => void;
-  /** Opens the seed input step; user starts the run from there. */
-  onPreviewInput: () => void;
-  error?: string;
+  readOnly?: boolean;
 }) {
   if (!open) return null;
 
@@ -49,34 +44,17 @@ export function WorkflowCodeSheet({
 
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-            <p className="text-foreground text-xs font-medium leading-snug">
-              Scroll to the bottom to continue.
-            </p>
-            <p className="text-muted-foreground text-[11px] leading-snug">
-              Changes are applied before the input form is built.
-            </p>
+            {readOnly ? (
+              <p className="text-muted-foreground text-[11px] leading-snug">
+                Read-only. Source is pinned to the workflow's manifest.
+              </p>
+            ) : null}
             <Textarea
               spellCheck={false}
               value={workflowCode}
-              onChange={(e) => onWorkflowCodeChange(e.target.value)}
+              readOnly={readOnly}
               className="min-h-[min(55vh,480px)] resize-y font-mono text-xs leading-relaxed"
             />
-          </div>
-
-          <div className="shrink-0 border-t border-border bg-card p-4">
-            {error ? (
-              <p className="mb-3 text-destructive text-xs">{error}</p>
-            ) : null}
-            <Button type="button" className="w-full" onClick={onPreviewInput}>
-              Continue to inputs
-            </Button>
-            <p className="mt-2 text-center text-muted-foreground text-[11px] leading-snug">
-              You can adjust your starting values there, then press{" "}
-              <span className="font-medium text-foreground">
-                Start Workflow
-              </span>{" "}
-              when you're ready.
-            </p>
           </div>
         </div>
       </aside>

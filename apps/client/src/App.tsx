@@ -1,6 +1,7 @@
 import type { Registry, RunState } from "@rxwf/core";
 import { globalRegistry } from "@rxwf/core";
 import type { QueueSnapshot } from "@rxwf/runtime";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   AlertTriangle,
   Check,
@@ -27,14 +28,15 @@ import { StartWorkflowSheet } from "@/components/start-workflow-sheet";
 import { Button } from "@/components/ui/button";
 import { WorkflowCodeSheet } from "@/components/workflow-code-sheet";
 import { defaultForSchema } from "@/components/zod-schema-form";
-import { useWorkflow } from "@/hooks/use-workflow";
+import {
+  useWorkflow,
+  useWorkflowRun,
+  useWorkflows,
+} from "@/hooks/use-workflow";
 import { loadWorkflowSourceIntoGlobalRegistry } from "@/lib/evaluate-workflow-source";
 import { cn } from "@/lib/utils";
 import type { RunSummary } from "../../backend/src/rpc";
-
 import workflowRaw from "./workflow.ts?raw";
-
-import "./workflow";
 
 type SidePane = null | "workflow" | "start" | "pending" | "state";
 
@@ -177,10 +179,147 @@ function runStatusClass(status: RunSummary["status"]): string {
   }
 }
 
-export default function App() {
+export function IndexApp() {
+  const { workflows, isPending, createWorkflow, error } = useWorkflows();
+  const navigate = useNavigate();
+  const [uploadError, setUploadError] = useState<string | undefined>();
+  const [uploading, setUploading] = useState(false);
+
+  async function uploadDefault() {
+    setUploadError(undefined);
+    setUploading(true);
+    try {
+      const manifest = await createWorkflow({
+        workflowSource: workflowRaw,
+        workflowId: "default",
+        name: "Onboarding demo",
+      });
+      void navigate({
+        to: "/workflows/$workflowId",
+        params: { workflowId: manifest.workflowId },
+      });
+    } catch (e) {
+      setUploadError(
+        e instanceof Error ? e.message : "Failed to upload workflow.",
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  if (isPending && workflows.length === 0 && !uploading) {
+    return (
+      <div className="flex h-screen items-center justify-center text-muted-foreground text-sm">
+        Loading workflows…
+      </div>
+    );
+  }
+
+  if (workflows.length === 0) {
+    return (
+      <div className="flex h-screen items-center justify-center p-6">
+        <div className="flex max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-card p-8 text-center shadow-sm">
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            No workflows yet. Upload the bundled default to get started.
+          </p>
+          <Button
+            type="button"
+            onClick={() => void uploadDefault()}
+            disabled={uploading}
+          >
+            {uploading ? "Uploading…" : "Upload default workflow"}
+          </Button>
+          {uploadError || error ? (
+            <p className="text-destructive text-xs">
+              {uploadError ?? error?.message}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="flex min-h-10 items-center justify-between border-b border-border px-4 py-3">
+        <h1 className="text-sm font-semibold tracking-tight md:text-base">
+          Workflows
+        </h1>
+      </header>
+      <div className="flex-1 overflow-y-auto p-4">
+        <ul className="mx-auto flex max-w-2xl flex-col gap-2">
+          {workflows.map((w) => (
+            <li key={w.workflowId}>
+              <button
+                type="button"
+                onClick={() =>
+                  void navigate({
+                    to: "/workflows/$workflowId",
+                    params: { workflowId: w.workflowId },
+                  })
+                }
+                className="flex w-full flex-col items-start gap-1 rounded-lg border border-border bg-card px-4 py-3 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                <span className="text-sm font-medium text-foreground">
+                  {w.name ?? w.workflowId}
+                </span>
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <code className="rounded bg-muted px-1 py-0.5">
+                    {w.workflowId}
+                  </code>
+                  <span>{formatRunTime(w.createdAt)}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function NotFoundScreen({ workflowId }: { workflowId: string }) {
+  const navigate = useNavigate();
+  return (
+    <div className="flex h-screen items-center justify-center p-6">
+      <div className="flex max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-card p-8 text-center shadow-sm">
+        <p className="text-sm font-semibold text-foreground">
+          Workflow not found
+        </p>
+        <p className="text-muted-foreground text-xs leading-relaxed">
+          No workflow with id{" "}
+          <code className="rounded bg-muted px-1 py-0.5">{workflowId}</code>.
+        </p>
+        <Button
+          type="button"
+          onClick={() => void navigate({ to: "/", replace: true })}
+        >
+          Go home
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function WorkflowApp() {
+  const { workflowId } = useParams({ from: "/workflows/$workflowId" });
+  return <App workflowId={workflowId} />;
+}
+
+export function RunApp() {
+  const { workflowId, runId } = useParams({
+    from: "/workflows/$workflowId/runs/$runId",
+  });
+  return <App workflowId={workflowId} runId={runId} />;
+}
+
+function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
+  const navigate = useNavigate();
+  const workflow = useWorkflow(workflowId);
+  const workflowRun = useWorkflowRun(runId);
+
   const [pane, setPane] = useState<SidePane>(null);
-  const [workflowCode, setWorkflowCode] = useState(workflowRaw);
-  const [appliedWorkflowCode, setAppliedWorkflowCode] = useState(workflowRaw);
+  const [appliedSource, setAppliedSource] = useState<string | undefined>();
   const [inputValues, setInputValues] = useState<Record<string, unknown>>(() =>
     buildInitialInputValues(globalRegistry),
   );
@@ -190,25 +329,58 @@ export default function App() {
   const [seedInputId, setSeedInputId] = useState(() =>
     firstSeedInputId(globalRegistry),
   );
-
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [autoAdvance, setAutoAdvance] = useState(false);
+  const [pendingAutoAdvance, setPendingAutoAdvance] = useState(false);
+  const [secretRunId, setSecretRunId] = useState<string | undefined>();
 
-  const workflow = useWorkflow();
-  const runState = workflow.runState;
+  const manifestSource = workflow.manifest?.source;
+  const runSource = workflowRun.workflowSource;
+  const activeSource = runSource ?? manifestSource;
+
+  useEffect(() => {
+    if (!activeSource) return;
+    if (activeSource === appliedSource) return;
+    try {
+      loadWorkflowSourceIntoGlobalRegistry(activeSource);
+      setAppliedSource(activeSource);
+      setInputValues(buildInitialInputValues(globalRegistry));
+      setSecretValues(buildInitialSecretValues(globalRegistry));
+      setSecretRunId(undefined);
+      setSeedInputId(firstSeedInputId(globalRegistry));
+    } catch (e) {
+      setPayloadError(
+        e instanceof Error
+          ? e.message
+          : "Workflow source could not be evaluated.",
+      );
+    }
+  }, [activeSource, appliedSource]);
+
+  const runState = workflowRun.runState;
+
+  useEffect(() => {
+    if (!runState || runState.runId === secretRunId) return;
+    setSecretRunId(runState.runId);
+    setSecretValues({
+      ...buildInitialSecretValues(globalRegistry),
+      ...(runState.secrets ?? {}),
+    });
+  }, [runState, secretRunId]);
 
   const wait = findDeferredWait(runState);
   const pendingDeferredId = wait?.inputId;
   const inputPending = Boolean(pendingDeferredId);
 
   const nodes = runState?.nodes ?? {};
-  const nextWork = nextQueuedWork(workflow.queue, globalRegistry);
-  const runComplete = workflow.snapshot
-    ? workflow.snapshot.status === "completed"
+  const nextWork = nextQueuedWork(workflowRun.queue, globalRegistry);
+  const runComplete = workflowRun.snapshot
+    ? workflowRun.snapshot.status === "completed"
     : isRunComplete(runState);
+  const activeAutoAdvance = workflowRun.autoAdvance ?? pendingAutoAdvance;
+  const isPending = workflow.isPending || workflowRun.isPending;
   const canManualAdvance = Boolean(
-    runState && !runComplete && !autoAdvance && nextWork,
+    runState && !runComplete && !activeAutoAdvance && nextWork,
   );
 
   useEffect(() => {
@@ -238,45 +410,18 @@ export default function App() {
   }
 
   function clearRun() {
-    workflow.clear();
+    workflowRun.clear();
     setSelectedNodeId(null);
     setInputValues(buildInitialInputValues(globalRegistry));
     setSecretValues(buildInitialSecretValues(globalRegistry));
+    setSecretRunId(undefined);
     setSeedInputId(firstSeedInputId(globalRegistry));
     setPayloadError("");
     setPane(null);
-  }
-
-  function applyWorkflowCodeForStart() {
-    setPayloadError("");
-    if (runState) {
-      setPayloadError(
-        "Clear the current run before applying workflow changes.",
-      );
-      return;
-    }
-
-    try {
-      workflow.clear();
-      loadWorkflowSourceIntoGlobalRegistry(workflowCode);
-      setAppliedWorkflowCode(workflowCode);
-      setSelectedNodeId(null);
-      setInputValues(buildInitialInputValues(globalRegistry));
-      setSecretValues(buildInitialSecretValues(globalRegistry));
-      setSeedInputId(firstSeedInputId(globalRegistry));
-      setPane("start");
-    } catch (e) {
-      try {
-        loadWorkflowSourceIntoGlobalRegistry(appliedWorkflowCode);
-      } catch {
-        // The app imports workflow.ts on boot, so this should only fail if the starter source is invalid.
-      }
-      setPayloadError(
-        e instanceof Error
-          ? e.message
-          : "Workflow code could not be evaluated.",
-      );
-    }
+    void navigate({
+      to: "/workflows/$workflowId",
+      params: { workflowId },
+    });
   }
 
   async function runWorkflow(seedOverride?: string) {
@@ -300,12 +445,15 @@ export default function App() {
     }
 
     try {
-      await workflow.start({
-        workflowSource: workflowCode,
+      const result = await workflow.start({
         inputId: seed.id,
         payload,
-        autoAdvance,
+        autoAdvance: pendingAutoAdvance,
         secrets: secretValues,
+      });
+      void navigate({
+        to: "/workflows/$workflowId/runs/$runId",
+        params: { workflowId, runId: result.state.runId },
       });
       setPane(null);
     } catch (e) {
@@ -341,12 +489,12 @@ export default function App() {
     }
 
     try {
-      await workflow.submitInput({
-        workflowSource: workflowCode,
+      await workflowRun.submitInput({
+        workflowSource: runSource ?? manifestSource ?? "",
         state: runState,
         inputId,
         payload,
-        autoAdvance,
+        autoAdvance: activeAutoAdvance,
         secrets: secretValues,
       });
       setPane(null);
@@ -363,8 +511,8 @@ export default function App() {
     if (!runState) return;
     setPayloadError("");
     try {
-      await workflow.advance({
-        workflowSource: workflowCode,
+      await workflowRun.advance({
+        workflowSource: runSource ?? manifestSource ?? "",
         state: runState,
         secrets: secretValues,
       });
@@ -379,46 +527,20 @@ export default function App() {
   }
 
   async function changeAdvanceMode(nextAutoAdvance: boolean) {
-    if (nextAutoAdvance === autoAdvance) return;
-    setAutoAdvance(nextAutoAdvance);
+    if (nextAutoAdvance === activeAutoAdvance) return;
+    setPendingAutoAdvance(nextAutoAdvance);
     if (!runState) return;
 
     setPayloadError("");
     try {
-      await workflow.setAutoAdvance({
+      await workflowRun.setAutoAdvance({
         state: runState,
         autoAdvance: nextAutoAdvance,
       });
     } catch (e) {
-      setAutoAdvance(!nextAutoAdvance);
+      setPendingAutoAdvance(!nextAutoAdvance);
       setPayloadError(
         e instanceof Error ? e.message : "Unable to change advance mode.",
-      );
-    }
-  }
-
-  async function loadHistoricalRun(runId: string) {
-    if (workflow.isPending) return;
-    setPayloadError("");
-    try {
-      const result = await workflow.loadRun({ runId });
-      if (result.workflowSource) {
-        loadWorkflowSourceIntoGlobalRegistry(result.workflowSource);
-        setWorkflowCode(result.workflowSource);
-        setAppliedWorkflowCode(result.workflowSource);
-        setInputValues(buildInitialInputValues(globalRegistry));
-        setSecretValues({
-          ...buildInitialSecretValues(globalRegistry),
-          ...(result.state.secrets ?? {}),
-        });
-        setSeedInputId(firstSeedInputId(globalRegistry));
-      }
-      if (result.autoAdvance !== undefined) setAutoAdvance(result.autoAdvance);
-      setSelectedNodeId(null);
-      setPane(null);
-    } catch (e) {
-      setPayloadError(
-        e instanceof Error ? e.message : "Unable to load the selected run.",
       );
     }
   }
@@ -456,16 +578,24 @@ export default function App() {
     }
   }
 
-  const activeRunId = runState?.runId;
+  if (workflow.manifestNotFound) {
+    return <NotFoundScreen workflowId={workflowId} />;
+  }
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background">
       <header className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <h1 className="min-w-0 text-sm font-semibold tracking-tight md:text-base">
-          Workflow
+        <h1 className="min-w-0">
+          <button
+            type="button"
+            onClick={() => void navigate({ to: "/" })}
+            className="rounded-sm text-sm font-semibold tracking-tight outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50 md:text-base"
+          >
+            {workflow.manifest?.name ?? "Workflow"}
+          </button>
         </h1>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-          {runState && (
+          {runId && (
             <Button size="sm" variant="outline" onClick={clearRun}>
               Clear
             </Button>
@@ -493,13 +623,13 @@ export default function App() {
           >
             <button
               type="button"
-              aria-pressed={!autoAdvance}
+              aria-pressed={!activeAutoAdvance}
               title="Manual advance"
-              disabled={workflow.isPending}
+              disabled={isPending}
               onClick={() => void changeAdvanceMode(false)}
               className={cn(
                 "inline-flex h-full w-[4.9rem] items-center justify-center gap-1 px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-                !autoAdvance
+                !activeAutoAdvance
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
@@ -509,13 +639,13 @@ export default function App() {
             </button>
             <button
               type="button"
-              aria-pressed={autoAdvance}
+              aria-pressed={activeAutoAdvance}
               title="Auto advance"
-              disabled={workflow.isPending}
+              disabled={isPending}
               onClick={() => void changeAdvanceMode(true)}
               className={cn(
                 "inline-flex h-full w-[4.4rem] items-center justify-center gap-1 border-l border-border px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:border-input",
-                autoAdvance
+                activeAutoAdvance
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",
               )}
@@ -546,7 +676,7 @@ export default function App() {
                 size="sm"
                 variant="outline"
                 onClick={() => void advanceWorkflow()}
-                disabled={workflow.isPending}
+                disabled={isPending}
                 title={
                   nextWork
                     ? `Advance will run ${nextWork.type.toLowerCase()} "${nextWork.id}" from the queue.`
@@ -607,17 +737,18 @@ export default function App() {
             ) : (
               <div className="flex flex-col gap-1">
                 {workflow.runs.map((run) => {
-                  const active = run.runId === activeRunId;
-                  const nodesLeft = Math.max(
-                    0,
-                    run.nodeCount - run.terminalNodeCount,
-                  );
+                  const active = run.runId === runId;
                   return (
                     <button
                       key={run.runId}
                       type="button"
-                      onClick={() => void loadHistoricalRun(run.runId)}
-                      disabled={workflow.isPending}
+                      onClick={() =>
+                        void navigate({
+                          to: "/workflows/$workflowId/runs/$runId",
+                          params: { workflowId, runId: run.runId },
+                        })
+                      }
+                      disabled={isPending}
                       aria-current={active ? "true" : undefined}
                       className={cn(
                         "grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg border border-transparent px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50 disabled:pointer-events-none disabled:opacity-60",
@@ -647,14 +778,11 @@ export default function App() {
                             {formatRunTime(run.startedAt)}
                           </span>
                         </span>
-                        <span className="mt-1 block truncate text-xs text-muted-foreground">
-                          {nodesLeft === 0
-                            ? "complete"
-                            : `${nodesLeft} ${nodesLeft === 1 ? "node" : "nodes"} left`}
-                          {run.waitingOn.length > 0
-                            ? ` · waiting on ${run.waitingOn.join(", ")}`
-                            : ""}
-                        </span>
+                        {run.waitingOn.length > 0 && (
+                          <span className="mt-1 block truncate text-xs text-muted-foreground">
+                            Waiting on {run.waitingOn.join(", ")}
+                          </span>
+                        )}
                       </span>
                     </button>
                   );
@@ -663,11 +791,10 @@ export default function App() {
             )}
           </div>
         </aside>
-
         <div className="relative min-w-0 flex-1">
           <QueueVisualizer
             runState={runState}
-            queue={workflow.queue}
+            queue={workflowRun.queue}
             registry={globalRegistry}
             onNodeClick={(id) => setSelectedNodeId(id)}
           />
@@ -676,10 +803,9 @@ export default function App() {
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
               <div className="pointer-events-auto flex max-w-md flex-col items-center gap-5 rounded-xl border border-border bg-card/95 p-8 text-center shadow-lg backdrop-blur-sm">
                 <p className="text-muted-foreground text-sm leading-relaxed">
-                  No run yet. Review the workflow source, preview your input,
-                  then start.
+                  No run yet. Preview your input and start.
                 </p>
-                <Button type="button" onClick={() => setPane("workflow")}>
+                <Button type="button" onClick={() => setPane("start")}>
                   Start Workflow
                 </Button>
               </div>
@@ -689,10 +815,8 @@ export default function App() {
           <WorkflowCodeSheet
             open={pane === "workflow"}
             onOpenChange={(o) => setPane(o ? "workflow" : null)}
-            workflowCode={workflowCode}
-            onWorkflowCodeChange={setWorkflowCode}
-            onPreviewInput={applyWorkflowCodeForStart}
-            error={pane === "workflow" ? payloadError || undefined : undefined}
+            workflowCode={activeSource ?? ""}
+            readOnly
           />
 
           <RunStateJsonSheet
@@ -741,3 +865,5 @@ export default function App() {
     </div>
   );
 }
+
+export default App;

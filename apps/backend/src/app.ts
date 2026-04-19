@@ -3,8 +3,10 @@ import { cors } from "hono/cors";
 import {
   type AdvanceBackendRunRequest,
   BackendRunManager,
+  type CreateWorkflowRequest,
   JsonStateManager,
   type StartBackendRunRequest,
+  type StartWorkflowRunRequest,
   type SubmitBackendInputRequest,
 } from "./run-manager";
 
@@ -278,6 +280,47 @@ const RunSummarySchema = z
   })
   .openapi("RunSummary");
 
+const JsonSchemaSchema = z.record(z.any()).openapi("JsonSchema");
+
+const WorkflowInputManifestSchema = z
+  .object({
+    id: z.string(),
+    kind: z.enum(["input", "deferred_input"]),
+    description: z.string().optional(),
+    schema: JsonSchemaSchema,
+  })
+  .openapi("WorkflowInputManifest");
+
+const WorkflowManifestSchema = z
+  .object({
+    workflowId: z.string(),
+    version: z.string(),
+    codeHash: z.string().optional(),
+    name: z.string().optional(),
+    source: z.string(),
+    createdAt: z.number(),
+    inputs: z.array(WorkflowInputManifestSchema),
+  })
+  .openapi("WorkflowManifest");
+
+const CreateWorkflowRequestSchema = z
+  .object({
+    workflowSource: z.string(),
+    workflowId: z.string().optional(),
+    name: z.string().optional(),
+  })
+  .openapi("CreateWorkflowRequest");
+
+const StartWorkflowRunRequestSchema = z
+  .object({
+    inputId: z.string(),
+    payload: PayloadSchema,
+    runId: z.string().optional(),
+    autoAdvance: z.boolean().optional(),
+    secrets: z.record(z.any()).optional(),
+  })
+  .openapi("StartWorkflowRunRequest");
+
 const StartBackendRunRequestSchema = z
   .object({
     workflowSource: z.string(),
@@ -316,6 +359,12 @@ const RunIdParamSchema = z
   })
   .openapi("RunIdParam");
 
+const WorkflowIdParamSchema = z
+  .object({
+    workflowId: z.string(),
+  })
+  .openapi("WorkflowIdParam");
+
 const healthRoute = createRoute({
   method: "get",
   path: "/health",
@@ -342,6 +391,114 @@ const listRunsRoute = createRoute({
         },
       },
       description: "Known workflow runs ordered by most recently published.",
+    },
+  },
+});
+
+const createWorkflowRoute = createRoute({
+  method: "post",
+  path: "/workflows",
+  request: {
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: CreateWorkflowRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: WorkflowManifestSchema,
+        },
+      },
+      description: "Created workflow manifest with trigger input schemas.",
+    },
+    400: {
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+      description: "Invalid request or workflow source.",
+    },
+  },
+});
+
+const listWorkflowsRoute = createRoute({
+  method: "get",
+  path: "/workflows",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.array(WorkflowManifestSchema),
+        },
+      },
+      description: "Known workflows ordered by most recently created.",
+    },
+  },
+});
+
+const getWorkflowRoute = createRoute({
+  method: "get",
+  path: "/workflows/{workflowId}",
+  request: {
+    params: WorkflowIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: WorkflowManifestSchema,
+        },
+      },
+      description: "Workflow manifest.",
+    },
+    404: {
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+      description: "Unknown workflow.",
+    },
+  },
+});
+
+const startWorkflowRunRoute = createRoute({
+  method: "post",
+  path: "/workflows/{workflowId}/runs",
+  request: {
+    params: WorkflowIdParamSchema,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: StartWorkflowRunRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: RunStateDocumentSchema,
+        },
+      },
+      description: "Started workflow run snapshot.",
+    },
+    400: {
+      content: {
+        "application/json": {
+          schema: ErrorSchema,
+        },
+      },
+      description: "Invalid request or unknown workflow.",
     },
   },
 });
@@ -523,6 +680,34 @@ export function createApp() {
   );
   const routes = app
     .openapi(healthRoute, (c) => c.json({ ok: true }, 200))
+    .openapi(createWorkflowRoute, (c) => {
+      try {
+        const body = c.req.valid("json") as CreateWorkflowRequest;
+        const response = runManager.createWorkflow(body);
+        return c.json(response, 200);
+      } catch (e) {
+        const err = e as Error;
+        return c.json({ message: err.message }, 400);
+      }
+    })
+    .openapi(listWorkflowsRoute, (c) => c.json(runManager.listWorkflows(), 200))
+    .openapi(getWorkflowRoute, (c) => {
+      const { workflowId } = c.req.valid("param");
+      const manifest = runManager.getWorkflow(workflowId);
+      if (!manifest) return c.json({ message: "Unknown workflow" }, 404);
+      return c.json(manifest, 200);
+    })
+    .openapi(startWorkflowRunRoute, async (c) => {
+      try {
+        const { workflowId } = c.req.valid("param");
+        const body = c.req.valid("json") as StartWorkflowRunRequest;
+        const response = await runManager.startWorkflowRun(workflowId, body);
+        return c.json(response, 200);
+      } catch (e) {
+        const err = e as Error;
+        return c.json({ message: err.message }, 400);
+      }
+    })
     .openapi(listRunsRoute, (c) => c.json(runManager.listRuns(), 200))
     .openapi(startRunRoute, async (c) => {
       try {
@@ -584,7 +769,7 @@ export function createApp() {
 
   routes.doc("/openapi", openApiOptions);
   routes.doc("/doc", openApiOptions);
-  routes.get("/swagger", (c) => c.html(swaggerHtml("/openapi")));
+  routes.get("/swagger", (c) => c.html(swaggerHtml("openapi")));
 
   return routes;
 }

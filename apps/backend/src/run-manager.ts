@@ -1,4 +1,5 @@
-import type { QueueEvent } from "@rxwf/core";
+import { createHash } from "node:crypto";
+import type { QueueEvent, Registry } from "@rxwf/core";
 import type {
   ExecuteRequest,
   ExecuteResult,
@@ -16,7 +17,25 @@ import {
   RuntimeExecutor,
   StaticWorkflowLoader,
 } from "@rxwf/runtime";
+import {
+  buildWorkflowManifest,
+  type WorkflowManifest,
+} from "./workflow-manifest";
 import { evaluateWorkflowSource } from "./workflow-source";
+
+export type CreateWorkflowRequest = {
+  workflowSource: string;
+  workflowId?: string;
+  name?: string;
+};
+
+export type StartWorkflowRunRequest = {
+  inputId: string;
+  payload: unknown;
+  runId?: string;
+  autoAdvance?: boolean;
+  secrets?: Record<string, unknown>;
+};
 
 export type StartBackendRunRequest = {
   workflowSource: string;
@@ -62,6 +81,13 @@ export type RunSummary = {
   failedNodeCount: number;
 };
 
+type StoredWorkflow = {
+  source: string;
+  registry: Registry;
+  manifest: WorkflowManifest;
+  workflow: WorkflowRef;
+};
+
 type RunController = {
   runId: string;
   workflowSource: string;
@@ -102,11 +128,12 @@ export class JsonStateManager {
   list(): RunSummary[] {
     return [...this.documents.values()]
       .map((document) => summarizeRun(document))
-      .sort((a, b) => b.publishedAt - a.publishedAt);
+      .sort((a, b) => b.startedAt - a.startedAt);
   }
 }
 
 export class BackendRunManager {
+  private readonly workflows = new Map<string, StoredWorkflow>();
   private readonly runs = new Map<string, RunController>();
   private readonly stateManager: JsonStateManager;
 
@@ -114,13 +141,92 @@ export class BackendRunManager {
     this.stateManager = stateManager;
   }
 
-  async startRun(request: StartBackendRunRequest): Promise<RunStateDocument> {
-    const runId = request.runId ?? `run_${crypto.randomUUID()}`;
+  createWorkflow(request: CreateWorkflowRequest): WorkflowManifest {
+    const workflowId = request.workflowId ?? `workflow_${crypto.randomUUID()}`;
+    if (this.workflows.has(workflowId)) {
+      throw new Error(`Workflow already exists: ${workflowId}`);
+    }
+
     const registry = evaluateWorkflowSource(request.workflowSource);
+    const codeHash = hashWorkflowSource(request.workflowSource);
+    const workflow: WorkflowRef = {
+      workflowId,
+      version: codeHash,
+      codeHash,
+    };
+    const manifest = buildWorkflowManifest({
+      workflowId,
+      version: workflow.version,
+      codeHash,
+      name: request.name,
+      source: request.workflowSource,
+      createdAt: Date.now(),
+      registry,
+    });
+
+    this.workflows.set(workflowId, {
+      source: request.workflowSource,
+      registry,
+      manifest,
+      workflow,
+    });
+
+    return structuredClone(manifest);
+  }
+
+  listWorkflows(): WorkflowManifest[] {
+    return [...this.workflows.values()]
+      .map((workflow) => structuredClone(workflow.manifest))
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  getWorkflow(workflowId: string): WorkflowManifest | undefined {
+    const stored = this.workflows.get(workflowId);
+    return stored ? structuredClone(stored.manifest) : undefined;
+  }
+
+  async startWorkflowRun(
+    workflowId: string,
+    request: StartWorkflowRunRequest,
+  ): Promise<RunStateDocument> {
+    const stored = this.workflows.get(workflowId);
+    if (!stored) throw new Error(`Unknown workflow: ${workflowId}`);
+    return this.startRunWithWorkflow(
+      stored.workflow,
+      stored.registry,
+      stored.source,
+      request,
+    );
+  }
+
+  async startRun(request: StartBackendRunRequest): Promise<RunStateDocument> {
+    const registry = evaluateWorkflowSource(request.workflowSource);
+    const runId = request.runId ?? `run_${crypto.randomUUID()}`;
     const workflow: WorkflowRef = {
       workflowId: "backend-workflow",
       version: runId,
     };
+    return this.startRunWithWorkflow(
+      workflow,
+      registry,
+      request.workflowSource,
+      {
+        inputId: request.inputId,
+        payload: request.payload,
+        runId,
+        autoAdvance: request.autoAdvance,
+        secrets: request.secrets,
+      },
+    );
+  }
+
+  async startRunWithWorkflow(
+    workflow: WorkflowRef,
+    registry: Registry,
+    workflowSource: string,
+    request: StartWorkflowRunRequest,
+  ): Promise<RunStateDocument> {
+    const runId = request.runId ?? `run_${crypto.randomUUID()}`;
     const loader = new StaticWorkflowLoader([{ ref: workflow, registry }]);
     const queue = new MemoryWorkQueue();
     const events = new MemoryEventSink();
@@ -138,7 +244,7 @@ export class BackendRunManager {
     });
     const controller: RunController = {
       runId,
-      workflowSource: request.workflowSource,
+      workflowSource,
       workflow,
       scheduler,
       queue,
@@ -284,6 +390,10 @@ export class BackendRunManager {
       controller.autoAdvance,
     );
   }
+}
+
+function hashWorkflowSource(source: string): string {
+  return createHash("sha256").update(source).digest("hex").slice(0, 16);
 }
 
 type DelayedExecutorOptions = {
