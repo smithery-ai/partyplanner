@@ -170,6 +170,14 @@ function runStatusClass(status: RunSummary["status"]): string {
   }
 }
 
+export function IndexApp() {
+  return <App />;
+}
+
+export function RunApp() {
+  return <App />;
+}
+
 export default function App() {
   const params = useParams({ strict: false }) as { runId?: string };
   const navigate = useNavigate();
@@ -190,10 +198,9 @@ export default function App() {
 
   const workflow = useWorkflow();
   const runState = workflow.runState;
-  const { isPending, loadRun } = workflow;
+  const { clear: clearWorkflow, isPending, loadRun } = workflow;
   const routeRunId =
     typeof params.runId === "string" ? params.runId : undefined;
-
   const wait = findDeferredWait(runState);
   const pendingDeferredId = wait?.inputId;
   const inputPending = Boolean(pendingDeferredId);
@@ -229,13 +236,17 @@ export default function App() {
     setInputValues((prev) => ({ ...prev, [id]: value }));
   }
 
-  function clearRun() {
-    workflow.clear();
+  const resetRunView = useCallback(() => {
+    clearWorkflow();
     setSelectedNodeId(null);
     setInputValues(buildInitialInputValues(globalRegistry));
     setSeedInputId(firstSeedInputId(globalRegistry));
     setPayloadError("");
     setPane(null);
+  }, [clearWorkflow]);
+
+  function clearRun() {
+    resetRunView();
     void navigate({ to: "/" });
   }
 
@@ -249,7 +260,7 @@ export default function App() {
     }
 
     try {
-      workflow.clear();
+      clearWorkflow();
       loadWorkflowSourceIntoGlobalRegistry(workflowCode);
       setAppliedWorkflowCode(workflowCode);
       setSelectedNodeId(null);
