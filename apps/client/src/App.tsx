@@ -46,6 +46,14 @@ function buildInitialInputValues(registry: Registry): Record<string, unknown> {
   return m;
 }
 
+function buildInitialSecretValues(registry: Registry): Record<string, unknown> {
+  const m: Record<string, unknown> = {};
+  for (const s of registry.allSecrets()) {
+    m[s.id] = typeof s.defaultValue === "string" ? s.defaultValue : "";
+  }
+  return m;
+}
+
 function firstSeedInputId(registry: Registry): string {
   const im = registry.allInputs().filter((i) => i.kind === "input");
   return im[0]?.id ?? "";
@@ -176,6 +184,9 @@ export default function App() {
   const [inputValues, setInputValues] = useState<Record<string, unknown>>(() =>
     buildInitialInputValues(globalRegistry),
   );
+  const [secretValues, setSecretValues] = useState<Record<string, unknown>>(
+    () => buildInitialSecretValues(globalRegistry),
+  );
   const [seedInputId, setSeedInputId] = useState(() =>
     firstSeedInputId(globalRegistry),
   );
@@ -222,10 +233,15 @@ export default function App() {
     setInputValues((prev) => ({ ...prev, [id]: value }));
   }
 
+  function setSecretValue(id: string, value: unknown) {
+    setSecretValues((prev) => ({ ...prev, [id]: value }));
+  }
+
   function clearRun() {
     workflow.clear();
     setSelectedNodeId(null);
     setInputValues(buildInitialInputValues(globalRegistry));
+    setSecretValues(buildInitialSecretValues(globalRegistry));
     setSeedInputId(firstSeedInputId(globalRegistry));
     setPayloadError("");
     setPane(null);
@@ -246,6 +262,7 @@ export default function App() {
       setAppliedWorkflowCode(workflowCode);
       setSelectedNodeId(null);
       setInputValues(buildInitialInputValues(globalRegistry));
+      setSecretValues(buildInitialSecretValues(globalRegistry));
       setSeedInputId(firstSeedInputId(globalRegistry));
       setPane("start");
     } catch (e) {
@@ -288,6 +305,7 @@ export default function App() {
         inputId: seed.id,
         payload,
         autoAdvance,
+        secrets: secretValues,
       });
       setPane(null);
     } catch (e) {
@@ -329,6 +347,7 @@ export default function App() {
         inputId,
         payload,
         autoAdvance,
+        secrets: secretValues,
       });
       setPane(null);
     } catch (e) {
@@ -347,6 +366,7 @@ export default function App() {
       await workflow.advance({
         workflowSource: workflowCode,
         state: runState,
+        secrets: secretValues,
       });
       setPane(null);
     } catch (e) {
@@ -387,6 +407,10 @@ export default function App() {
         setWorkflowCode(result.workflowSource);
         setAppliedWorkflowCode(result.workflowSource);
         setInputValues(buildInitialInputValues(globalRegistry));
+        setSecretValues({
+          ...buildInitialSecretValues(globalRegistry),
+          ...(result.state.secrets ?? {}),
+        });
         setSeedInputId(firstSeedInputId(globalRegistry));
       }
       if (result.autoAdvance !== undefined) setAutoAdvance(result.autoAdvance);
@@ -683,6 +707,8 @@ export default function App() {
             registry={globalRegistry}
             inputValues={inputValues}
             onInputValuesChange={setInputValue}
+            secretValues={secretValues}
+            onSecretValuesChange={setSecretValue}
             seedInputId={seedInputId}
             onSeedInputIdChange={setSeedInputId}
             canSubmitSeed={!runState}

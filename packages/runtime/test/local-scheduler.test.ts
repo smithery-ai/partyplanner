@@ -1,4 +1,4 @@
-import { atom, globalRegistry, input } from "@rxwf/core";
+import { atom, globalRegistry, input, secret } from "@rxwf/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -327,5 +327,49 @@ describe("LocalScheduler", () => {
       nodeId: "gated",
       reason: "approval denied",
     });
+  });
+
+  it("applies client-provided secrets to downstream steps and redacts graph values", async () => {
+    const request = input("request", z.object({ prompt: z.string() }));
+    const apiKey = secret.named("AI_GATEWAY_API_KEY", "sk-default");
+
+    atom(
+      (get) => ({
+        prompt: get(request).prompt,
+        authenticated: get(apiKey) === "sk-client",
+      }),
+      { name: "callGateway" },
+    );
+
+    const { scheduler } = makeScheduler();
+    await scheduler.startRun({
+      workflow,
+      runId: "run-secret",
+      secrets: { AI_GATEWAY_API_KEY: "sk-client" },
+      input: {
+        inputId: "request",
+        payload: { prompt: "hello" },
+        eventId: "evt-request",
+      },
+    });
+
+    await scheduler.drain();
+    const snapshot = await scheduler.snapshot("run-secret");
+    const secretNode = snapshot.nodes.find(
+      (node) => node.id === "AI_GATEWAY_API_KEY",
+    );
+
+    expect(
+      snapshot.nodes.find((node) => node.id === "callGateway"),
+    ).toMatchObject({
+      status: "resolved",
+      value: { prompt: "hello", authenticated: true },
+    });
+    expect(secretNode).toMatchObject({
+      kind: "secret",
+      status: "resolved",
+      value: "[secret]",
+    });
+    expect(JSON.stringify(snapshot.nodes)).not.toContain("sk-client");
   });
 });

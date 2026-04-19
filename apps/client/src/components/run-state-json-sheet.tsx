@@ -18,7 +18,9 @@ export function RunStateJsonSheet({
 
   if (!open) return null;
 
-  const jsonText = runState ? JSON.stringify(runState, null, 2) : "";
+  const jsonText = runState
+    ? JSON.stringify(redactRunStateSecrets(runState), null, 2)
+    : "";
 
   async function copy() {
     if (!jsonText) return;
@@ -105,4 +107,16 @@ export function RunStateJsonSheet({
       </aside>
     </>
   );
+}
+
+function redactRunStateSecrets(runState: RunState): RunState {
+  return {
+    ...runState,
+    secrets: Object.fromEntries(
+      Object.entries(runState.secrets ?? {}).map(([id, value]) => [
+        id,
+        value === undefined || value === null ? value : "[secret]",
+      ]),
+    ),
+  };
 }

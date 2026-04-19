@@ -84,6 +84,7 @@ function useStartRunMutation() {
         inputId: args.inputId,
         payload: args.payload as JsonPayload,
         autoAdvance: args.autoAdvance,
+        secrets: args.secrets as Record<string, JsonPayload> | undefined,
       };
       const response = await client.runs.$post({ json: body });
       return documentResult(await readJsonResponse<RunStateDocument>(response));
@@ -101,6 +102,7 @@ function useSubmitInputMutation() {
         inputId: args.inputId,
         payload: args.payload as JsonPayload,
         autoAdvance: args.autoAdvance,
+        secrets: args.secrets as Record<string, JsonPayload> | undefined,
       };
       const response = await client.runs[":runId"].inputs.$post({
         param: { runId: args.state.runId },
@@ -118,7 +120,9 @@ function useAdvanceRunMutation() {
 
       const response = await client.runs[":runId"].advance.$post({
         param: { runId: args.state.runId },
-        json: {},
+        json: {
+          secrets: args.secrets as Record<string, JsonPayload> | undefined,
+        },
       });
       return documentResult(await readJsonResponse<RunStateDocument>(response));
     },

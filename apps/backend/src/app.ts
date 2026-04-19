@@ -1,6 +1,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import {
+  type AdvanceBackendRunRequest,
   BackendRunManager,
   JsonStateManager,
   type StartBackendRunRequest,
@@ -42,6 +43,7 @@ const RunStateSchema = z
     trigger: z.string().optional(),
     payload: z.any().optional(),
     inputs: z.record(z.any()),
+    secrets: z.record(z.any()),
     nodes: z.record(NodeRecordSchema),
     waiters: z.record(z.array(z.string())),
     processedEventIds: z.record(z.literal(true)),
@@ -127,7 +129,7 @@ const ExecutionStatusSchema = z.enum([
 const RuntimeGraphNodeSchema = z
   .object({
     id: z.string(),
-    kind: z.enum(["input", "deferred_input", "atom"]),
+    kind: z.enum(["input", "deferred_input", "secret", "atom"]),
     description: z.string().optional(),
     status: ExecutionStatusSchema,
     value: z.any().optional(),
@@ -283,6 +285,7 @@ const StartBackendRunRequestSchema = z
     payload: PayloadSchema,
     runId: z.string().optional(),
     autoAdvance: z.boolean().optional(),
+    secrets: z.record(z.any()).optional(),
   })
   .openapi("StartBackendRunRequest");
 
@@ -291,8 +294,15 @@ const SubmitBackendInputRequestSchema = z
     inputId: z.string(),
     payload: PayloadSchema,
     autoAdvance: z.boolean().optional(),
+    secrets: z.record(z.any()).optional(),
   })
   .openapi("SubmitBackendInputRequest");
+
+const AdvanceBackendRunRequestSchema = z
+  .object({
+    secrets: z.record(z.any()).optional(),
+  })
+  .openapi("AdvanceBackendRunRequest");
 
 const SetAutoAdvanceRequestSchema = z
   .object({
@@ -305,8 +315,6 @@ const RunIdParamSchema = z
     runId: z.string(),
   })
   .openapi("RunIdParam");
-
-const EmptyRequestSchema = z.object({}).openapi("EmptyRequest");
 
 const healthRoute = createRoute({
   method: "get",
@@ -414,7 +422,7 @@ const advanceRunRoute = createRoute({
       required: false,
       content: {
         "application/json": {
-          schema: EmptyRequestSchema,
+          schema: AdvanceBackendRunRequestSchema,
         },
       },
     },
@@ -540,7 +548,8 @@ export function createApp() {
     .openapi(advanceRunRoute, async (c) => {
       try {
         const { runId } = c.req.valid("param");
-        const response = await runManager.advanceRun(runId);
+        const body = (c.req.valid("json") ?? {}) as AdvanceBackendRunRequest;
+        const response = await runManager.advanceRun(runId, body);
         return c.json(response, 200);
       } catch (e) {
         const err = e as Error;

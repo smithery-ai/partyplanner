@@ -38,6 +38,7 @@ export type RunState = {
   trigger?: string;
   payload?: unknown;
   inputs: Record<string, unknown>;
+  secrets: Record<string, unknown>;
   nodes: Record<string, NodeRecord>;
   waiters: Record<string, string[]>;
   processedEventIds: Record<string, true>;
