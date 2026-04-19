@@ -6,7 +6,6 @@ import { useCallback, useMemo, useState } from "react";
 import type {
   AdvanceWorkflowArgs,
   SetAutoAdvanceWorkflowArgs,
-  StartWorkflowArgs,
   SubmitWorkflowInputArgs,
   WorkflowRuntimeResult,
 } from "@/lib/workflow-runtimes";
@@ -15,6 +14,7 @@ import type {
   RunStateDocument,
   RunSummary,
   SetAutoAdvanceRequest,
+  WorkflowManifest,
 } from "../../../backend/src/rpc";
 
 type JsonPayload =
@@ -25,23 +25,51 @@ type JsonPayload =
   | JsonPayload[]
   | { [key: string]: JsonPayload };
 
+export type StartRunArgs = {
+  inputId: string;
+  payload: unknown;
+  autoAdvance?: boolean;
+};
+
+export type CreateWorkflowArgs = {
+  workflowSource: string;
+  workflowId?: string;
+  name?: string;
+};
+
+export type WorkflowsState = {
+  workflows: WorkflowManifest[];
+  isPending: boolean;
+  error: Error | undefined;
+  refresh(): Promise<void>;
+  createWorkflow(args: CreateWorkflowArgs): Promise<WorkflowManifest>;
+};
+
 export type WorkflowState = {
+  manifest: WorkflowManifest | undefined;
+  manifestNotFound: boolean;
+  runs: RunSummary[];
+  isPending: boolean;
+  error: Error | undefined;
+  start(args: StartRunArgs): Promise<WorkflowRuntimeResult>;
+  refreshRuns(): Promise<void>;
+};
+
+export type WorkflowRunState = {
   runState: RunState | undefined;
   snapshot: RunSnapshot | undefined;
   queue: QueueSnapshot | undefined;
   events: RunEvent[];
-  runs: RunSummary[];
   workflowSource: string | undefined;
+  workflowId: string | undefined;
   autoAdvance: boolean | undefined;
   isPending: boolean;
   error: Error | undefined;
-  start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult>;
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>;
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>;
   setAutoAdvance(
     args: SetAutoAdvanceWorkflowArgs,
   ): Promise<WorkflowRuntimeResult>;
-  refreshRuns(): Promise<void>;
   clear(): void;
 };
 
@@ -49,9 +77,36 @@ const backendUrl = import.meta.env.VITE_BACKEND_URL ?? "/api";
 const client = hc<AppType>(backendUrl);
 
 const queryKeys = {
+  workflows: ["workflows"] as const,
+  workflow: (workflowId: string) => ["workflow", workflowId] as const,
   runs: ["runs"] as const,
   runState: (runId: string) => ["run-state", runId] as const,
 };
+
+function useWorkflowsQuery() {
+  return useQuery({
+    queryKey: queryKeys.workflows,
+    queryFn: async () =>
+      readJsonResponse<WorkflowManifest[]>(await client.workflows.$get({})),
+  });
+}
+
+function useWorkflowManifestQuery(workflowId: string | undefined) {
+  return useQuery({
+    queryKey: workflowId
+      ? queryKeys.workflow(workflowId)
+      : ["workflow", "none"],
+    enabled: Boolean(workflowId),
+    retry: false,
+    queryFn: async () => {
+      if (!workflowId) throw new Error("workflowId required.");
+      const response = await client.workflows[":workflowId"].$get({
+        param: { workflowId },
+      });
+      return readJsonResponse<WorkflowManifest>(response);
+    },
+  });
+}
 
 function useRunsQuery() {
   return useQuery({
@@ -77,16 +132,19 @@ function useRunStateQuery(runId: string | undefined) {
   });
 }
 
-function useStartRunMutation() {
+function useStartWorkflowRunMutation(workflowId: string | undefined) {
   return useMutation({
-    mutationFn: async (args: StartWorkflowArgs) => {
+    mutationFn: async (args: StartRunArgs) => {
+      if (!workflowId) throw new Error("workflowId required to start a run.");
       const body = {
-        workflowSource: args.workflowSource,
         inputId: args.inputId,
         payload: args.payload as JsonPayload,
         autoAdvance: args.autoAdvance,
       };
-      const response = await client.runs.$post({ json: body });
+      const response = await client.workflows[":workflowId"].runs.$post({
+        param: { workflowId },
+        json: body,
+      });
       return documentResult(await readJsonResponse<RunStateDocument>(response));
     },
   });
@@ -144,26 +202,108 @@ function useSetAutoAdvanceMutation() {
   });
 }
 
-export function useWorkflow(activeRunId?: string): WorkflowState {
-  const queryClient = useQueryClient();
-  const runsQuery = useRunsQuery();
-  const startMutation = useStartRunMutation();
-  const submitInputMutation = useSubmitInputMutation();
-  const advanceMutation = useAdvanceRunMutation();
-  const setAutoAdvanceMutation = useSetAutoAdvanceMutation();
+function useCreateWorkflowMutation() {
+  return useMutation({
+    mutationFn: async (args: CreateWorkflowArgs) => {
+      const response = await client.workflows.$post({
+        json: {
+          workflowSource: args.workflowSource,
+          workflowId: args.workflowId,
+          name: args.name,
+        },
+      });
+      return readJsonResponse<WorkflowManifest>(response);
+    },
+  });
+}
 
+export function useWorkflows(): WorkflowsState {
+  const queryClient = useQueryClient();
+  const workflowsQuery = useWorkflowsQuery();
+  const createMutation = useCreateWorkflowMutation();
   const [error, setError] = useState<Error | undefined>();
 
-  const stateQuery = useRunStateQuery(activeRunId);
+  const refresh = useCallback(async () => {
+    try {
+      const result = await workflowsQuery.refetch();
+      if (result.error) {
+        setError(
+          result.error instanceof Error
+            ? result.error
+            : new Error(String(result.error)),
+        );
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error(String(e)));
+    }
+  }, [workflowsQuery]);
 
-  const cacheResult = useCallback(
-    (result: WorkflowRuntimeResult) => {
-      queryClient.setQueryData(queryKeys.runState(result.state.runId), result);
-      queryClient.setQueryData(queryKeys.runs, (runs: RunSummary[] = []) =>
-        mergeRunSummary(runs, summarizeRunResult(result)),
-      );
+  const createWorkflow = useCallback(
+    async (args: CreateWorkflowArgs) => {
+      setError(undefined);
+      try {
+        const manifest = await createMutation.mutateAsync(args);
+        queryClient.setQueryData(
+          queryKeys.workflow(manifest.workflowId),
+          manifest,
+        );
+        await queryClient.invalidateQueries({ queryKey: queryKeys.workflows });
+        return manifest;
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        setError(err);
+        throw err;
+      }
     },
-    [queryClient],
+    [createMutation, queryClient],
+  );
+
+  return {
+    workflows: workflowsQuery.data ?? [],
+    isPending: workflowsQuery.isPending || createMutation.isPending,
+    error: error ?? normalizeError(workflowsQuery.error),
+    refresh,
+    createWorkflow,
+  };
+}
+
+export function useWorkflow(workflowId: string | undefined): WorkflowState {
+  const queryClient = useQueryClient();
+  const manifestQuery = useWorkflowManifestQuery(workflowId);
+  const runsQuery = useRunsQuery();
+  const startMutation = useStartWorkflowRunMutation(workflowId);
+  const [error, setError] = useState<Error | undefined>();
+
+  const runs = useMemo(() => {
+    if (!workflowId) return [];
+    return (runsQuery.data ?? []).filter(
+      (run) => run.workflowId === workflowId,
+    );
+  }, [runsQuery.data, workflowId]);
+
+  const start = useCallback(
+    async (args: StartRunArgs) => {
+      setError(undefined);
+      try {
+        const result = await startMutation.mutateAsync(args);
+        queryClient.setQueryData(
+          queryKeys.runState(result.state.runId),
+          result,
+        );
+        queryClient.setQueryData(
+          queryKeys.runs,
+          (existing: RunSummary[] = []) =>
+            mergeRunSummary(existing, summarizeRunResult(result)),
+        );
+        await queryClient.invalidateQueries({ queryKey: queryKeys.runs });
+        return result;
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        setError(err);
+        throw err;
+      }
+    },
+    [queryClient, startMutation],
   );
 
   const refreshRuns = useCallback(async () => {
@@ -180,6 +320,47 @@ export function useWorkflow(activeRunId?: string): WorkflowState {
       setError(e instanceof Error ? e : new Error(String(e)));
     }
   }, [runsQuery]);
+
+  const isPending =
+    (Boolean(workflowId) && manifestQuery.isPending) || startMutation.isPending;
+
+  const activeError =
+    error ?? normalizeError(manifestQuery.error ?? runsQuery.error);
+
+  const manifestNotFound =
+    Boolean(workflowId) &&
+    !manifestQuery.isPending &&
+    !manifestQuery.data &&
+    Boolean(manifestQuery.error);
+
+  return {
+    manifest: manifestQuery.data,
+    manifestNotFound,
+    runs,
+    isPending,
+    error: activeError,
+    start,
+    refreshRuns,
+  };
+}
+
+export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
+  const queryClient = useQueryClient();
+  const stateQuery = useRunStateQuery(runId);
+  const submitInputMutation = useSubmitInputMutation();
+  const advanceMutation = useAdvanceRunMutation();
+  const setAutoAdvanceMutation = useSetAutoAdvanceMutation();
+  const [error, setError] = useState<Error | undefined>();
+
+  const cacheResult = useCallback(
+    (result: WorkflowRuntimeResult) => {
+      queryClient.setQueryData(queryKeys.runState(result.state.runId), result);
+      queryClient.setQueryData(queryKeys.runs, (existing: RunSummary[] = []) =>
+        mergeRunSummary(existing, summarizeRunResult(result)),
+      );
+    },
+    [queryClient],
+  );
 
   const runMutation = useCallback(
     async <TArgs>(
@@ -201,11 +382,6 @@ export function useWorkflow(activeRunId?: string): WorkflowState {
       }
     },
     [cacheResult, queryClient],
-  );
-
-  const start = useCallback(
-    (args: StartWorkflowArgs) => runMutation(startMutation, args),
-    [runMutation, startMutation],
   );
 
   const submitInput = useCallback(
@@ -230,44 +406,34 @@ export function useWorkflow(activeRunId?: string): WorkflowState {
 
   const isPending = useMemo(
     () =>
-      startMutation.isPending ||
       submitInputMutation.isPending ||
       advanceMutation.isPending ||
       setAutoAdvanceMutation.isPending ||
-      (Boolean(activeRunId) && stateQuery.isPending),
+      (Boolean(runId) && stateQuery.isPending),
     [
       advanceMutation.isPending,
       setAutoAdvanceMutation.isPending,
       stateQuery.isPending,
-      activeRunId,
-      startMutation.isPending,
+      runId,
       submitInputMutation.isPending,
     ],
   );
 
-  const queryError = runsQuery.error ?? stateQuery.error;
-  const activeError = error ?? normalizeError(queryError);
+  const activeError = error ?? normalizeError(stateQuery.error);
 
   return {
     runState: stateQuery.data?.state,
     snapshot: stateQuery.data?.snapshot,
     queue: stateQuery.data?.queue,
     events: stateQuery.data?.events ?? [],
-    runs: stateQuery.data
-      ? mergeRunSummary(
-          runsQuery.data ?? [],
-          summarizeRunResult(stateQuery.data),
-        )
-      : (runsQuery.data ?? []),
     workflowSource: stateQuery.data?.workflowSource,
+    workflowId: stateQuery.data?.snapshot?.workflow.workflowId,
     autoAdvance: stateQuery.data?.autoAdvance,
     isPending,
     error: activeError,
-    start,
     submitInput,
     advance,
     setAutoAdvance,
-    refreshRuns,
     clear,
   };
 }

@@ -1,4 +1,18 @@
 import type { RunEvent, RunSnapshot } from "@rxwf/runtime";
+import type { WorkflowManifest } from "./workflow-manifest";
+
+export type CreateWorkflowRequest = {
+  workflowSource: string;
+  workflowId?: string;
+  name?: string;
+};
+
+export type StartWorkflowRunRequest = {
+  inputId: string;
+  payload: unknown;
+  runId?: string;
+  autoAdvance?: boolean;
+};
 
 export type StartBackendRunRequest = {
   workflowSource: string;
@@ -39,3 +53,4 @@ export type RunSummary = {
 };
 
 export type { AppType } from "./app";
+export type { WorkflowManifest };

@@ -4,7 +4,7 @@ import {
   createRouter,
   Outlet,
 } from "@tanstack/react-router";
-import { IndexApp, RunApp } from "./App";
+import { IndexApp, RunApp, WorkflowApp } from "./App";
 
 const rootRoute = createRootRoute({
   component: Outlet,
@@ -16,13 +16,23 @@ const indexRoute = createRoute({
   component: IndexApp,
 });
 
-const runRoute = createRoute({
+const workflowRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/runs/$runId",
+  path: "/workflows/$workflowId",
+  component: WorkflowApp,
+});
+
+const workflowRunRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workflows/$workflowId/runs/$runId",
   component: RunApp,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, runRoute]);
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  workflowRoute,
+  workflowRunRoute,
+]);
 
 export const router = createRouter({ routeTree });
 
