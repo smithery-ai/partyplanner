@@ -52,5 +52,4 @@ export type RunSummary = {
   failedNodeCount: number;
 };
 
-export type { AppType } from "./app";
 export type { WorkflowManifest };
