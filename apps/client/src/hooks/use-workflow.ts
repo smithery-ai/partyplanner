@@ -56,7 +56,6 @@ const queryKeys = {
 function useRunsQuery() {
   return useQuery({
     queryKey: queryKeys.runs,
-    refetchInterval: 500,
     queryFn: async () =>
       readJsonResponse<RunSummary[]>(await client.runs.$get({})),
   });
@@ -159,6 +158,9 @@ export function useWorkflow(activeRunId?: string): WorkflowState {
   const cacheResult = useCallback(
     (result: WorkflowRuntimeResult) => {
       queryClient.setQueryData(queryKeys.runState(result.state.runId), result);
+      queryClient.setQueryData(queryKeys.runs, (runs: RunSummary[] = []) =>
+        mergeRunSummary(runs, summarizeRunResult(result)),
+      );
     },
     [queryClient],
   );
@@ -250,7 +252,12 @@ export function useWorkflow(activeRunId?: string): WorkflowState {
     snapshot: stateQuery.data?.snapshot,
     queue: stateQuery.data?.queue,
     events: stateQuery.data?.events ?? [],
-    runs: runsQuery.data ?? [],
+    runs: stateQuery.data
+      ? mergeRunSummary(
+          runsQuery.data ?? [],
+          summarizeRunResult(stateQuery.data),
+        )
+      : (runsQuery.data ?? []),
     workflowSource: stateQuery.data?.workflowSource,
     autoAdvance: stateQuery.data?.autoAdvance,
     isPending,
@@ -267,6 +274,63 @@ export function useWorkflow(activeRunId?: string): WorkflowState {
 function normalizeError(error: unknown): Error | undefined {
   if (!error) return undefined;
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function mergeRunSummary(
+  runs: RunSummary[],
+  summary: RunSummary,
+): RunSummary[] {
+  const existingIndex = runs.findIndex((run) => run.runId === summary.runId);
+  if (existingIndex === -1) {
+    return [summary, ...runs];
+  }
+
+  return runs.map((run, index) => {
+    if (index !== existingIndex) return run;
+    return { ...run, ...summary, publishedAt: run.publishedAt };
+  });
+}
+
+function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
+  const snapshot = result.snapshot;
+  const waitingOn = new Set<string>();
+  let terminalNodeCount = 0;
+  let failedNodeCount = 0;
+
+  for (const node of snapshot?.nodes ?? []) {
+    if (snapshot && isTerminalSummaryNode(snapshot, node))
+      terminalNodeCount += 1;
+    if (node.status === "errored") failedNodeCount += 1;
+    if (node.status === "waiting" && node.waitingOn)
+      waitingOn.add(node.waitingOn);
+  }
+
+  return {
+    runId: result.state.runId,
+    status: snapshot?.status ?? "created",
+    startedAt: result.state.startedAt,
+    publishedAt: Date.now(),
+    workflowId: snapshot?.workflow.workflowId ?? "",
+    version: snapshot?.version ?? 0,
+    nodeCount: snapshot?.nodes.length ?? Object.keys(result.state.nodes).length,
+    terminalNodeCount,
+    waitingOn: [...waitingOn],
+    failedNodeCount,
+  };
+}
+
+function isTerminalSummaryNode(
+  snapshot: RunSnapshot,
+  node: RunSnapshot["nodes"][number],
+): boolean {
+  if (
+    node.status === "resolved" ||
+    node.status === "skipped" ||
+    node.status === "errored"
+  ) {
+    return true;
+  }
+  return snapshot.status === "completed" && node.kind === "deferred_input";
 }
 
 async function readJsonResponse<TResponse>(
