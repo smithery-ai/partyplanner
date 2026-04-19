@@ -112,14 +112,15 @@ function statusNodeClasses(visual: StatusVisual): {
   switch (visual) {
     case "queued":
       return {
-        card: "border-indigo-600/45 ring-1 ring-indigo-600/15 dark:border-indigo-500/40",
+        card: "border-muted-foreground/25 bg-muted/20 dark:bg-muted/15",
         header:
-          "border-b border-indigo-600/25 bg-indigo-600/12 dark:bg-indigo-500/14 dark:border-indigo-500/25",
+          "border-b border-muted-foreground/15 bg-muted/35 dark:bg-muted/25",
       };
     case "running":
       return {
-        card: "border-primary/55 ring-1 ring-primary/20",
-        header: "border-b border-primary/30 bg-primary/12 dark:bg-primary/18",
+        card: "border-indigo-600/45 ring-1 ring-indigo-600/15 dark:border-indigo-500/40",
+        header:
+          "border-b border-indigo-600/25 bg-indigo-600/12 dark:bg-indigo-500/14 dark:border-indigo-500/25",
       };
     case "resolved":
       return {
@@ -147,9 +148,8 @@ function statusNodeClasses(visual: StatusVisual): {
       };
     case "skipped":
       return {
-        card: "border-muted-foreground/35 ring-1 ring-muted-foreground/10",
-        header:
-          "border-b border-muted-foreground/20 bg-muted/70 dark:bg-muted/50",
+        card: "border-primary/55 ring-1 ring-primary/20",
+        header: "border-b border-primary/30 bg-primary/12 dark:bg-primary/18",
       };
     case "blocked":
       return {
@@ -173,15 +173,15 @@ function statusNodeClasses(visual: StatusVisual): {
 }
 
 const STATUS_SWATCH: Record<StatusVisual, string> = {
-  queued: "bg-indigo-600/45 ring-1 ring-indigo-600/25 dark:bg-indigo-500/35",
-  running: "bg-primary/45 ring-1 ring-primary/25",
+  queued: "bg-muted/60 ring-1 ring-muted-foreground/15",
+  running: "bg-indigo-600/45 ring-1 ring-indigo-600/25 dark:bg-indigo-500/35",
   resolved:
     "bg-emerald-600/45 ring-1 ring-emerald-600/25 dark:bg-emerald-500/35",
   waiting: "bg-sky-600/45 ring-1 ring-sky-600/25 dark:bg-sky-500/35",
   needs_input: "bg-amber-600/45 ring-1 ring-amber-600/25 dark:bg-amber-500/35",
   pending_deferred:
     "bg-yellow-400/50 ring-1 ring-yellow-500/30 dark:bg-yellow-400/35",
-  skipped: "bg-muted-foreground/25 ring-1 ring-muted-foreground/15",
+  skipped: "bg-primary/45 ring-1 ring-primary/25",
   blocked: "bg-orange-600/45 ring-1 ring-orange-600/25 dark:bg-orange-500/35",
   errored: "bg-destructive/40 ring-1 ring-destructive/25",
   not_reached: "bg-muted/60 ring-1 ring-muted-foreground/20",

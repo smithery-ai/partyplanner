@@ -727,17 +727,15 @@ function App({ workflowId, runId }: { workflowId: string; runId?: string }) {
           {canManualAdvance && (
             <>
               <div
-                className="inline-flex h-7 max-w-[16rem] items-center gap-1.5 rounded-lg border border-indigo-600/35 bg-indigo-600/10 px-2.5 text-[0.8rem] font-medium text-indigo-950 dark:border-indigo-500/35 dark:bg-indigo-500/12 dark:text-indigo-50"
+                className="inline-flex h-7 max-w-[16rem] items-center gap-1.5 rounded-lg border border-muted-foreground/20 bg-muted/45 px-2.5 text-[0.8rem] font-medium text-foreground dark:bg-muted/35"
                 title={
                   nextWork?.description
                     ? `${nextWork.type} ${nextWork.id}: ${nextWork.description}`
                     : `${nextWork?.type} ${nextWork?.id}`
                 }
               >
-                <span className="shrink-0 text-muted-foreground dark:text-indigo-100/75">
-                  Next
-                </span>
-                <span className="shrink-0 text-indigo-900/75 dark:text-indigo-100/80">
+                <span className="shrink-0 text-muted-foreground">Next</span>
+                <span className="shrink-0 text-muted-foreground">
                   {nextWork?.type}
                 </span>
                 <span className="min-w-0 truncate">{nextWork?.id}</span>
