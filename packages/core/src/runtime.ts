@@ -165,7 +165,11 @@ class RunSession {
     ) => this.requestIntervention(def.id, key, schema, opts);
 
     try {
-      const value = await def.fn(get, requestIntervention);
+      const value = await def.fn(get, requestIntervention, {
+        runId: this.state.runId,
+        stepId: def.id,
+        interventionId: (key) => interventionId(def.id, key),
+      });
       const duration_ms = Date.now() - start;
       this.state.nodes[def.id] = {
         status: "resolved",

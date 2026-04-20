@@ -85,4 +85,38 @@ describe("requestIntervention", () => {
 
     assertResolved(run2.trace, "deploy", "approved:Ada");
   });
+
+  it("passes run context to intervention-producing atoms", async () => {
+    const seed = input("contextSeed", z.object({ name: z.string() }));
+
+    atom(
+      (get, requestIntervention, context) => {
+        get(seed);
+        requestIntervention("approval", z.object({ approved: z.boolean() }), {
+          action: {
+            type: "open_url",
+            url: `https://example.com/oauth?run=${context.runId}&intervention=${context.interventionId("approval")}`,
+          },
+        });
+        return "done";
+      },
+      { name: "contextDeploy" },
+    );
+
+    const runtime = createRuntime();
+    const run = await runToIdle(runtime, {
+      kind: "input",
+      eventId: "evt-context",
+      runId: "run-context",
+      inputId: "contextSeed",
+      payload: { name: "Ada" },
+    });
+
+    expect(
+      run.state.interventions["contextDeploy:approval"]?.action,
+    ).toMatchObject({
+      type: "open_url",
+      url: "https://example.com/oauth?run=run-context&intervention=contextDeploy:approval",
+    });
+  });
 });
