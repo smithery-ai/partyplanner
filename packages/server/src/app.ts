@@ -19,9 +19,12 @@ const StartWorkflowRunRequestSchema = z.object({
     .array(z.object({ inputId: z.string(), payload: z.any() }))
     .optional(),
   secretBindings: z
-    .record(z.union([z.string(), z.object({ vaultEntryId: z.string() })]))
+    .record(
+      z.string(),
+      z.union([z.string(), z.object({ vaultEntryId: z.string() })]),
+    )
     .optional(),
-  secretValues: z.record(z.string()).optional(),
+  secretValues: z.record(z.string(), z.string()).optional(),
   runId: z.string().optional(),
   autoAdvance: z.boolean().optional(),
 });
@@ -29,23 +32,23 @@ const StartWorkflowRunRequestSchema = z.object({
 const SubmitWorkflowInputRequestSchema = z.object({
   inputId: z.string(),
   payload: z.any(),
-  secretValues: z.record(z.string()).optional(),
+  secretValues: z.record(z.string(), z.string()).optional(),
   autoAdvance: z.boolean().optional(),
 });
 
 const SubmitWorkflowInterventionRequestSchema = z.object({
   payload: z.any(),
-  secretValues: z.record(z.string()).optional(),
+  secretValues: z.record(z.string(), z.string()).optional(),
   autoAdvance: z.boolean().optional(),
 });
 
 const SetWorkflowAutoAdvanceRequestSchema = z.object({
   autoAdvance: z.boolean(),
-  secretValues: z.record(z.string()).optional(),
+  secretValues: z.record(z.string(), z.string()).optional(),
 });
 
 const AdvanceWorkflowRunRequestSchema = z.object({
-  secretValues: z.record(z.string()).optional(),
+  secretValues: z.record(z.string(), z.string()).optional(),
 });
 
 export type CreateWorkflowOptions = Omit<

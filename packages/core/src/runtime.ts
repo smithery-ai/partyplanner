@@ -1,7 +1,6 @@
-import type { ZodSchema } from "zod";
+import { type ZodSchema, z } from "zod";
 import { NotReadyError, SkipError, WaitError } from "./errors";
 import { type Handle, isHandle } from "./handles";
-import { zodToJsonSchema } from "./json-schema";
 import { type AtomDef, globalRegistry, type Registry } from "./registry";
 import type {
   DispatchResult,
@@ -440,7 +439,7 @@ function makeInterventionRequest<T>(
     stepId,
     key,
     status: "pending",
-    schema: zodToJsonSchema(schema),
+    schema: z.toJSONSchema(schema),
     title: opts?.title,
     description: opts?.description,
     action: opts?.action,

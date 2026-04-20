@@ -7,9 +7,9 @@ import { cn } from "../lib/utils";
 
 /** Default value suitable for controlled form state (Zod parse may still refine). */
 export function defaultForSchema(schema: ZodTypeAny): unknown {
-  // Refinements / transforms / preprocess — defaults live on the inner schema
-  if (schema instanceof z.ZodEffects) {
-    return defaultForSchema(schema.innerType());
+  // Pipes / transforms — defaults live on the input schema.
+  if (schema instanceof z.ZodPipe) {
+    return defaultForSchema(pipeInputSchema(schema));
   }
   if (schema instanceof z.ZodObject) {
     const o: Record<string, unknown> = {};
@@ -68,8 +68,8 @@ function readDirectDescription(schema: ZodTypeAny): string | undefined {
  */
 export function descriptionForSchema(schema: ZodTypeAny): string | undefined {
   const own = readDirectDescription(schema);
-  if (schema instanceof z.ZodEffects) {
-    return own ?? descriptionForSchema(schema.innerType());
+  if (schema instanceof z.ZodPipe) {
+    return own ?? descriptionForSchema(pipeInputSchema(schema));
   }
   if (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) {
     return own ?? descriptionForSchema(schema.unwrap() as ZodTypeAny);
@@ -139,10 +139,10 @@ function ZodFieldInner({
   const mergedFromThisWrapper =
     inheritedDescription ?? descriptionForSchema(schema);
 
-  if (schema instanceof z.ZodEffects) {
+  if (schema instanceof z.ZodPipe) {
     return (
       <ZodFieldInner
-        schema={schema.innerType()}
+        schema={pipeInputSchema(schema)}
         value={value}
         onChange={onChange}
         path={path}
@@ -384,6 +384,10 @@ function ZodFieldInner({
       raw JSON in the Payload tab or extend ZodSchemaForm.
     </div>
   );
+}
+
+function pipeInputSchema(schema: ZodTypeAny): ZodTypeAny {
+  return ((schema._def as { in?: ZodTypeAny }).in ?? schema) as ZodTypeAny;
 }
 
 export function ZodSchemaForm({

@@ -197,7 +197,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 type ZodIssueLike = {
   message: string;
-  path: (string | number)[];
+  path: PropertyKey[];
 };
 
 function zodIssues(error: unknown): ZodIssueLike[] | undefined {
