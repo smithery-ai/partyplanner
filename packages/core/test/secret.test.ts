@@ -14,7 +14,7 @@ describe("secret()", () => {
   resetRegistry();
 
   it("behaves like input while redacting trace values", async () => {
-    const apiKey = secret("apiKey", {
+    const apiKey = secret("API_KEY", undefined, {
       description: "API key used by the workflow.",
     });
 
@@ -28,26 +28,26 @@ describe("secret()", () => {
 
     const runtime = createRuntime({
       secretValues: {
-        apiKey: "sk-live-123",
+        API_KEY: "sk-live-123",
       },
     });
     const { state, trace } = await runToIdle(runtime, {
       kind: "input",
       eventId: "evt-1",
       runId: "run-1",
-      inputId: "apiKey",
+      inputId: "API_KEY",
       payload: "sk-live-123",
     });
 
     expect(apiKey.__kind).toBe("input");
-    expect(state.inputs.apiKey).toBeUndefined();
+    expect(state.inputs.API_KEY).toBeUndefined();
     expect(trace.payload).toBe("[secret]");
-    assertResolved(trace, "apiKey", "[secret]");
+    assertResolved(trace, "API_KEY", "[secret]");
     assertResolved(trace, useKey.__id, "sk-");
   });
 
   it("validates secret payloads as strings", async () => {
-    secret("apiKey");
+    secret("API_KEY", undefined);
 
     const runtime = createRuntime();
     await expect(
@@ -55,14 +55,14 @@ describe("secret()", () => {
         kind: "input",
         eventId: "evt-1",
         runId: "run-1",
-        inputId: "apiKey",
+        inputId: "API_KEY",
         payload: { token: "sk-live-123" },
       }),
     ).rejects.toThrow();
   });
 
   it("rejects empty secret payloads", async () => {
-    secret("apiKey");
+    secret("API_KEY", undefined);
 
     const runtime = createRuntime();
     await expect(
@@ -70,7 +70,7 @@ describe("secret()", () => {
         kind: "input",
         eventId: "evt-1",
         runId: "run-1",
-        inputId: "apiKey",
+        inputId: "API_KEY",
         payload: "",
       }),
     ).rejects.toThrow("Secret must not be empty.");
@@ -78,7 +78,7 @@ describe("secret()", () => {
 
   it("waits when a step reads a missing secret", async () => {
     const seed = input("seed", z.string());
-    const apiKey = secret("apiKey");
+    const apiKey = secret("API_KEY", undefined);
 
     atom(
       (get) => {
@@ -97,12 +97,12 @@ describe("secret()", () => {
       payload: "start",
     });
 
-    assertWaiting(trace, "useSecret", "apiKey");
+    assertWaiting(trace, "useSecret", "API_KEY");
   });
 
   it("wakes downstream steps that inherited a secret wait", async () => {
     const seed = input("seed", z.string());
-    const apiKey = secret("apiKey");
+    const apiKey = secret("API_KEY", undefined);
 
     const loadSecret = atom(
       (get) => {
@@ -132,12 +132,12 @@ describe("secret()", () => {
       },
     );
 
-    assertWaiting(waitingTrace, "loadSecret", "apiKey");
-    assertWaiting(waitingTrace, "useSecret", "apiKey");
+    assertWaiting(waitingTrace, "loadSecret", "API_KEY");
+    assertWaiting(waitingTrace, "useSecret", "API_KEY");
 
     const resumedRuntime = createRuntime({
       secretValues: {
-        apiKey: "sk-live-123",
+        API_KEY: "sk-live-123",
       },
     });
     const { trace } = await runToIdle(
@@ -146,13 +146,13 @@ describe("secret()", () => {
         kind: "input",
         eventId: "evt-secret",
         runId: "run-1",
-        inputId: "apiKey",
+        inputId: "API_KEY",
         payload: "sk-live-123",
       },
       waitingState,
     );
 
-    assertResolved(trace, "apiKey", "[secret]");
+    assertResolved(trace, "API_KEY", "[secret]");
     assertResolved(trace, "loadSecret", "sk-live-123");
     assertResolved(trace, "useSecret", "sk-");
   });

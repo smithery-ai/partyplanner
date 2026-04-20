@@ -3,6 +3,7 @@ import { type DeferredInput, type Input, makeHandle } from "./handles";
 import { globalRegistry } from "./registry";
 
 type InputOpts = { description?: string };
+type SecretOpts = InputOpts & { errorMessage?: string };
 
 export function input<T>(
   name: string,
@@ -32,13 +33,26 @@ input.deferred = function deferred<T>(
   return makeHandle<T>("deferred_input", name) as DeferredInput<T>;
 };
 
-export function secret(name: string, opts?: InputOpts): Input<string> {
+export function secret(
+  name: string,
+  value: string | undefined,
+  opts?: SecretOpts,
+): Input<string> {
+  if (!/^[A-Z][A-Z0-9_]*$/.test(name)) {
+    throw new Error(
+      `secret() names must be UPPER_SNAKE_CASE. Got: ${JSON.stringify(name)}`,
+    );
+  }
+  const resolved =
+    typeof value === "string" && value.length > 0 ? value : undefined;
   globalRegistry.registerInput({
     kind: "input",
     id: name,
     schema: z.string().min(1, "Secret must not be empty."),
     description: opts?.description,
     secret: true,
+    secretValue: resolved,
+    errorMessage: opts?.errorMessage,
   });
   return makeHandle<string>("input", name) as Input<string>;
 }
