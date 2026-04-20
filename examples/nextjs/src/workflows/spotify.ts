@@ -1,6 +1,5 @@
 import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
-import { exampleSecretValue } from "./secrets";
 
 const spotifyCallbackPayloadSchema = z.object({
   code: z.string().optional(),
@@ -55,7 +54,7 @@ export const spotifyLogin = input(
 
 export const spotifyClientId = secret(
   "SPOTIFY_CLIENT_ID",
-  exampleSecretValue("SPOTIFY_CLIENT_ID", process.env.SPOTIFY_CLIENT_ID),
+  process.env.SPOTIFY_CLIENT_ID,
   {
     description: "Spotify application client ID.",
     errorMessage:
@@ -65,10 +64,7 @@ export const spotifyClientId = secret(
 
 export const spotifyClientSecret = secret(
   "SPOTIFY_CLIENT_SECRET",
-  exampleSecretValue(
-    "SPOTIFY_CLIENT_SECRET",
-    process.env.SPOTIFY_CLIENT_SECRET,
-  ),
+  process.env.SPOTIFY_CLIENT_SECRET,
   {
     description: "Spotify application client secret.",
     errorMessage:
@@ -77,10 +73,7 @@ export const spotifyClientSecret = secret(
 );
 
 export function spotifyOauthStateSecretValue(): string | undefined {
-  return exampleSecretValue(
-    "OAUTH_STATE_SECRET",
-    process.env.OAUTH_STATE_SECRET,
-  );
+  return process.env.OAUTH_STATE_SECRET;
 }
 
 export const oauthStateSecret = secret(
