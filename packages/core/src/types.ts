@@ -40,6 +40,12 @@ export type RequestIntervention = <T>(
   opts?: InterventionOptions,
 ) => T;
 
+export type AtomRuntimeContext = {
+  runId: string;
+  stepId: string;
+  interventionId: (key: string) => string;
+};
+
 export interface Get {
   /** Read a dependency synchronously. Throws SkipError / WaitError / NotReadyError. */
   <T>(source: Handle<T>): T;

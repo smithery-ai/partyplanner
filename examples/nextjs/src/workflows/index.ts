@@ -1,5 +1,7 @@
 import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
+import { exampleSecretValue } from "./secrets";
+import { spotifyProfile } from "./spotify";
 
 export const incidentAlert = input(
   "incidentAlert",
@@ -89,17 +91,6 @@ export const customerResolutionReview = input.deferred(
       "Customer success approval for the proposed response and account credit.",
   },
 );
-
-function exampleSecretValue(
-  name: string,
-  value: string | undefined,
-): string | undefined {
-  if (typeof value === "string" && value.length > 0) return value;
-  if (process.env.NODE_ENV === "production") return undefined;
-  const random =
-    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-  return `dev-${name.toLowerCase()}-${random}`;
-}
 
 export const pagerDutyToken = secret(
   "PAGER_DUTY_TOKEN",
@@ -358,8 +349,9 @@ export const branchSummary = atom(
     const incident = get.maybe(incidentWrapUp);
     const purchase = get.maybe(purchaseNotifyRequester);
     const customer = get.maybe(customerFollowUp);
+    const spotify = get.maybe(spotifyProfile);
 
-    const completed = [incident, purchase, customer].filter(Boolean);
+    const completed = [incident, purchase, customer, spotify].filter(Boolean);
     if (completed.length === 0) {
       return get.skip("No branch completed yet");
     }

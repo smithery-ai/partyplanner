@@ -13,6 +13,7 @@ export type { AtomDef, InputDef } from "./registry";
 export { globalRegistry, Registry } from "./registry";
 export { createRuntime } from "./runtime";
 export type {
+  AtomRuntimeContext,
   DispatchResult,
   Get,
   InterventionAction,

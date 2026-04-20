@@ -1,5 +1,5 @@
 import type { ZodSchema } from "zod";
-import type { Get, RequestIntervention } from "./types";
+import type { AtomRuntimeContext, Get, RequestIntervention } from "./types";
 
 export type InputDef = {
   kind: "input" | "deferred_input";
@@ -14,7 +14,11 @@ export type InputDef = {
 export type AtomDef = {
   kind: "atom";
   id: string;
-  fn: (get: Get, requestIntervention: RequestIntervention) => unknown;
+  fn: (
+    get: Get,
+    requestIntervention: RequestIntervention,
+    context: AtomRuntimeContext,
+  ) => unknown;
   description?: string;
 };
 
