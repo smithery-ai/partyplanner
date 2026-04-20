@@ -90,9 +90,20 @@ export const customerResolutionReview = input.deferred(
   },
 );
 
+function exampleSecretValue(
+  name: string,
+  value: string | undefined,
+): string | undefined {
+  if (typeof value === "string" && value.length > 0) return value;
+  if (process.env.NODE_ENV === "production") return undefined;
+  const random =
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `dev-${name.toLowerCase()}-${random}`;
+}
+
 export const pagerDutyToken = secret(
   "PAGER_DUTY_TOKEN",
-  process.env.PAGER_DUTY_TOKEN,
+  exampleSecretValue("PAGER_DUTY_TOKEN", process.env.PAGER_DUTY_TOKEN),
   {
     description: "Token used to page the incident commander.",
     errorMessage:
@@ -102,7 +113,7 @@ export const pagerDutyToken = secret(
 
 export const financeApiToken = secret(
   "FINANCE_API_TOKEN",
-  process.env.FINANCE_API_TOKEN,
+  exampleSecretValue("FINANCE_API_TOKEN", process.env.FINANCE_API_TOKEN),
   {
     description: "Token used to create purchase orders in the finance system.",
     errorMessage:
@@ -112,7 +123,7 @@ export const financeApiToken = secret(
 
 export const crmAccessToken = secret(
   "CRM_ACCESS_TOKEN",
-  process.env.CRM_ACCESS_TOKEN,
+  exampleSecretValue("CRM_ACCESS_TOKEN", process.env.CRM_ACCESS_TOKEN),
   {
     description: "Token used to read and update customer records in the CRM.",
     errorMessage:

@@ -1,10 +1,24 @@
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, ExternalLink, X } from "lucide-react";
 import { JsonSchemaForm } from "../components/json-schema-form";
-import { Button } from "../components/ui/button";
+import { Button, buttonVariants } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import type { WorkflowInputManifest } from "../types";
+import type { JsonSchema, WorkflowInputManifest } from "../types";
 
-/** Only the deferred input or secret the run is currently waiting on. */
+export type PendingFormRequest = {
+  id: string;
+  title?: string;
+  description?: string;
+  schema: JsonSchema;
+  secret?: boolean;
+  errorMessage?: string;
+  action?: {
+    type: "open_url" | "message";
+    url?: string;
+    label?: string;
+  };
+};
+
+/** Only the input, secret, or intervention the run is currently waiting on. */
 export function PendingInputSheet({
   open,
   onOpenChange,
@@ -16,7 +30,7 @@ export function PendingInputSheet({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  input: WorkflowInputManifest | undefined;
+  input: WorkflowInputManifest | PendingFormRequest | undefined;
   inputValues: Record<string, unknown>;
   onInputValuesChange: (id: string, value: unknown) => void;
   onSubmit: () => void;
@@ -25,7 +39,9 @@ export function PendingInputSheet({
   if (!open || !input) return null;
 
   const isSecret = Boolean(input.secret);
-  const title = isSecret ? "Pending secret" : "Pending input";
+  const formTitle = "title" in input ? input.title : undefined;
+  const action = "action" in input ? input.action : undefined;
+  const title = formTitle ?? (isSecret ? "Pending secret" : "Pending input");
 
   return (
     <>
@@ -85,6 +101,19 @@ export function PendingInputSheet({
                   <p className="text-muted-foreground text-[11px] leading-snug">
                     {input.description}
                   </p>
+                ) : null}
+                {action?.type === "open_url" && action.url ? (
+                  <a
+                    href={action.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cn(
+                      buttonVariants({ size: "sm", variant: "outline" }),
+                    )}
+                  >
+                    <ExternalLink className="size-3.5" />
+                    {action.label ?? "Open"}
+                  </a>
                 ) : null}
               </div>
               <JsonSchemaForm

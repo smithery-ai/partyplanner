@@ -17,6 +17,7 @@ import type {
   StartRunRequest,
   StateStore,
   SubmitInputRequest,
+  SubmitInterventionRequest,
   WorkflowDefinition,
   WorkflowLoader,
   WorkflowRef,
@@ -95,6 +96,61 @@ export class LocalScheduler implements Scheduler {
       payload: request.payload,
     });
     return this.snapshot(request.runId);
+  }
+
+  async submitIntervention(
+    request: SubmitInterventionRequest,
+  ): Promise<RunSnapshot> {
+    const workflow = request.workflow ?? this.workflowForRun(request.runId);
+    const definition = await this.opts.loader.load(workflow);
+    this.runWorkflows.set(request.runId, workflow);
+
+    const stored = await this.opts.stateStore.load(request.runId);
+    if (!stored) throw new Error(`Unknown run: ${request.runId}`);
+
+    const state = structuredClone(stored.state);
+    state.interventions ??= {};
+    state.interventionResponses ??= {};
+
+    const intervention = state.interventions[request.interventionId];
+    if (!intervention) {
+      throw new Error(`Unknown intervention: ${request.interventionId}`);
+    }
+
+    state.interventionResponses[request.interventionId] = request.payload;
+    state.interventions[request.interventionId] = {
+      ...intervention,
+      status: "resolved",
+      resolvedAt: Date.now(),
+    };
+
+    const waiters = waitersForDependency(state, request.interventionId);
+    delete state.waiters[request.interventionId];
+
+    const saved = await this.opts.stateStore.save(
+      request.runId,
+      state,
+      stored.version,
+    );
+    if (!saved.ok) throw new Error(`Unable to save run: ${saved.reason}`);
+
+    await this.opts.events.publish({
+      type: "intervention_received",
+      runId: request.runId,
+      interventionId: request.interventionId,
+      at: Date.now(),
+    });
+    await this.enqueueAndPublishMany(
+      waiters.flatMap((stepId) => emitStepEvent(state, stepId)),
+    );
+
+    return this.buildSnapshot(
+      request.runId,
+      workflow,
+      definition,
+      state,
+      saved.version,
+    );
   }
 
   async processNext(): Promise<void> {
@@ -280,6 +336,8 @@ function makeEmptyRunState(runId: string): RunState {
     runId,
     startedAt: Date.now(),
     inputs: {},
+    interventions: {},
+    interventionResponses: {},
     nodes: {},
     waiters: {},
     processedEventIds: {},
@@ -443,6 +501,35 @@ function unresolvedWaitingInputs(state: RunState): string[] {
       waiting.add(record.waitingOn);
   }
   return [...waiting];
+}
+
+function waitersForDependency(state: RunState, depId: string): string[] {
+  const waiters = new Set(state.waiters[depId] ?? []);
+  for (const [stepId, record] of Object.entries(state.nodes)) {
+    if (record.status === "waiting" && record.waitingOn === depId) {
+      waiters.add(stepId);
+    }
+  }
+  return [...waiters];
+}
+
+function emitStepEvent(state: RunState, stepId: string): QueueEvent[] {
+  const rec = state.nodes[stepId];
+  if (
+    rec?.status === "resolved" ||
+    rec?.status === "skipped" ||
+    rec?.status === "errored"
+  ) {
+    return [];
+  }
+  return [
+    {
+      kind: "step",
+      eventId: `evt_${randomId()}`,
+      runId: state.runId,
+      stepId,
+    },
+  ];
 }
 
 function isComplete(state: RunState): boolean {

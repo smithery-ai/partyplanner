@@ -32,6 +32,12 @@ export type SubmitWorkflowInputRequest = {
   autoAdvance?: boolean;
 };
 
+export type SubmitWorkflowInterventionRequest = {
+  payload: unknown;
+  secretValues?: Record<string, string>;
+  autoAdvance?: boolean;
+};
+
 export type SetWorkflowAutoAdvanceRequest = {
   autoAdvance: boolean;
   secretValues?: Record<string, string>;

@@ -20,6 +20,12 @@ export type SubmitBackendInputRequest = {
   autoAdvance?: boolean;
 };
 
+export type SubmitBackendInterventionRequest = {
+  payload: unknown;
+  secretValues?: Record<string, string>;
+  autoAdvance?: boolean;
+};
+
 export type SetAutoAdvanceRequest = {
   autoAdvance: boolean;
   secretValues?: Record<string, string>;

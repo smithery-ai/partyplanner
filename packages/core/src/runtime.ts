@@ -1,10 +1,14 @@
+import { type ZodSchema, z } from "zod";
 import { NotReadyError, SkipError, WaitError } from "./errors";
 import { type Handle, isHandle } from "./handles";
 import { type AtomDef, globalRegistry, type Registry } from "./registry";
 import type {
   DispatchResult,
   Get,
+  InterventionOptions,
+  InterventionRequest,
   QueueEvent,
+  RequestIntervention,
   RunState,
   RunTrace,
   Runtime,
@@ -154,9 +158,14 @@ class RunSession {
         },
       },
     );
+    const requestIntervention: RequestIntervention = <T>(
+      key: string,
+      schema: ZodSchema<T>,
+      opts?: InterventionOptions,
+    ) => this.requestIntervention(def.id, key, schema, opts);
 
     try {
-      const value = await def.fn(get);
+      const value = await def.fn(get, requestIntervention);
       const duration_ms = Date.now() - start;
       this.state.nodes[def.id] = {
         status: "resolved",
@@ -284,6 +293,31 @@ class RunSession {
     this.state.waiters[depId] = list;
   }
 
+  private requestIntervention<T>(
+    stepId: string,
+    key: string,
+    schema: ZodSchema<T>,
+    opts?: InterventionOptions,
+  ): T {
+    const id = interventionId(stepId, key);
+    const responses = this.state.interventionResponses ?? {};
+    if (Object.hasOwn(responses, id)) {
+      return schema.parse(responses[id]);
+    }
+
+    this.state.interventions ??= {};
+    this.state.interventionResponses ??= {};
+    this.state.interventions[id] ??= makeInterventionRequest(
+      id,
+      stepId,
+      key,
+      schema,
+      opts,
+    );
+    this.registerWaiter(id, stepId);
+    throw new WaitError(id);
+  }
+
   private wakeWaiters(depId: string): QueueEvent[] {
     const waiters = this.state.waiters[depId] ?? [];
     delete this.state.waiters[depId];
@@ -373,6 +407,8 @@ function makeEmptyRunState(runId: string): RunState {
     runId,
     startedAt: Date.now(),
     inputs: {},
+    interventions: {},
+    interventionResponses: {},
     nodes: {},
     waiters: {},
     processedEventIds: {},
@@ -385,4 +421,28 @@ export function createRuntime(opts: RuntimeOptions = {}): Runtime {
 
 function redactedSecretValue(): string {
   return "[secret]";
+}
+
+function interventionId(stepId: string, key: string): string {
+  return `${stepId}:${key}`;
+}
+
+function makeInterventionRequest<T>(
+  id: string,
+  stepId: string,
+  key: string,
+  schema: ZodSchema<T>,
+  opts?: InterventionOptions,
+): InterventionRequest {
+  return {
+    id,
+    stepId,
+    key,
+    status: "pending",
+    schema: z.toJSONSchema(schema),
+    title: opts?.title,
+    description: opts?.description,
+    action: opts?.action,
+    createdAt: Date.now(),
+  };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import type { Registry, RunState } from "@workflow/core";
+import type { InterventionRequest, Registry, RunState } from "@workflow/core";
 import { globalRegistry } from "@workflow/core";
 import type { QueueSnapshot } from "@workflow/runtime";
 import {
@@ -27,7 +27,10 @@ import {
   type NodeDetailEditor,
   NodeDetailSheet,
 } from "./components/node-detail-sheet";
-import { PendingInputSheet } from "./components/pending-input-sheet";
+import {
+  type PendingFormRequest,
+  PendingInputSheet,
+} from "./components/pending-input-sheet";
 import {
   QueueVisualizer,
   workflowInputRequested,
@@ -92,20 +95,41 @@ function findManifestInput(
   return manifest?.inputs.find((input) => input.id === inputId);
 }
 
+type PendingWait =
+  | { stepId: string; kind: "input"; inputId: string }
+  | { stepId: string; kind: "intervention"; interventionId: string };
+
 function findPendingWait(
   manifest: WorkflowManifest | undefined,
   state: RunState | undefined,
-): { stepId: string; inputId: string } | undefined {
+): PendingWait | undefined {
   if (!state?.nodes) return undefined;
   for (const [stepId, n] of Object.entries(state.nodes)) {
     if (n.status === "waiting" && n.waitingOn) {
+      const intervention = state.interventions?.[n.waitingOn];
+      if (intervention && intervention.status !== "resolved") {
+        return { stepId, kind: "intervention", interventionId: n.waitingOn };
+      }
       const waitingOn = findManifestInput(manifest, n.waitingOn);
       if (!waitingOn?.secret && state.nodes[n.waitingOn]?.status === "resolved")
         continue;
-      return { stepId, inputId: n.waitingOn };
+      return { stepId, kind: "input", inputId: n.waitingOn };
     }
   }
   return undefined;
+}
+
+function pendingFormForIntervention(
+  intervention: InterventionRequest | undefined,
+): PendingFormRequest | undefined {
+  if (!intervention || intervention.status === "resolved") return undefined;
+  return {
+    id: intervention.id,
+    title: intervention.title ?? "Intervention required",
+    description: intervention.description,
+    schema: intervention.schema,
+    action: intervention.action,
+  };
 }
 
 function immediateInputNeedsForm(
@@ -173,7 +197,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 type ZodIssueLike = {
   message: string;
-  path: (string | number)[];
+  path: PropertyKey[];
 };
 
 function zodIssues(error: unknown): ZodIssueLike[] | undefined {
@@ -517,14 +541,23 @@ export function WorkflowRunnerApp({
 
   const runState = workflowRun.runState;
   const wait = findPendingWait(workflow.manifest, runState);
-  const pendingInputId = wait?.inputId;
+  const pendingInputId = wait?.kind === "input" ? wait.inputId : undefined;
+  const pendingInterventionId =
+    wait?.kind === "intervention" ? wait.interventionId : undefined;
   const pendingInput = findManifestInput(workflow.manifest, pendingInputId);
-  const inputPending = Boolean(pendingInputId);
-  const pendingInputLabel = pendingInputId
-    ? pendingInput?.secret
-      ? `Missing secret ${pendingInputId}`
-      : `Provide ${pendingInputId}`
-    : "Input pending";
+  const pendingIntervention = pendingInterventionId
+    ? runState?.interventions?.[pendingInterventionId]
+    : undefined;
+  const pendingRequest =
+    pendingFormForIntervention(pendingIntervention) ?? pendingInput;
+  const inputPending = Boolean(wait);
+  const pendingInputLabel = pendingInterventionId
+    ? "Intervention required"
+    : pendingInputId
+      ? pendingInput?.secret
+        ? `Missing secret ${pendingInputId}`
+        : `Provide ${pendingInputId}`
+      : "Input pending";
 
   const nodes = runState?.nodes ?? {};
   const nextWork = nextQueuedWork(workflowRun.queue, globalRegistry);
@@ -547,6 +580,18 @@ export function WorkflowRunnerApp({
       (current) => current || firstManifestSeedInputId(workflow.manifest),
     );
   }, [workflow.manifest]);
+
+  useEffect(() => {
+    const request = pendingFormForIntervention(pendingIntervention);
+    if (!request) return;
+    setInputValues((current) => {
+      if (request.id in current) return current;
+      return {
+        ...current,
+        [request.id]: defaultForJsonSchema(request.schema),
+      };
+    });
+  }, [pendingIntervention]);
 
   useEffect(() => {
     if (!selectedNodeId) return;
@@ -650,6 +695,40 @@ export function WorkflowRunnerApp({
       await workflowRun.submitInput({
         state: runState,
         inputId,
+        payload,
+        autoAdvance: activeAutoAdvance,
+      });
+      setPane(null);
+    } catch (e) {
+      setPayloadError(
+        errorMessage(e, "Processing failed — check input values."),
+      );
+    }
+  }
+
+  async function submitPendingIntervention() {
+    if (!pendingInterventionId) return;
+    const request = pendingFormForIntervention(pendingIntervention);
+    if (!request) return;
+
+    setPayloadError("");
+    let payload: unknown;
+    try {
+      payload = sanitizeJsonSchemaValue(
+        request.schema,
+        inputValues[pendingInterventionId],
+      );
+    } catch (e) {
+      setPayloadError(
+        errorMessage(e, `Validation failed for "${pendingInterventionId}".`),
+      );
+      return;
+    }
+
+    try {
+      await workflowRun.submitIntervention({
+        state: runState,
+        interventionId: pendingInterventionId,
         payload,
         autoAdvance: activeAutoAdvance,
       });
@@ -977,12 +1056,16 @@ export function WorkflowRunnerApp({
           />
 
           <PendingInputSheet
-            open={pane === "pending" && Boolean(pendingInputId)}
+            open={pane === "pending" && Boolean(pendingRequest)}
             onOpenChange={(o) => setPane(o ? "pending" : null)}
-            input={pendingInput}
+            input={pendingRequest}
             inputValues={inputValues}
             onInputValuesChange={setInputValue}
-            onSubmit={() => void submitPendingInput()}
+            onSubmit={() =>
+              pendingInterventionId
+                ? void submitPendingIntervention()
+                : void submitPendingInput()
+            }
             error={pane === "pending" ? payloadError || undefined : undefined}
           />
 
