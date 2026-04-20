@@ -1,4 +1,4 @@
-import type { NodeRecord } from "@workflow/core";
+import type { InterventionRequest, NodeRecord } from "@workflow/core";
 import { X } from "lucide-react";
 import { JsonSchemaForm } from "../components/json-schema-form";
 import { Button } from "../components/ui/button";
@@ -18,22 +18,29 @@ export type NodeDetailEditor = {
   error?: string;
 };
 
+export type NodeIntervention = {
+  request: InterventionRequest;
+  response?: unknown;
+};
+
 export function NodeDetailSheet({
   nodeId,
   record,
   editor,
+  interventions,
   open,
   onOpenChange,
 }: {
   nodeId: string | null;
   record: NodeRecord | undefined;
   editor?: NodeDetailEditor | null;
+  interventions?: NodeIntervention[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   if (!open || !nodeId) return null;
 
-  const showEmpty = !record && !editor;
+  const showEmpty = !record && !editor && !interventions?.length;
 
   return (
     <>
@@ -163,6 +170,55 @@ export function NodeDetailSheet({
                   <span className="text-foreground">{record.attempts}</span>
                 </span>
               </div>
+            </div>
+          ) : null}
+          {interventions && interventions.length > 0 ? (
+            <div className="mt-6 space-y-3">
+              <div className="font-medium text-foreground text-xs">
+                Human interventions
+              </div>
+              {interventions.map(({ request, response }) => (
+                <div
+                  key={request.id}
+                  className="space-y-2 rounded-md border border-yellow-500/40 bg-yellow-400/10 p-3 text-[11px] dark:border-yellow-500/40 dark:bg-yellow-500/10"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                    <code className="text-[11px] text-foreground">
+                      {request.key}
+                    </code>
+                    <span
+                      className={cn(
+                        "rounded px-1.5 py-0.5 font-medium text-[10px]",
+                        request.status === "resolved"
+                          ? "bg-emerald-600/15 text-emerald-900 dark:bg-emerald-500/20 dark:text-emerald-100"
+                          : "bg-yellow-400/25 text-yellow-950 dark:bg-yellow-500/20 dark:text-yellow-50",
+                      )}
+                    >
+                      {request.status}
+                    </span>
+                  </div>
+                  {request.title ? (
+                    <div className="text-foreground">{request.title}</div>
+                  ) : null}
+                  {request.description ? (
+                    <p className="text-muted-foreground leading-snug">
+                      {request.description}
+                    </p>
+                  ) : null}
+                  {request.status === "resolved" && response !== undefined ? (
+                    <div>
+                      <div className="mb-1 font-medium text-foreground">
+                        Response
+                      </div>
+                      <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+                        {typeof response === "string"
+                          ? response
+                          : JSON.stringify(response, null, 2)}
+                      </pre>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
             </div>
           ) : null}
           {showEmpty ? (
