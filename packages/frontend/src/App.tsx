@@ -8,10 +8,9 @@ import {
   ArrowLeft,
   Check,
   Clock3,
+  FastForward,
   History,
   KeyRound,
-  Pause,
-  Play,
   Plus,
   RefreshCw,
   SkipForward,
@@ -568,9 +567,6 @@ export function WorkflowRunnerApp({
     : isRunComplete(runState, workflow.manifest);
   const activeAutoAdvance = workflowRun.autoAdvance ?? pendingAutoAdvance;
   const isPending = workflow.isPending || workflowRun.isPending;
-  const canManualAdvance = Boolean(
-    runState && !runComplete && !activeAutoAdvance && nextWork,
-  );
 
   useEffect(() => {
     if (!workflow.manifest) return;
@@ -757,6 +753,13 @@ export function WorkflowRunnerApp({
     }
   }
 
+  async function nextStep() {
+    if (activeAutoAdvance) {
+      await changeAdvanceMode(false);
+    }
+    await advanceWorkflow();
+  }
+
   async function changeAdvanceMode(nextAutoAdvance: boolean) {
     if (nextAutoAdvance === activeAutoAdvance) return;
     setPendingAutoAdvance(nextAutoAdvance);
@@ -870,75 +873,59 @@ export function WorkflowRunnerApp({
               <KeyRound className="size-3.5" aria-hidden />
             </Button>
           ) : null}
-          <fieldset
-            aria-label="Advance mode"
-            className="inline-flex h-7 shrink-0 overflow-hidden rounded-lg border border-border bg-background text-[0.8rem] font-medium dark:border-input dark:bg-input/30"
-          >
-            <button
-              type="button"
-              aria-pressed={!activeAutoAdvance}
-              title="Manual advance"
-              disabled={isPending}
-              onClick={() => void changeAdvanceMode(false)}
-              className={cn(
-                "inline-flex h-full w-[4.9rem] items-center justify-center gap-1 px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
-                !activeAutoAdvance
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <Pause className="size-3.5 shrink-0" aria-hidden />
-              Manual
-            </button>
-            <button
-              type="button"
-              aria-pressed={activeAutoAdvance}
-              title="Auto advance"
-              disabled={isPending}
-              onClick={() => void changeAdvanceMode(true)}
-              className={cn(
-                "inline-flex h-full w-[4.4rem] items-center justify-center gap-1 border-l border-border px-2 transition-colors outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 dark:border-input",
-                activeAutoAdvance
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <Play className="size-3.5 shrink-0" aria-hidden />
-              Auto
-            </button>
-          </fieldset>
-          {canManualAdvance && (
+          {!runComplete && runState ? (
             <>
-              <div
-                className="inline-flex h-7 max-w-[16rem] items-center gap-1.5 rounded-lg border border-muted-foreground/20 bg-muted/45 px-2.5 text-[0.8rem] font-medium text-foreground dark:bg-muted/35"
-                title={
-                  nextWork?.description
-                    ? `${nextWork.type} ${nextWork.id}: ${nextWork.description}`
-                    : `${nextWork?.type} ${nextWork?.id}`
-                }
-              >
-                <span className="shrink-0 text-muted-foreground">Next</span>
-                <span className="shrink-0 text-muted-foreground">
-                  {nextWork?.type}
-                </span>
-                <span className="min-w-0 truncate">{nextWork?.id}</span>
-              </div>
+              {nextWork ? (
+                <div
+                  className="inline-flex h-7 max-w-[16rem] items-center gap-1.5 rounded-lg border border-muted-foreground/20 bg-muted/45 px-2.5 text-[0.8rem] font-medium text-foreground dark:bg-muted/35"
+                  title={
+                    nextWork.description
+                      ? `${nextWork.type} ${nextWork.id}: ${nextWork.description}`
+                      : `${nextWork.type} ${nextWork.id}`
+                  }
+                >
+                  <span className="shrink-0 text-muted-foreground">
+                    Up next
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {nextWork.type}
+                  </span>
+                  <span className="min-w-0 truncate">{nextWork.id}</span>
+                </div>
+              ) : null}
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => void advanceWorkflow()}
-                disabled={isPending}
+                onClick={() => void nextStep()}
+                disabled={!activeAutoAdvance && (isPending || !nextWork)}
                 title={
-                  nextWork
-                    ? `Advance will run ${nextWork.type.toLowerCase()} "${nextWork.id}" from the queue.`
-                    : undefined
+                  activeAutoAdvance
+                    ? "Pause fast-forward and step manually"
+                    : nextWork
+                      ? `Run ${nextWork.type.toLowerCase()} "${nextWork.id}" from the queue.`
+                      : "Nothing to advance"
                 }
               >
                 <SkipForward className="size-3.5 shrink-0" aria-hidden />
-                Advance
+                Next
+              </Button>
+              <Button
+                size="sm"
+                variant={activeAutoAdvance ? "default" : "outline"}
+                aria-pressed={activeAutoAdvance}
+                onClick={() => void changeAdvanceMode(!activeAutoAdvance)}
+                disabled={isPending}
+                title={
+                  activeAutoAdvance
+                    ? "Pause fast-forward"
+                    : "Fast-forward until human input is required"
+                }
+              >
+                <FastForward className="size-3.5 shrink-0" aria-hidden />
+                Fast forward
               </Button>
             </>
-          )}
+          ) : null}
           {runComplete ? (
             <div
               role="status"
