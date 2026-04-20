@@ -1,31 +1,21 @@
 # Hylo Client
 
-The client talks to the backend through `/api` in local development. Vite
-rewrites that prefix and proxies requests to `apps/backend` by default.
+The client is a workflow inspection UI for a single workflow server route, such
+as the Next.js example route. It does not directly execute workflow code or
+accept source uploads.
 
 ```sh
 pnpm --filter client dev
 ```
 
-Set `VITE_BACKEND_URL` to point at a different backend:
+In local Portless development, `/api` proxies to the sibling
+`nextjs.hylo.localhost` workflow route. Set `VITE_BACKEND_URL` to point at a
+different workflow server API:
 
 ```sh
-VITE_BACKEND_URL=http://127.0.0.1:8788 pnpm --filter client dev
+VITE_BACKEND_URL=https://nextjs.hylo.localhost/api/workflow pnpm --filter client dev
 ```
 
-## Workflow creation
-
-The UI currently keeps the existing "upload workflow" request shape so it can
-work with both backend models:
-
-- `examples/backend-node` can evaluate uploaded workflow source for local
-  development
-- `apps/backend` accepts the upload route for compatibility, but currently maps
-  it to the bundled `@workflow/demo-workflow`
-
-The intended production paths are:
-
-- user-managed runtime: the user's app owns atom execution and uses Hylo backend
-  queue/state APIs
-- backend-managed uploaded workflows: the user uploads workflow atom code and
-  Hylo executes a bundled, versioned Dynamic Worker
+The DB API itself lives behind `apps/backend` or `apps/backend-node`; workflow
+server routes use the remote runtime adapters to read and write queue/state
+data there.

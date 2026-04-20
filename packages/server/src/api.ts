@@ -1,19 +1,4 @@
 import type { RunEvent, RunSnapshot } from "@workflow/runtime";
-import type { WorkflowManifest } from "./manifest";
-
-export type WorkflowApiManifest = WorkflowManifest & {
-  source?: string;
-};
-
-export type CreateWorkflowRequest = {
-  workflowSource: string;
-  workflowId?: string;
-  name?: string;
-};
-
-export type DeleteWorkflowResponse = {
-  ok: true;
-};
 
 export type StartWorkflowRunRequest = {
   inputId: string;
@@ -23,22 +8,21 @@ export type StartWorkflowRunRequest = {
     payload: unknown;
   }[];
   secretBindings?: Record<string, string | { vaultEntryId: string }>;
+  secretValues?: Record<string, string>;
   runId?: string;
   autoAdvance?: boolean;
-};
-
-export type StartBackendRunRequest = StartWorkflowRunRequest & {
-  workflowSource?: string;
 };
 
 export type SubmitBackendInputRequest = {
   inputId: string;
   payload: unknown;
+  secretValues?: Record<string, string>;
   autoAdvance?: boolean;
 };
 
 export type SetAutoAdvanceRequest = {
   autoAdvance: boolean;
+  secretValues?: Record<string, string>;
 };
 
 export type SecretVaultScope = "user" | "organization";
@@ -87,7 +71,6 @@ export type BindRunSecretRequest = {
 export type RunStateDocument = RunSnapshot & {
   events: RunEvent[];
   publishedAt: number;
-  workflowSource?: string;
   autoAdvance: boolean;
 };
 

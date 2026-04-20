@@ -6,9 +6,6 @@ compatibility_date = "2026-04-19"
 name = "BACKEND"
 class_name = "BackendDurableObject"
 
-[[worker_loaders]]
-binding = "WORKFLOW_LOADER"
-
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["BackendDurableObject"]

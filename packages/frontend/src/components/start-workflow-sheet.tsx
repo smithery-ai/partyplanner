@@ -1,56 +1,33 @@
-import type { Registry } from "@workflow/core";
 import { X } from "lucide-react";
+import { JsonSchemaForm } from "../components/json-schema-form";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { ZodSchemaForm } from "../components/zod-schema-form";
 import { cn } from "../lib/utils";
-import type { SecretVaultEntry } from "../types";
+import type { WorkflowInputManifest } from "../types";
 
-/**
- * Seed / immediate inputs only. Per SPEC, deferred inputs are separate queue events
- * when a step throws WaitError; payloads can be produced by any external publisher.
- */
 export function StartWorkflowSheet({
   open,
   onOpenChange,
-  registry,
+  inputs,
   inputValues,
   onInputValuesChange,
-  seedInputId,
-  onSeedInputIdChange,
-  vaultEntries = [],
-  secretBindings,
-  onSecretBindingChange,
-  newSecretValues,
-  onNewSecretValueChange,
   canSubmitSeed,
   onSubmitSeed,
   error,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  registry: Registry;
+  inputs: WorkflowInputManifest[];
   inputValues: Record<string, unknown>;
   onInputValuesChange: (id: string, value: unknown) => void;
-  seedInputId: string;
-  onSeedInputIdChange: (id: string) => void;
-  vaultEntries?: SecretVaultEntry[];
-  secretBindings: Record<string, string>;
-  onSecretBindingChange: (logicalName: string, vaultEntryId: string) => void;
-  newSecretValues: Record<string, string>;
-  onNewSecretValueChange: (logicalName: string, value: string) => void;
   canSubmitSeed: boolean;
   onSubmitSeed: () => void;
   error?: string;
 }) {
   if (!open) return null;
 
-  const immediate = registry
-    .allInputs()
-    .filter((i) => i.kind === "input" && !i.secret);
-  const secrets = registry
-    .allInputs()
-    .filter((i) => i.kind === "input" && i.secret);
+  const immediate = inputs.filter((input) => input.kind === "input");
+  const dataInputs = immediate.filter((input) => !input.secret);
+  const secrets = immediate.filter((input) => input.secret);
 
   return (
     <>
@@ -77,123 +54,41 @@ export function StartWorkflowSheet({
           </Button>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          <p className="text-muted-foreground text-[11px] leading-snug">
-            Submit an{" "}
-            <span className="font-medium text-foreground">immediate</span> input
-            to enqueue the first{" "}
-            <code className="rounded bg-muted px-1 py-0.5">input</code> event.
-            Per the SDK model, the queue is external: deferred inputs are
-            separate validated events when a step waits on them—they can be
-            supplied from a webhook, job, or DB as long as they are processed
-            through{" "}
-            <code className="rounded bg-muted px-1 py-0.5">
-              runtime.process
-            </code>
-            .
-          </p>
-
           {immediate.length === 0 ? (
             <p className="text-muted-foreground text-sm">
-              This workflow has no registered immediate <code>input()</code>—add
-              one in code to seed a run.
+              This workflow has no immediate inputs.
             </p>
           ) : (
             <>
-              {immediate.length > 1 && (
-                <div className="space-y-1">
-                  <label
-                    className="text-[11px] font-medium text-foreground"
-                    htmlFor="seed-input-id"
-                  >
-                    Which input seeds the run?
-                  </label>
-                  <select
-                    id="seed-input-id"
-                    className="flex h-8 w-full max-w-xs rounded-lg border border-input bg-background px-2 text-xs"
-                    value={seedInputId}
-                    onChange={(e) => onSeedInputIdChange(e.target.value)}
-                  >
-                    {immediate.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.id}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {immediate.map((inp) => {
-                if (inp.id !== seedInputId && immediate.length > 1) return null;
-                return (
-                  <div key={inp.id} className="space-y-2">
-                    <div className="space-y-1">
-                      <code className="block text-[11px] text-foreground">
-                        {inp.id}
-                      </code>
-                      {inp.description ? (
-                        <p className="text-muted-foreground text-[11px] leading-snug">
-                          {inp.description}
-                        </p>
-                      ) : null}
-                    </div>
-                    <ZodSchemaForm
-                      schema={inp.schema}
-                      value={inputValues[inp.id]}
-                      onChange={(v) => onInputValuesChange(inp.id, v)}
-                      idPrefix={inp.id}
-                      secret={inp.secret}
+              {dataInputs.length > 0 ? (
+                <div className="space-y-4">
+                  {dataInputs.map((input) => (
+                    <WorkflowInputBlock
+                      key={input.id}
+                      input={input}
+                      value={inputValues[input.id]}
+                      onChange={(value) => onInputValuesChange(input.id, value)}
                     />
-                  </div>
-                );
-              })}
+                  ))}
+                </div>
+              ) : null}
+
               {secrets.length > 0 ? (
                 <div className="space-y-3 border-t border-border pt-4">
                   <h3 className="font-medium text-xs text-foreground">
                     Secrets
                   </h3>
-                  {secrets.map((inp) => {
-                    const selectedVaultEntryId = secretBindings[inp.id] ?? "";
-                    return (
-                      <div key={inp.id} className="space-y-2">
-                        <div className="space-y-1">
-                          <code className="block text-[11px] text-foreground">
-                            {inp.id}
-                          </code>
-                          {inp.description ? (
-                            <p className="text-muted-foreground text-[11px] leading-snug">
-                              {inp.description}
-                            </p>
-                          ) : null}
-                        </div>
-                        <select
-                          className="flex h-8 w-full rounded-lg border border-input bg-background px-2 text-xs"
-                          value={selectedVaultEntryId}
-                          onChange={(e) =>
-                            onSecretBindingChange(inp.id, e.target.value)
-                          }
-                        >
-                          <option value="">Choose vault secret</option>
-                          {vaultEntries.map((entry) => (
-                            <option key={entry.id} value={entry.id}>
-                              {entry.name}
-                              {entry.key ? ` (${entry.key})` : ""}
-                            </option>
-                          ))}
-                        </select>
-                        {!selectedVaultEntryId ? (
-                          <Input
-                            type="password"
-                            value={newSecretValues[inp.id] ?? ""}
-                            onChange={(e) =>
-                              onNewSecretValueChange(inp.id, e.target.value)
-                            }
-                            placeholder="New vault value"
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })}
+                  {secrets.map((input) => (
+                    <WorkflowInputBlock
+                      key={input.id}
+                      input={input}
+                      value={inputValues[input.id]}
+                      onChange={(value) => onInputValuesChange(input.id, value)}
+                    />
+                  ))}
                 </div>
               ) : null}
+
               {canSubmitSeed ? (
                 <Button
                   type="button"
@@ -218,5 +113,35 @@ export function StartWorkflowSheet({
         </div>
       </aside>
     </>
+  );
+}
+
+function WorkflowInputBlock({
+  input,
+  value,
+  onChange,
+}: {
+  input: WorkflowInputManifest;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1">
+        <code className="block text-[11px] text-foreground">{input.id}</code>
+        {input.description ? (
+          <p className="text-muted-foreground text-[11px] leading-snug">
+            {input.description}
+          </p>
+        ) : null}
+      </div>
+      <JsonSchemaForm
+        schema={input.schema}
+        value={value}
+        onChange={onChange}
+        idPrefix={input.id}
+        secret={input.secret}
+      />
+    </div>
   );
 }

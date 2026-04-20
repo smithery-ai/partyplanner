@@ -15,7 +15,7 @@ The immediate target is:
 
 The current `/graph` backend is useful as a demo shell, but it mixes several concerns:
 
-- workflow source loading,
+- workflow definition routing,
 - state ownership,
 - scheduling,
 - atom execution,
@@ -201,9 +201,9 @@ export type WorkflowRef = {
 };
 ```
 
-For now, the loader can point at bundled modules or the current client-side registry.
+For now, the loader can point at bundled app/server-route modules or the current client-side registry.
 
-Later, Cloudflare can load static bundles, manifests, or Dynamic Workers.
+Later, Cloudflare can load static bundles or manifests. Runtime code upload/eval is out of scope.
 
 ### Scheduler
 
@@ -247,7 +247,6 @@ Initial executors:
 Later executors:
 
 - `CloudflareQueueExecutor`: lets Cloudflare Queue consumers run atom attempts.
-- `DynamicWorkerExecutor`: runs runtime-authored atom code in a sandbox.
 
 This keeps browser queueing independent from execution location.
 
@@ -555,12 +554,12 @@ Add these only when moving off local/client execution:
 
 ## Workflow Loading Policy
 
-Avoid request-time `new Function()` in the long-term design.
+Workflow code is not uploaded at request time. Server routes select from imported workflow modules and use the DB API for runtime state, queue, and event persistence.
 
 Supported loading modes:
 
 1. **Client/local dev mode**
-   - current raw workflow editing can continue for iteration,
+   - workflows can be imported in the client during iteration,
    - not a production trust boundary.
 
 2. **Static bundle mode**
@@ -570,10 +569,6 @@ Supported loading modes:
 3. **Manifest mode**
    - build extracts inputs, atoms, descriptions, schemas,
    - UI uses manifest before execution discovers edges.
-
-4. **Dynamic Worker mode**
-   - only for runtime-authored code,
-   - sandboxed and capability-limited.
 
 ## Migration Plan
 

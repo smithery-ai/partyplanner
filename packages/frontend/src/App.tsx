@@ -16,10 +16,13 @@ import {
   RefreshCw,
   SkipForward,
   Trash2,
-  Upload,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ZodError, type ZodTypeAny } from "zod";
+import {
+  defaultForJsonSchema,
+  sanitizeJsonSchemaValue,
+} from "./components/json-schema-form";
 import {
   type NodeDetailEditor,
   NodeDetailSheet,
@@ -34,20 +37,20 @@ import { StartWorkflowSheet } from "./components/start-workflow-sheet";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
-import { WorkflowCodeSheet } from "./components/workflow-code-sheet";
-import { defaultForSchema } from "./components/zod-schema-form";
-import { useWorkflowFrontendConfig, WorkflowFrontendRoot } from "./config";
+import { WorkflowFrontendRoot } from "./config";
 import {
   useSecretVault,
   useWorkflow,
   useWorkflowRun,
-  useWorkflows,
 } from "./hooks/use-workflow";
-import { loadWorkflowSourceIntoGlobalRegistry } from "./lib/evaluate-workflow-source";
 import { cn } from "./lib/utils";
-import type { RunSummary } from "./types";
+import type {
+  RunSummary,
+  WorkflowInputManifest,
+  WorkflowManifest,
+} from "./types";
 
-type SidePane = null | "workflow" | "start" | "pending" | "state";
+type SidePane = null | "start" | "pending" | "state";
 
 export type WorkflowNavigation = {
   home(): void;
@@ -58,24 +61,35 @@ export type WorkflowNavigation = {
 
 const noopNavigation: WorkflowNavigation = {
   home() {},
-  vault() {},
   workflow() {},
   run() {},
 };
 
-function buildInitialInputValues(registry: Registry): Record<string, unknown> {
-  const m: Record<string, unknown> = {};
-  for (const inp of registry.allInputs()) {
-    m[inp.id] = defaultForSchema(inp.schema as ZodTypeAny);
+function buildInitialManifestInputValues(
+  manifest: WorkflowManifest | undefined,
+): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const input of manifest?.inputs ?? []) {
+    values[input.id] = defaultForJsonSchema(input.schema);
   }
-  return m;
+  return values;
 }
 
-function firstSeedInputId(registry: Registry): string {
-  const im = registry
-    .allInputs()
-    .filter((i) => i.kind === "input" && !i.secret);
-  return im[0]?.id ?? "";
+function firstManifestSeedInputId(
+  manifest: WorkflowManifest | undefined,
+): string {
+  const immediate = manifest?.inputs.filter((input) => input.kind === "input");
+  return (
+    immediate?.find((input) => !input.secret)?.id ?? immediate?.[0]?.id ?? ""
+  );
+}
+
+function findManifestInput(
+  manifest: WorkflowManifest | undefined,
+  inputId: string | undefined,
+): WorkflowInputManifest | undefined {
+  if (!inputId) return undefined;
+  return manifest?.inputs.find((input) => input.id === inputId);
 }
 
 function findDeferredWait(
@@ -244,214 +258,6 @@ function runStatusClass(status: RunSummary["status"]): string {
   }
 }
 
-export function WorkflowIndexApp({
-  navigation = noopNavigation,
-}: {
-  navigation?: WorkflowNavigation;
-}) {
-  const config = useWorkflowFrontendConfig();
-  const { workflows, isPending, createWorkflow, deleteWorkflow, error } =
-    useWorkflows();
-  const exampleWorkflows = config.defaultWorkflows ?? [];
-  const [uploadError, setUploadError] = useState<string | undefined>();
-  const [uploadingWorkflowId, setUploadingWorkflowId] = useState<
-    string | undefined
-  >();
-  const [deletingWorkflowId, setDeletingWorkflowId] = useState<
-    string | undefined
-  >();
-
-  const uploading = uploadingWorkflowId !== undefined;
-  const existingWorkflowIds = new Set(workflows.map((w) => w.workflowId));
-  const missingExampleWorkflows = exampleWorkflows.filter(
-    (workflow) =>
-      !workflow.workflowId || !existingWorkflowIds.has(workflow.workflowId),
-  );
-
-  async function uploadWorkflow(
-    workflow: (typeof exampleWorkflows)[number],
-    options: { navigate?: boolean } = { navigate: true },
-  ) {
-    setUploadError(undefined);
-    setUploadingWorkflowId(workflow.workflowId ?? workflow.name ?? "workflow");
-    try {
-      const manifest = await createWorkflow({
-        workflowSource: workflow.source,
-        workflowId: workflow.workflowId,
-        name: workflow.name,
-      });
-      if (options.navigate) navigation.workflow(manifest.workflowId);
-      return manifest;
-    } catch (e) {
-      setUploadError(
-        e instanceof Error ? e.message : "Failed to upload workflow.",
-      );
-      return undefined;
-    } finally {
-      setUploadingWorkflowId(undefined);
-    }
-  }
-
-  async function uploadMissingExamples() {
-    let firstWorkflowId: string | undefined;
-    for (const workflow of missingExampleWorkflows) {
-      const manifest = await uploadWorkflow(workflow, { navigate: false });
-      firstWorkflowId ??= manifest?.workflowId;
-    }
-    if (firstWorkflowId) navigation.workflow(firstWorkflowId);
-  }
-
-  async function removeWorkflow(workflowId: string) {
-    setUploadError(undefined);
-    setDeletingWorkflowId(workflowId);
-    try {
-      await deleteWorkflow(workflowId);
-    } catch (e) {
-      setUploadError(
-        e instanceof Error ? e.message : `Failed to delete ${workflowId}.`,
-      );
-    } finally {
-      setDeletingWorkflowId(undefined);
-    }
-  }
-
-  if (isPending && workflows.length === 0 && !uploading) {
-    return (
-      <div className="flex h-screen items-center justify-center text-muted-foreground text-sm">
-        Loading workflows…
-      </div>
-    );
-  }
-
-  if (workflows.length === 0) {
-    return (
-      <div className="flex h-screen items-center justify-center p-6">
-        <div className="flex max-w-md flex-col items-center gap-4 rounded-xl border border-border bg-card p-8 text-center shadow-sm">
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {exampleWorkflows.length > 0
-              ? "No workflows yet. Upload example workflows to get started."
-              : "No workflows yet."}
-          </p>
-          {exampleWorkflows.length > 0 ? (
-            <div className="grid w-full gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => navigation.vault?.()}
-              >
-                <KeyRound className="size-4" aria-hidden />
-                Open vault
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void uploadMissingExamples()}
-                disabled={uploading}
-              >
-                <Upload className="size-4" aria-hidden />
-                {uploading ? "Uploading..." : "Upload all examples"}
-              </Button>
-              <div className="grid gap-2">
-                {exampleWorkflows.map((workflow) => (
-                  <Button
-                    key={workflow.workflowId ?? workflow.name}
-                    type="button"
-                    variant="outline"
-                    onClick={() => void uploadWorkflow(workflow)}
-                    disabled={uploading}
-                  >
-                    <Upload className="size-4" aria-hidden />
-                    {workflow.name ?? workflow.workflowId ?? "Workflow"}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {uploadError || error ? (
-            <p className="text-destructive text-xs">
-              {uploadError ?? error?.message}
-            </p>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <header className="flex min-h-10 items-center justify-between border-b border-border px-4 py-3">
-        <h1 className="text-sm font-semibold tracking-tight md:text-base">
-          Workflows
-        </h1>
-        <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => navigation.vault?.()}
-          >
-            <KeyRound className="size-3.5" aria-hidden />
-            Vault
-          </Button>
-          {missingExampleWorkflows.length > 0 ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void uploadMissingExamples()}
-              disabled={uploading || isPending}
-            >
-              <Upload className="size-3.5" aria-hidden />
-              {uploading ? "Uploading..." : "Upload examples"}
-            </Button>
-          ) : null}
-        </div>
-      </header>
-      <div className="flex-1 overflow-y-auto p-4">
-        <ul className="mx-auto flex max-w-2xl flex-col gap-2">
-          {workflows.map((w) => (
-            <li
-              key={w.workflowId}
-              className="grid grid-cols-[minmax(0,1fr)_auto] gap-2"
-            >
-              <button
-                type="button"
-                onClick={() => navigation.workflow(w.workflowId)}
-                className="flex w-full flex-col items-start gap-1 rounded-lg border border-border bg-card px-4 py-3 text-left outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-              >
-                <span className="text-sm font-medium text-foreground">
-                  {w.name ?? w.workflowId}
-                </span>
-                <span className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <code className="rounded bg-muted px-1 py-0.5">
-                    {w.workflowId}
-                  </code>
-                  <span>{formatRunTime(w.createdAt)}</span>
-                </span>
-              </button>
-              <Button
-                type="button"
-                size="icon"
-                variant="outline"
-                aria-label={`Delete ${w.workflowId}`}
-                title={`Delete ${w.workflowId}`}
-                disabled={isPending || deletingWorkflowId === w.workflowId}
-                onClick={() => void removeWorkflow(w.workflowId)}
-              >
-                <Trash2 className="size-4" aria-hidden />
-              </Button>
-            </li>
-          ))}
-        </ul>
-        {uploadError || error ? (
-          <p className="mx-auto mt-3 max-w-2xl text-destructive text-xs">
-            {uploadError ?? error?.message}
-          </p>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 export function SecretVaultApp({
   navigation = noopNavigation,
 }: {
@@ -509,8 +315,8 @@ export function SecretVaultApp({
             size="icon-sm"
             variant="outline"
             onClick={() => navigation.home()}
-            aria-label="Back to workflows"
-            title="Back to workflows"
+            aria-label="Back to workflow"
+            title="Back to workflow"
           >
             <ArrowLeft className="size-3.5" aria-hidden />
           </Button>
@@ -687,53 +493,17 @@ export function WorkflowRunnerApp({
   runId?: string;
   navigation?: WorkflowNavigation;
 }) {
-  const config = useWorkflowFrontendConfig();
   const workflow = useWorkflow(workflowId);
   const workflowRun = useWorkflowRun(runId);
-  const secretVault = useSecretVault();
-  const { deleteWorkflow } = useWorkflows();
 
   const [pane, setPane] = useState<SidePane>(null);
-  const [appliedSource, setAppliedSource] = useState<string | undefined>();
   const [inputValues, setInputValues] = useState<Record<string, unknown>>(() =>
-    buildInitialInputValues(globalRegistry),
+    buildInitialManifestInputValues(undefined),
   );
-  const [secretBindings, setSecretBindings] = useState<Record<string, string>>(
-    {},
-  );
-  const [newSecretValues, setNewSecretValues] = useState<
-    Record<string, string>
-  >({});
-  const [seedInputId, setSeedInputId] = useState(() =>
-    firstSeedInputId(globalRegistry),
-  );
+  const [seedInputId, setSeedInputId] = useState("");
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [pendingAutoAdvance, setPendingAutoAdvance] = useState(false);
-  const [deletingWorkflow, setDeletingWorkflow] = useState(false);
-
-  const manifestSource = workflow.manifest?.source;
-  const runSource = workflowRun.workflowSource;
-  const activeSource = runSource ?? manifestSource;
-
-  useEffect(() => {
-    if (!activeSource) return;
-    if (activeSource === appliedSource) return;
-    try {
-      loadWorkflowSourceIntoGlobalRegistry(activeSource);
-      setAppliedSource(activeSource);
-      setInputValues(buildInitialInputValues(globalRegistry));
-      setSecretBindings({});
-      setNewSecretValues({});
-      setSeedInputId(firstSeedInputId(globalRegistry));
-    } catch (e) {
-      setPayloadError(
-        e instanceof Error
-          ? e.message
-          : "Workflow source could not be evaluated.",
-      );
-    }
-  }, [activeSource, appliedSource]);
 
   const runState = workflowRun.runState;
   const wait = findDeferredWait(runState);
@@ -750,6 +520,17 @@ export function WorkflowRunnerApp({
   const canManualAdvance = Boolean(
     runState && !runComplete && !activeAutoAdvance && nextWork,
   );
+
+  useEffect(() => {
+    if (!workflow.manifest) return;
+    setInputValues((current) => ({
+      ...buildInitialManifestInputValues(workflow.manifest),
+      ...current,
+    }));
+    setSeedInputId(
+      (current) => current || firstManifestSeedInputId(workflow.manifest),
+    );
+  }, [workflow.manifest]);
 
   useEffect(() => {
     if (!selectedNodeId) return;
@@ -773,27 +554,23 @@ export function WorkflowRunnerApp({
     setInputValues((prev) => ({ ...prev, [id]: value }));
   }
 
-  function setSecretBinding(id: string, vaultEntryId: string) {
-    setSecretBindings((prev) => ({ ...prev, [id]: vaultEntryId }));
-    if (vaultEntryId) {
-      setNewSecretValues((prev) => ({ ...prev, [id]: "" }));
+  function collectSecretValues(): Record<string, string> {
+    const secretValues: Record<string, string> = {};
+    for (const input of workflow.manifest?.inputs ?? []) {
+      if (!input.secret) continue;
+      const value = inputValues[input.id];
+      if (typeof value === "string" && value.length > 0) {
+        secretValues[input.id] = value;
+      }
     }
-  }
-
-  function setNewSecretValue(id: string, value: string) {
-    setNewSecretValues((prev) => ({ ...prev, [id]: value }));
-    if (value) {
-      setSecretBindings((prev) => ({ ...prev, [id]: "" }));
-    }
+    return secretValues;
   }
 
   function clearRun() {
     workflowRun.clear();
     setSelectedNodeId(null);
-    setInputValues(buildInitialInputValues(globalRegistry));
-    setSecretBindings({});
-    setNewSecretValues({});
-    setSeedInputId(firstSeedInputId(globalRegistry));
+    setInputValues(buildInitialManifestInputValues(workflow.manifest));
+    setSeedInputId(firstManifestSeedInputId(workflow.manifest));
     setPayloadError("");
     setPane(null);
     navigation.workflow(workflowId);
@@ -801,33 +578,30 @@ export function WorkflowRunnerApp({
 
   async function runWorkflow(seedOverride?: string) {
     setPayloadError("");
-    const id = seedOverride ?? seedInputId;
-    const seed = globalRegistry.getInput(id);
-    if (!seed || seed.kind !== "input" || seed.secret) {
+    const immediate =
+      workflow.manifest?.inputs.filter((input) => input.kind === "input") ?? [];
+    const id =
+      seedOverride ??
+      (seedInputId || firstManifestSeedInputId(workflow.manifest));
+    const seed = immediate.find((input) => input.id === id) ?? immediate[0];
+    if (!seed) {
       setPayloadError("No initial input is registered for this workflow.");
       return;
     }
     let payload: unknown;
-    const resolvedSecretBindings: Record<string, string> = {};
+    let additionalInputs: { inputId: string; payload: unknown }[] | undefined;
+    const secretValues = collectSecretValues();
     try {
-      payload = seed.schema.parse(inputValues[seed.id]);
-      for (const secretInput of globalRegistry.allInputs()) {
-        if (secretInput.kind !== "input" || !secretInput.secret) continue;
-        const newValue = newSecretValues[secretInput.id]?.trim();
-        if (newValue) {
-          const entry = await secretVault.create({
-            name: secretInput.id,
-            key: secretInput.id,
-            value: newValue,
-            scope: "user",
-          });
-          resolvedSecretBindings[secretInput.id] = entry.id;
-          continue;
-        }
-
-        const vaultEntryId = secretBindings[secretInput.id];
-        if (vaultEntryId) resolvedSecretBindings[secretInput.id] = vaultEntryId;
-      }
+      payload = sanitizeJsonSchemaValue(seed.schema, inputValues[seed.id]);
+      additionalInputs = immediate
+        .filter((input) => input.id !== seed.id)
+        .filter((input) => !input.secret || secretValues[input.id])
+        .map((input) => ({
+          inputId: input.id,
+          payload: input.secret
+            ? secretValues[input.id]
+            : sanitizeJsonSchemaValue(input.schema, inputValues[input.id]),
+        }));
     } catch (e) {
       setPayloadError(
         errorMessage(e, "Validation failed for the initial inputs."),
@@ -839,7 +613,8 @@ export function WorkflowRunnerApp({
       const result = await workflow.start({
         inputId: seed.id,
         payload,
-        secretBindings: resolvedSecretBindings,
+        additionalInputs,
+        secretValues,
         autoAdvance: pendingAutoAdvance,
       });
       navigation.run(workflowId, result.state.runId);
@@ -860,13 +635,17 @@ export function WorkflowRunnerApp({
       );
       return;
     }
-    const def = globalRegistry.getInput(inputId);
+    const def = findManifestInput(workflow.manifest, inputId);
     if (!def) return;
 
     setPayloadError("");
     let payload: unknown;
+    const secretValues = collectSecretValues();
     try {
-      payload = def.schema.parse(inputValues[inputId]);
+      payload = sanitizeJsonSchemaValue(def.schema, inputValues[inputId]);
+      if (def.secret && typeof payload === "string" && payload.length > 0) {
+        secretValues[inputId] = payload;
+      }
     } catch (e) {
       setPayloadError(errorMessage(e, `Validation failed for "${inputId}".`));
       return;
@@ -874,10 +653,10 @@ export function WorkflowRunnerApp({
 
     try {
       await workflowRun.submitInput({
-        workflowSource: runSource ?? manifestSource ?? "",
         state: runState,
         inputId,
         payload,
+        secretValues,
         autoAdvance: activeAutoAdvance,
       });
       setPane(null);
@@ -888,50 +667,13 @@ export function WorkflowRunnerApp({
     }
   }
 
-  async function bindPendingSecret(explicitInputId?: string) {
-    const inputId = explicitInputId ?? pendingDeferredId;
-    if (!inputId || !runState) return;
-    const def = globalRegistry.getInput(inputId);
-    if (!def?.secret) return;
-
-    setPayloadError("");
-    try {
-      let vaultEntryId = secretBindings[inputId];
-      const newValue = newSecretValues[inputId]?.trim();
-      if (newValue) {
-        const entry = await secretVault.create({
-          name: inputId,
-          key: inputId,
-          value: newValue,
-          scope: "user",
-        });
-        vaultEntryId = entry.id;
-        setSecretBinding(inputId, entry.id);
-      }
-      if (!vaultEntryId) {
-        setPayloadError(`Choose or create a vault secret for "${inputId}".`);
-        return;
-      }
-
-      await workflowRun.bindSecret({
-        state: runState,
-        logicalName: inputId,
-        vaultEntryId,
-        autoAdvance: activeAutoAdvance,
-      });
-      setPane(null);
-    } catch (e) {
-      setPayloadError(errorMessage(e, "Unable to bind the secret."));
-    }
-  }
-
   async function advanceWorkflow() {
     if (!runState) return;
     setPayloadError("");
     try {
       await workflowRun.advance({
-        workflowSource: runSource ?? manifestSource ?? "",
         state: runState,
+        secretValues: collectSecretValues(),
       });
       setPane(null);
     } catch (e) {
@@ -951,24 +693,11 @@ export function WorkflowRunnerApp({
       await workflowRun.setAutoAdvance({
         state: runState,
         autoAdvance: nextAutoAdvance,
+        secretValues: collectSecretValues(),
       });
     } catch (e) {
       setPendingAutoAdvance(!nextAutoAdvance);
       setPayloadError(errorMessage(e, "Unable to change advance mode."));
-    }
-  }
-
-  async function deleteCurrentWorkflow() {
-    setPayloadError("");
-    setDeletingWorkflow(true);
-    try {
-      await deleteWorkflow(workflowId);
-      workflowRun.clear();
-      navigation.home();
-    } catch (e) {
-      setPayloadError(errorMessage(e, `Failed to delete ${workflowId}.`));
-    } finally {
-      setDeletingWorkflow(false);
     }
   }
 
@@ -1033,16 +762,6 @@ export function WorkflowRunnerApp({
               Clear
             </Button>
           )}
-          {activeSource ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setPane("workflow")}
-              aria-expanded={pane === "workflow"}
-            >
-              Workflow code
-            </Button>
-          ) : null}
           <Button
             size="sm"
             variant="outline"
@@ -1052,25 +771,15 @@ export function WorkflowRunnerApp({
           >
             Run state
           </Button>
-          <Button
-            size="icon-sm"
-            variant="outline"
-            onClick={() => navigation.vault?.()}
-            aria-label="Open secret vault"
-            title="Open secret vault"
-          >
-            <KeyRound className="size-3.5" aria-hidden />
-          </Button>
-          {config.apiMode === "multi" ? (
+          {navigation.vault ? (
             <Button
               size="icon-sm"
               variant="outline"
-              onClick={() => void deleteCurrentWorkflow()}
-              disabled={deletingWorkflow}
-              aria-label="Delete workflow"
-              title="Delete workflow"
+              onClick={() => navigation.vault?.()}
+              aria-label="Open secret vault"
+              title="Open secret vault"
             >
-              <Trash2 className="size-3.5" aria-hidden />
+              <KeyRound className="size-3.5" aria-hidden />
             </Button>
           ) : null}
           <fieldset
@@ -1261,15 +970,6 @@ export function WorkflowRunnerApp({
             </div>
           )}
 
-          {activeSource ? (
-            <WorkflowCodeSheet
-              open={pane === "workflow"}
-              onOpenChange={(o) => setPane(o ? "workflow" : null)}
-              workflowCode={activeSource}
-              readOnly
-            />
-          ) : null}
-
           <RunStateJsonSheet
             open={pane === "state"}
             onOpenChange={(o) => setPane(o ? "state" : null)}
@@ -1336,11 +1036,11 @@ export function WorkflowRunnerApp({
 }
 
 export function WorkflowSingleApp() {
-  const { workflows, isPending, error } = useWorkflows();
+  const workflow = useWorkflow(undefined);
   const [runId, setRunId] = useState<string | undefined>();
-  const manifest = workflows[0];
+  const manifest = workflow.manifest;
 
-  if (isPending && !manifest) {
+  if (workflow.isPending && !manifest) {
     return (
       <div className="flex h-screen items-center justify-center text-muted-foreground text-sm">
         Loading workflow...
@@ -1355,8 +1055,8 @@ export function WorkflowSingleApp() {
           <p className="text-sm font-semibold text-foreground">
             Workflow unavailable
           </p>
-          {error ? (
-            <p className="text-destructive text-xs">{error.message}</p>
+          {workflow.error ? (
+            <p className="text-destructive text-xs">{workflow.error.message}</p>
           ) : null}
         </div>
       </div>
@@ -1384,7 +1084,7 @@ export function WorkflowSinglePage({
   apiBaseUrl?: string;
 }) {
   return (
-    <WorkflowFrontendRoot config={{ apiMode: "single", apiBaseUrl }}>
+    <WorkflowFrontendRoot config={{ apiBaseUrl }}>
       <WorkflowSingleApp />
     </WorkflowFrontendRoot>
   );

@@ -52,7 +52,6 @@ describe("PGlite Workflow server", () => {
     client = new PGlite();
     const db = drizzle({ client });
     const app = createWorkflowServer({
-      workflows: {},
       stateStore: createPostgresWorkflowStateStore(db),
       queue: createPostgresWorkflowQueue(db),
       workflow: {

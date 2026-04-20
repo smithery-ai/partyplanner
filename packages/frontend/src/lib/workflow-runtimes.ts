@@ -14,13 +14,12 @@ import type {
   RunStateDocument,
   RunSummary,
   SetAutoAdvanceRequest,
-  StartBackendRunRequest,
+  StartWorkflowRunRequest,
   SubmitBackendInputRequest,
   WorkflowRuntimeResult,
 } from "../types";
 
 export type StartWorkflowArgs = {
-  workflowSource: string;
   inputId: string;
   payload: unknown;
   additionalInputs?: {
@@ -28,25 +27,27 @@ export type StartWorkflowArgs = {
     payload: unknown;
   }[];
   secretBindings?: Record<string, string | { vaultEntryId: string }>;
+  secretValues?: Record<string, string>;
   autoAdvance?: boolean;
 };
 
 export type SubmitWorkflowInputArgs = {
-  workflowSource?: string;
   state?: RunState;
   inputId: string;
   payload: unknown;
+  secretValues?: Record<string, string>;
   autoAdvance?: boolean;
 };
 
 export type AdvanceWorkflowArgs = {
-  workflowSource?: string;
   state?: RunState;
+  secretValues?: Record<string, string>;
 };
 
 export type SetAutoAdvanceWorkflowArgs = {
   state?: RunState;
   autoAdvance: boolean;
+  secretValues?: Record<string, string>;
 };
 
 export type PollWorkflowStateArgs = {
@@ -77,14 +78,14 @@ export class BackendRuntime implements WorkflowRuntime {
   }
 
   async start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult> {
-    const document = await this.post<StartBackendRunRequest, RunStateDocument>(
+    const document = await this.post<StartWorkflowRunRequest, RunStateDocument>(
       "/runs",
       {
-        workflowSource: args.workflowSource,
         inputId: args.inputId,
         payload: args.payload,
         additionalInputs: args.additionalInputs,
         secretBindings: args.secretBindings,
+        secretValues: args.secretValues,
         autoAdvance: args.autoAdvance,
       },
     );
@@ -102,6 +103,7 @@ export class BackendRuntime implements WorkflowRuntime {
     >(`/runs/${encodeURIComponent(args.state.runId)}/inputs`, {
       inputId: args.inputId,
       payload: args.payload,
+      secretValues: args.secretValues,
       autoAdvance: args.autoAdvance,
     });
     return documentResult(document);
@@ -109,10 +111,12 @@ export class BackendRuntime implements WorkflowRuntime {
 
   async advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult> {
     if (!args.state) throw new Error("Cannot advance before a run exists.");
-    const document = await this.post<Record<string, never>, RunStateDocument>(
-      `/runs/${encodeURIComponent(args.state.runId)}/advance`,
-      {},
-    );
+    const document = await this.post<
+      { secretValues?: Record<string, string> },
+      RunStateDocument
+    >(`/runs/${encodeURIComponent(args.state.runId)}/advance`, {
+      secretValues: args.secretValues,
+    });
     return documentResult(document);
   }
 
@@ -125,6 +129,7 @@ export class BackendRuntime implements WorkflowRuntime {
       `/runs/${encodeURIComponent(args.state.runId)}/auto-advance`,
       {
         autoAdvance: args.autoAdvance,
+        secretValues: args.secretValues,
       },
     );
     return documentResult(document);
@@ -172,7 +177,6 @@ function documentResult(document: RunStateDocument): WorkflowRuntimeResult {
     snapshot: document,
     queue: document.queue,
     events: document.events,
-    workflowSource: document.workflowSource,
     autoAdvance: document.autoAdvance,
   };
 }

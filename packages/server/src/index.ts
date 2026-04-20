@@ -1,18 +1,14 @@
 export type {
   BindRunSecretRequest,
   CreateSecretVaultEntryRequest,
-  CreateWorkflowRequest,
-  DeleteWorkflowResponse,
   RunSecretBinding,
   RunStateDocument,
   RunSummary,
   SecretVaultEntry,
   SecretVaultScope,
   SetAutoAdvanceRequest,
-  StartBackendRunRequest,
   SubmitBackendInputRequest,
   UpdateSecretVaultEntryRequest,
-  WorkflowApiManifest,
 } from "./api";
 export type { CreateWorkflowServerOptions, WorkflowApp } from "./app";
 export { createWorkflowServer } from "./app";

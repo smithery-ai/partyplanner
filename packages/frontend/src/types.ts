@@ -3,18 +3,17 @@ import type { QueueSnapshot, RunEvent, RunSnapshot } from "@workflow/runtime";
 import type {
   BindRunSecretRequest,
   CreateSecretVaultEntryRequest,
-  CreateWorkflowRequest,
-  DeleteWorkflowResponse,
+  JsonSchema,
   RunSecretBinding,
   RunStateDocument,
   RunSummary,
   SecretVaultEntry,
   SetAutoAdvanceRequest,
-  StartBackendRunRequest,
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
   UpdateSecretVaultEntryRequest,
-  WorkflowApiManifest,
+  WorkflowInputManifest,
+  WorkflowManifest,
 } from "@workflow/server";
 
 export type JsonPayload =
@@ -25,22 +24,20 @@ export type JsonPayload =
   | JsonPayload[]
   | { [key: string]: JsonPayload };
 
-export type WorkflowManifest = WorkflowApiManifest;
-
 export type {
   BindRunSecretRequest,
   CreateSecretVaultEntryRequest,
-  CreateWorkflowRequest,
-  DeleteWorkflowResponse,
+  JsonSchema,
   RunSecretBinding,
   RunStateDocument,
   RunSummary,
   SecretVaultEntry,
   SetAutoAdvanceRequest,
-  StartBackendRunRequest,
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
   UpdateSecretVaultEntryRequest,
+  WorkflowInputManifest,
+  WorkflowManifest,
 };
 
 export type WorkflowRuntimeResult = {
@@ -48,6 +45,5 @@ export type WorkflowRuntimeResult = {
   snapshot?: RunSnapshot;
   queue?: QueueSnapshot;
   events?: RunEvent[];
-  workflowSource?: string;
   autoAdvance?: boolean;
 };

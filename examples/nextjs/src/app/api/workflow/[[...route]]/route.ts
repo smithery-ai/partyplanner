@@ -3,7 +3,7 @@ import {
   createRemoteWorkflowStateStore,
 } from "@workflow/remote";
 import { createWorkflowServer } from "@workflow/server";
-import * as workflows from "@/workflows";
+import "@/workflows";
 
 type WorkflowApp = ReturnType<typeof createWorkflowServer>;
 
@@ -16,7 +16,6 @@ function getWorkflowApp(): WorkflowApp {
 
   workflowApp = createWorkflowServer({
     basePath: "/api/workflow",
-    workflows,
     stateStore: createRemoteWorkflowStateStore(remoteRuntimeUrl),
     queue: createRemoteWorkflowQueue(remoteRuntimeUrl),
     workflow: {

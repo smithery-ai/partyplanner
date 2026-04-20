@@ -7,12 +7,8 @@ import { defineConfig } from "vite";
 
 const backendTarget =
   process.env.VITE_BACKEND_URL ??
-  derivePortlessServiceUrl(
-    process.env.PORTLESS_URL,
-    "hylo",
-    "api-worker.hylo",
-  ) ??
-  "http://localhost:8788";
+  derivePortlessServiceUrl(process.env.PORTLESS_URL, "hylo", "nextjs.hylo") ??
+  "http://localhost:3000";
 
 const backendProxy = {
   target: backendTarget,
@@ -20,7 +16,7 @@ const backendProxy = {
   secure: false,
   agent: portlessLocalAgent(backendTarget),
   rewrite: (proxyPath: string) =>
-    proxyPath.replace(/^\/api(?=\/|$)/, "") || "/",
+    proxyPath.replace(/^\/api(?=\/|$)/, "/api/workflow") || "/api/workflow",
 };
 
 export default defineConfig({

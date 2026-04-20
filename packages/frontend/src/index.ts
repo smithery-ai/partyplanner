@@ -2,7 +2,6 @@
 
 export {
   SecretVaultApp,
-  WorkflowIndexApp,
   type WorkflowNavigation,
   WorkflowRunnerApp,
   WorkflowSingleApp,
