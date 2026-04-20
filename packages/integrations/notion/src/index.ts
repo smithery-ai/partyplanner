@@ -1,4 +1,4 @@
-export type { CreatePageOptions } from "./actions";
+export type { CreatePageOptions, NotionBlock } from "./actions";
 export { createPage } from "./actions";
 export type { GetPageOptions, NotionPage } from "./atoms";
 export { getPage } from "./atoms";

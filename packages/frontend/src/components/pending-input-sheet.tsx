@@ -9,6 +9,7 @@ import { useState } from "react";
 import { JsonSchemaForm } from "../components/json-schema-form";
 import { Button, buttonVariants } from "../components/ui/button";
 import { cn } from "../lib/utils";
+import { workflowInputLabel } from "../lib/workflow-labels";
 import type { JsonSchema, WorkflowInputManifest } from "../types";
 
 export type PendingFormRequest = {
@@ -63,7 +64,8 @@ export function PendingInputSheet({
         ? action.url
         : undefined;
   const actionLabel = action?.label;
-  const title = formTitle ?? (isSecret ? "Pending secret" : "Pending input");
+  const label = workflowInputLabel(input);
+  const title = formTitle ?? (isSecret ? "Pending secret" : label);
 
   return (
     <>
@@ -98,9 +100,7 @@ export function PendingInputSheet({
                   aria-hidden
                 />
                 <div className="min-w-0 space-y-1">
-                  <code className="block text-[11px] text-foreground">
-                    {input.id}
-                  </code>
+                  <p className="font-medium text-sm text-foreground">{label}</p>
                   {input.description ? (
                     <p className="text-muted-foreground text-[11px] leading-snug">
                       {input.description}
@@ -116,9 +116,7 @@ export function PendingInputSheet({
           ) : (
             <div className="space-y-2 rounded-lg border border-yellow-500/40 bg-yellow-500/8 p-3">
               <div className="space-y-1">
-                <code className="block text-[11px] text-foreground">
-                  {input.id}
-                </code>
+                <p className="font-medium text-sm text-foreground">{label}</p>
                 {input.description ? (
                   <p className="text-muted-foreground text-[11px] leading-snug">
                     {input.description}
@@ -169,7 +167,7 @@ export function PendingInputSheet({
                         size="sm"
                         onClick={() => onSubmit()}
                       >
-                        {`Submit "${input.id}"`}
+                        Submit
                       </Button>
                     </div>
                   ) : null}
@@ -183,7 +181,7 @@ export function PendingInputSheet({
                     idPrefix={input.id}
                   />
                   <Button type="button" size="sm" onClick={() => onSubmit()}>
-                    {`Submit "${input.id}"`}
+                    Submit
                   </Button>
                 </>
               )}

@@ -1,4 +1,4 @@
-import { type Atom, atom, type Input } from "@workflow/core";
+import { type Atom, atom, type Handle, type Input } from "@workflow/core";
 import { signOAuthState } from "@workflow/integrations-oauth";
 import { z } from "zod";
 
@@ -20,6 +20,7 @@ export type NotionOAuthOptions = {
   clientSecret: Input<string>;
   stateSecret: Input<string>;
   callbackPath?: string;
+  waitFor?: Handle<unknown>;
   name?: string;
 };
 
@@ -47,6 +48,8 @@ export function notionOAuth(opts: NotionOAuthOptions): Atom<NotionAuth> {
 
   return atom(
     async (get, requestIntervention, context) => {
+      if (opts.waitFor) get(opts.waitFor);
+
       const login = get.maybe(opts.login);
       if (!login) return get.skip("No Notion login submitted");
 

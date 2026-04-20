@@ -47,6 +47,7 @@ import {
   useWorkflowRun,
 } from "./hooks/use-workflow";
 import { cn } from "./lib/utils";
+import { workflowInputLabel } from "./lib/workflow-labels";
 import type {
   RunSummary,
   WorkflowInputManifest,
@@ -557,7 +558,7 @@ export function WorkflowRunnerApp({
     : pendingInputId
       ? pendingInput?.secret
         ? `Missing secret ${pendingInputId}`
-        : `Provide ${pendingInputId}`
+        : workflowInputLabel(pendingInput, pendingInputId)
       : "Input pending";
 
   const nodes = runState?.nodes ?? {};
@@ -808,7 +809,7 @@ export function WorkflowRunnerApp({
         value: inputValues[selectedNodeId],
         onChange: (v) => setInputValue(selectedNodeId, v),
         onSubmit: () => void runWorkflow(selectedNodeId),
-        submitLabel: `Submit “${selectedNodeId}”`,
+        submitLabel: workflowInputLabel(def, selectedNodeId),
         error: payloadError || undefined,
       };
     } else if (
@@ -825,7 +826,7 @@ export function WorkflowRunnerApp({
         value: inputValues[id],
         onChange: (v) => setInputValue(id, v),
         onSubmit: () => void submitPendingInput(id),
-        submitLabel: `Submit “${id}”`,
+        submitLabel: workflowInputLabel(def, id),
         error: payloadError || undefined,
       };
     }
@@ -976,6 +977,10 @@ export function WorkflowRunnerApp({
               <div className="flex flex-col gap-1">
                 {workflow.runs.map((run) => {
                   const active = run.runId === runId;
+                  const runTitle = workflowInputLabel(
+                    findManifestInput(workflow.manifest, run.triggerInputId),
+                    run.triggerInputId,
+                  );
                   return (
                     <button
                       key={run.runId}
@@ -983,6 +988,7 @@ export function WorkflowRunnerApp({
                       onClick={() => navigation.run(workflowId, run.runId)}
                       disabled={isPending}
                       aria-current={active ? "true" : undefined}
+                      aria-label={`${runTitle}, ${runStatusLabel(run.status)}, ${formatRunTime(run.startedAt)}, ${shortRunId(run.runId)}`}
                       className={cn(
                         "grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg border border-transparent px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50 disabled:pointer-events-none disabled:opacity-60",
                         active &&
@@ -994,26 +1000,34 @@ export function WorkflowRunnerApp({
                           "mt-1 size-2 rounded-full",
                           runStatusClass(run.status),
                         )}
+                        title={runStatusLabel(run.status)}
                         aria-hidden
                       />
                       <span className="min-w-0">
-                        <span className="flex min-w-0 items-center justify-between gap-2">
-                          <span className="min-w-0 truncate font-medium">
-                            {shortRunId(run.runId)}
-                          </span>
-                          <span className="shrink-0 text-[0.7rem] font-medium text-muted-foreground">
-                            {runStatusLabel(run.status)}
-                          </span>
+                        <span className="block min-w-0 truncate font-medium">
+                          {runTitle}
                         </span>
                         <span className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
                           <Clock3 className="size-3 shrink-0" aria-hidden />
                           <span className="min-w-0 truncate">
                             {formatRunTime(run.startedAt)}
                           </span>
+                          <span aria-hidden>·</span>
+                          <span className="shrink-0">
+                            {shortRunId(run.runId)}
+                          </span>
                         </span>
                         {run.waitingOn.length > 0 && (
                           <span className="mt-1 block truncate text-xs text-muted-foreground">
-                            Waiting on {run.waitingOn.join(", ")}
+                            Waiting on{" "}
+                            {run.waitingOn
+                              .map((inputId) =>
+                                workflowInputLabel(
+                                  findManifestInput(workflow.manifest, inputId),
+                                  inputId,
+                                ),
+                              )
+                              .join(", ")}
                           </span>
                         )}
                       </span>

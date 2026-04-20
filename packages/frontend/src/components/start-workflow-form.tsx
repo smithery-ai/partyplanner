@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "../lib/utils";
+import { workflowInputLabel } from "../lib/workflow-labels";
 import type { WorkflowInputManifest } from "../types";
 import { JsonSchemaForm } from "./json-schema-form";
 import { Button } from "./ui/button";
@@ -237,6 +238,8 @@ function InputOption({
   canSubmit: boolean;
   onSubmit: () => void;
 }) {
+  const label = workflowInputLabel(input);
+
   return (
     <div
       className={cn(
@@ -258,9 +261,9 @@ function InputOption({
           aria-hidden
         />
         <div className="min-w-0 flex-1 space-y-0.5">
-          <code className="block truncate text-[11px] text-foreground">
-            {input.id}
-          </code>
+          <span className="block truncate text-sm font-medium text-foreground">
+            {label}
+          </span>
           {input.description ? (
             <p className="text-muted-foreground text-[11px] leading-snug">
               {input.description}
@@ -291,7 +294,7 @@ function InputOption({
               disabled={!canSubmit}
             >
               <Play className="size-3.5" aria-hidden />
-              Start with "{input.id}"
+              Start
             </Button>
           </div>
         </div>

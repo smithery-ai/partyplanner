@@ -645,6 +645,14 @@ function visibleWorkflowNodeIds(
   });
 }
 
+function skippedWorkflowNodeIds(
+  ids: readonly string[],
+  runState: RunState | undefined,
+): string[] {
+  if (!runState) return [];
+  return ids.filter((id) => runState.nodes[id]?.status === "skipped");
+}
+
 function queueNodeId(event: QueueSnapshot["pending"][number]["event"]): string {
   return event.kind === "input" ? event.inputId : event.stepId;
 }
@@ -764,6 +772,7 @@ function FlowInner({
   onNodeClick?: (nodeId: string) => void;
 }) {
   const [legendOpen, setLegendOpen] = useState(false);
+  const [showSkippedNodes, setShowSkippedNodes] = useState(false);
   const [fitViewRevision, setFitViewRevision] = useState(0);
   const prevEdgeSigRef = useRef<string | null>(null);
   const prevNodeIdsRef = useRef<Set<string> | null>(null);
@@ -771,10 +780,20 @@ function FlowInner({
   const nodesInitialized = useNodesInitialized();
   const { fitView } = useReactFlow();
 
-  const visibleIds = useMemo(
+  const reachableIds = useMemo(
     () => visibleWorkflowNodeIds(registry, manifest, runState, queue),
     [registry, manifest, runState, queue],
   );
+  const skippedIds = useMemo(
+    () => skippedWorkflowNodeIds(reachableIds, runState),
+    [reachableIds, runState],
+  );
+  const visibleIds = useMemo(() => {
+    if (showSkippedNodes) return reachableIds;
+    const skipped = new Set(skippedIds);
+    return reachableIds.filter((id) => !skipped.has(id));
+  }, [reachableIds, skippedIds, showSkippedNodes]);
+  const skippedNodeCount = skippedIds.length;
 
   const graphEdges = useMemo(() => {
     const raw = edgesFromObservedDeps(runState);
@@ -950,15 +969,28 @@ function FlowInner({
             </ul>
           </div>
         )}
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="nodrag nopan shadow-md"
-          onClick={() => setLegendOpen((o) => !o)}
-        >
-          {legendOpen ? "Hide status key" : "Status colors"}
-        </Button>
+        <div className="nodrag nopan flex flex-wrap items-center justify-end gap-2">
+          {skippedNodeCount > 0 ? (
+            <label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-border bg-card/95 px-3 text-xs font-medium text-foreground shadow-md backdrop-blur-sm">
+              <input
+                type="checkbox"
+                className="size-3.5 rounded border-border accent-primary"
+                checked={showSkippedNodes}
+                onChange={(event) => setShowSkippedNodes(event.target.checked)}
+              />
+              <span>Show {skippedNodeCount} skipped</span>
+            </label>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="shadow-md"
+            onClick={() => setLegendOpen((o) => !o)}
+          >
+            {legendOpen ? "Hide status key" : "Status colors"}
+          </Button>
+        </div>
       </Panel>
     </Canvas>
   );

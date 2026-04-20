@@ -25,7 +25,10 @@ export const provider = input(
         "Whether the MCP endpoint supports dynamic client registration.",
       ),
   }),
-  { description: "Connection details for the provider you are onboarding." },
+  {
+    title: "Onboard a provider",
+    description: "Connection details for the provider you are onboarding.",
+  },
 );
 
 export const oauthCreds = input.deferred(
@@ -37,6 +40,7 @@ export const oauthCreds = input.deferred(
       .describe("OAuth client_secret issued for this provider."),
   }),
   {
+    title: "Add OAuth credentials",
     description:
       "OAuth credentials supplied after static registration when DCR is unavailable.",
   },
@@ -56,6 +60,7 @@ export const overlayReview = input.deferred(
       .describe("Optional JSON pointer–style paths removed before deployment."),
   }),
   {
+    title: "Review the API overlay",
     description: "Human review gate before applying the OpenAPI overlay.",
   },
 );
@@ -73,6 +78,7 @@ export const prodApproval = input.deferred(
       ),
   }),
   {
+    title: "Approve production deploy",
     description: "Final approval gate before production deployment.",
   },
 );

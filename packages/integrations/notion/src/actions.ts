@@ -3,12 +3,15 @@ import { z } from "zod";
 import type { NotionPage } from "./atoms";
 import { NOTION_VERSION, type NotionAuth } from "./oauth";
 
+export type NotionBlock = Record<string, unknown>;
+
 export type CreatePageOptions = {
   auth: Atom<NotionAuth>;
   parentPageId: Handle<string>;
   title: Handle<string>;
-  // Optional body text inserted as a single paragraph block.
+  // Optional body text inserted as paragraph blocks.
   body?: Handle<string>;
+  children?: Handle<NotionBlock[]>;
   actionName?: string;
 };
 
@@ -23,22 +26,16 @@ const pageResponseSchema = z
 export function createPage(opts: CreatePageOptions): Action<NotionPage> {
   return action(
     async (get) => {
-      const { accessToken } = get(opts.auth);
       const parentPageId = get(opts.parentPageId);
       const title = get(opts.title);
-      const body = opts.body ? get.maybe(opts.body) : undefined;
+      const body = opts.body ? get(opts.body) : undefined;
+      const children = opts.children ? get(opts.children) : undefined;
+      const { accessToken } = get(opts.auth);
 
-      const children = body
-        ? [
-            {
-              object: "block",
-              type: "paragraph",
-              paragraph: {
-                rich_text: [{ type: "text", text: { content: body } }],
-              },
-            },
-          ]
-        : undefined;
+      const pageChildren = [
+        ...(body ? textToParagraphBlocks(body) : []),
+        ...(children ?? []),
+      ];
 
       const response = await fetch("https://api.notion.com/v1/pages", {
         method: "POST",
@@ -54,7 +51,8 @@ export function createPage(opts: CreatePageOptions): Action<NotionPage> {
               title: [{ type: "text", text: { content: title } }],
             },
           },
-          children,
+          children:
+            pageChildren.length > 0 ? pageChildren.slice(0, 100) : undefined,
         }),
       });
       if (!response.ok) {
@@ -64,6 +62,13 @@ export function createPage(opts: CreatePageOptions): Action<NotionPage> {
       }
       const raw = await response.json();
       const parsed = pageResponseSchema.parse(raw);
+      for (const blockChunk of chunks(pageChildren.slice(100), 100)) {
+        await appendBlockChildren({
+          accessToken,
+          blockId: parsed.id,
+          children: blockChunk,
+        });
+      }
       return {
         id: parsed.id,
         url: parsed.url,
@@ -73,4 +78,68 @@ export function createPage(opts: CreatePageOptions): Action<NotionPage> {
     },
     { name: opts.actionName ?? "notionCreatePage" },
   );
+}
+
+function textToParagraphBlocks(body: string): NotionBlock[] {
+  const blocks: NotionBlock[] = [];
+  for (const paragraph of body.split(/\n{2,}/)) {
+    const trimmed = paragraph.trim();
+    if (!trimmed) continue;
+    for (const content of splitText(trimmed, 1800)) {
+      blocks.push({
+        object: "block",
+        type: "paragraph",
+        paragraph: {
+          rich_text: [{ type: "text", text: { content } }],
+        },
+      });
+    }
+  }
+  return blocks;
+}
+
+function splitText(text: string, maxLength: number): string[] {
+  if (text.length <= maxLength) return [text];
+  const parts: string[] = [];
+  let remaining = text;
+  while (remaining.length > maxLength) {
+    const breakpoint = remaining.lastIndexOf("\n", maxLength);
+    const sliceAt = breakpoint > 0 ? breakpoint : maxLength;
+    parts.push(remaining.slice(0, sliceAt).trim());
+    remaining = remaining.slice(sliceAt).trim();
+  }
+  if (remaining) parts.push(remaining);
+  return parts;
+}
+
+function chunks<T>(items: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size));
+  }
+  return result;
+}
+
+async function appendBlockChildren(args: {
+  accessToken: string;
+  blockId: string;
+  children: NotionBlock[];
+}): Promise<void> {
+  const response = await fetch(
+    `https://api.notion.com/v1/blocks/${encodeURIComponent(args.blockId)}/children`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${args.accessToken}`,
+        "Content-Type": "application/json",
+        "Notion-Version": NOTION_VERSION,
+      },
+      body: JSON.stringify({ children: args.children }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Notion PATCH /v1/blocks/:id/children failed (${response.status}): ${await response.text()}`,
+    );
+  }
 }

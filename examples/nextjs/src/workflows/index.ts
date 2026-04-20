@@ -3,6 +3,7 @@ import { z } from "zod";
 import "./notion";
 import { exampleSecretValue } from "./secrets";
 import { spotifyProfile } from "./spotify";
+import { spotifyPlaylistNotionResult } from "./spotify-notion-playlist";
 
 export const incidentAlert = input(
   "incidentAlert",
@@ -17,6 +18,7 @@ export const incidentAlert = input(
       .default("synthetic"),
   }),
   {
+    title: "Respond to an incident",
     description:
       "Start the incident response workflow for a production service issue.",
   },
@@ -34,6 +36,7 @@ export const purchaseRequest = input(
       .default("Annual observability renewal for production systems."),
   }),
   {
+    title: "Review a purchase request",
     description:
       "Start the procurement workflow for a vendor purchase request.",
   },
@@ -48,6 +51,7 @@ export const customerEscalation = input(
     sentiment: z.enum(["calm", "frustrated", "angry"]).default("frustrated"),
   }),
   {
+    title: "Handle a customer escalation",
     description:
       "Start the customer escalation workflow for a support or success team.",
   },
@@ -61,6 +65,7 @@ export const incidentCommsApproval = input.deferred(
     note: z.string().optional(),
   }),
   {
+    title: "Approve incident communications",
     description:
       "Human approval for the incident communication before publishing.",
   },
@@ -75,6 +80,7 @@ export const purchaseApproval = input.deferred(
     note: z.string().optional(),
   }),
   {
+    title: "Approve the purchase",
     description:
       "Finance approval for requests above the self-serve purchase limit.",
   },
@@ -88,6 +94,7 @@ export const customerResolutionReview = input.deferred(
     note: z.string().optional(),
   }),
   {
+    title: "Review the customer response",
     description:
       "Customer success approval for the proposed response and account credit.",
   },
@@ -351,8 +358,15 @@ export const branchSummary = atom(
     const purchase = get.maybe(purchaseNotifyRequester);
     const customer = get.maybe(customerFollowUp);
     const spotify = get.maybe(spotifyProfile);
+    const spotifyPlaylistNotion = get.maybe(spotifyPlaylistNotionResult);
 
-    const completed = [incident, purchase, customer, spotify].filter(Boolean);
+    const completed = [
+      incident,
+      purchase,
+      customer,
+      spotify,
+      spotifyPlaylistNotion,
+    ].filter(Boolean);
     if (completed.length === 0) {
       return get.skip("No branch completed yet");
     }

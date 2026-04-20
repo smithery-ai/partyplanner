@@ -4,6 +4,7 @@ import type { AtomRuntimeContext, Get, RequestIntervention } from "./types";
 export type InputDef = {
   kind: "input" | "deferred_input";
   id: string;
+  title?: string;
   schema: ZodSchema<unknown>;
   description?: string;
   secret?: boolean;
