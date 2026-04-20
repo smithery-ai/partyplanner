@@ -1,8 +1,16 @@
 #!/bin/sh
 set -e
 
-if [ "$PORTLESS" = "0" ]; then
+run_turbo() {
+  if [ "${INFISICAL:-1}" != "0" ] && command -v infisical >/dev/null 2>&1; then
+    exec infisical run -- turbo run dev --ui=tui
+  fi
+
   exec turbo run dev --ui=tui
+}
+
+if [ "$PORTLESS" = "0" ]; then
+  run_turbo
 fi
 
 cat <<'EOF'
@@ -13,4 +21,4 @@ and https://api-worker.hylo.localhost working without any global installs.
 EOF
 
 portless proxy start
-exec turbo run dev --ui=tui
+run_turbo
