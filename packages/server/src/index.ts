@@ -10,8 +10,9 @@ export type {
   SubmitBackendInputRequest,
   UpdateSecretVaultEntryRequest,
 } from "./api";
-export type { CreateWorkflowServerOptions, WorkflowApp } from "./app";
-export { createWorkflowServer } from "./app";
+export type { CreateWorkflowOptions, WorkflowApp } from "./app";
+export { createWorkflow } from "./app";
+export type { BackendApiClientOptions } from "./backend-api";
 export type { WorkflowManagerOptions } from "./manager";
 export { summarizeRun, WorkflowManager } from "./manager";
 export type {

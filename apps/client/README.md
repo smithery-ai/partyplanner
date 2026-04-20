@@ -16,6 +16,6 @@ different workflow server API:
 VITE_BACKEND_URL=https://nextjs.hylo.localhost/api/workflow pnpm --filter client dev
 ```
 
-The DB API itself lives behind `apps/backend` or `apps/backend-node`; workflow
-server routes use the remote runtime adapters to read and write queue/state
-data there.
+The backend API itself lives behind `apps/backend` or `apps/backend-node`;
+workflow server routes pass that URL to `createWorkflow` so queue and
+state data are read and written there.

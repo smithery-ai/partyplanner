@@ -554,7 +554,7 @@ Add these only when moving off local/client execution:
 
 ## Workflow Loading Policy
 
-Workflow code is not uploaded at request time. Server routes select from imported workflow modules and use the DB API for runtime state, queue, and event persistence.
+Workflow code is not uploaded at request time. Server routes select from imported workflow modules and use the backend API for runtime state, queue, and event persistence.
 
 Supported loading modes:
 

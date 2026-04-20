@@ -4,7 +4,7 @@ This example runs workflow atom code inside a Next.js route handler using:
 
 - `@workflow/server` for the Hono API
 - local workflow imports for execution
-- remote state/queue adapters pointed at a Hylo-compatible backend
+- a `backendApi` URL pointed at a Hylo-compatible backend
 
 This represents the user-managed runtime model: workflow atoms are imported and
 executed by the user's application instead of being uploaded to Hylo for

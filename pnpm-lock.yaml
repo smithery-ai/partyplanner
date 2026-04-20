@@ -188,9 +188,6 @@ importers:
       '@workflow/frontend':
         specifier: workspace:*
         version: link:../../packages/frontend
-      '@workflow/remote':
-        specifier: workspace:*
-        version: link:../../packages/remote
       '@workflow/server':
         specifier: workspace:*
         version: link:../../packages/server
@@ -336,6 +333,9 @@ importers:
       '@electric-sql/pglite':
         specifier: ^0.3.14
         version: 0.3.16
+      '@workflow/remote':
+        specifier: workspace:*
+        version: link:../remote
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

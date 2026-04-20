@@ -1,5 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import {
+  type BackendApiClientOptions,
+  createBackendApiWorkflowQueue,
+  createBackendApiWorkflowStateStore,
+} from "./backend-api";
 import { WorkflowManager, type WorkflowManagerOptions } from "./manager";
 import type {
   StartWorkflowRunRequest,
@@ -36,12 +41,24 @@ const AdvanceWorkflowRunRequestSchema = z.object({
   secretValues: z.record(z.string()).optional(),
 });
 
-export type CreateWorkflowServerOptions = WorkflowManagerOptions & {
+export type CreateWorkflowOptions = Omit<
+  WorkflowManagerOptions,
+  "queue" | "stateStore"
+> & {
+  backendApi: string | BackendApiClientOptions;
   basePath?: string;
 };
 
-export function createWorkflowServer(options: CreateWorkflowServerOptions) {
-  const manager = new WorkflowManager(options);
+export function createWorkflow(options: CreateWorkflowOptions) {
+  const stateStore = createBackendApiWorkflowStateStore(options.backendApi);
+  const queue = createBackendApiWorkflowQueue(options.backendApi);
+  const manager = new WorkflowManager({
+    stateStore,
+    queue,
+    registry: options.registry,
+    executor: options.executor,
+    workflow: options.workflow,
+  });
   const app = new Hono();
   const basePath = normalizeBasePath(options.basePath);
 
@@ -144,4 +161,4 @@ function errorResponse(
   return c.json({ message }, 400);
 }
 
-export type WorkflowApp = ReturnType<typeof createWorkflowServer>;
+export type WorkflowApp = ReturnType<typeof createWorkflow>;

@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
     "*.nextjs.hylo.local",
     ...(portlessOrigin ? [portlessOrigin] : []),
   ],
-  transpilePackages: ["@workflow/frontend", "@workflow/remote"],
+  transpilePackages: ["@workflow/frontend", "@workflow/server"],
   turbopack: {
     root: path.resolve(process.cwd(), "../.."),
   },
