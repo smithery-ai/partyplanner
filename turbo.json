@@ -5,7 +5,11 @@
     "HYLO_BACKEND_URL",
     "PORTLESS",
     "PORTLESS_*",
-    "VITE_BACKEND_URL"
+    "VITE_BACKEND_URL",
+    "SPOTIFY_CLIENT_ID",
+    "SPOTIFY_CLIENT_SECRET",
+    "OAUTH_STATE_SECRET",
+    "NEXT_PUBLIC_APP_URL"
   ],
   "tasks": {
     "build": {
