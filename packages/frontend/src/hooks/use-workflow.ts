@@ -603,6 +603,7 @@ function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
     status: snapshot?.status ?? "created",
     startedAt: result.state.startedAt,
     publishedAt: Date.now(),
+    triggerInputId: result.state.trigger ?? triggerInputFromQueue(result.queue),
     workflowId: snapshot?.workflow.workflowId ?? "",
     version: snapshot?.version ?? 0,
     nodeCount: snapshot?.nodes.length ?? Object.keys(result.state.nodes).length,
@@ -610,6 +611,20 @@ function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
     waitingOn: [...waitingOn],
     failedNodeCount,
   };
+}
+
+function triggerInputFromQueue(
+  queue: WorkflowRuntimeResult["queue"],
+): string | undefined {
+  const first = [
+    ...(queue?.pending ?? []),
+    ...(queue?.running ?? []),
+    ...(queue?.completed ?? []),
+    ...(queue?.failed ?? []),
+  ]
+    .filter((item) => item.event.kind === "input")
+    .sort((a, b) => a.enqueuedAt - b.enqueuedAt)[0]?.event;
+  return first?.kind === "input" ? first.inputId : undefined;
 }
 
 function isTerminalSummaryNode(

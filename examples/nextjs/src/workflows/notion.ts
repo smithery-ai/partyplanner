@@ -44,6 +44,7 @@ export const notionLogRequest = input(
     body: z.string().default("Logged from a Hylo workflow run."),
   }),
   {
+    title: "Create a Notion page",
     description:
       "Authorize Notion and create a new page under the provided parent. Defaults the parent to NOTION_PARENT_PAGE_ID.",
   },
@@ -85,6 +86,7 @@ export const notionFetchRequest = input(
     pageId: z.string().default(process.env.NOTION_PAGE_ID ?? ""),
   }),
   {
+    title: "Fetch a Notion page",
     description:
       "Authorize Notion and fetch a page by ID. Defaults the pageId to NOTION_PAGE_ID.",
   },

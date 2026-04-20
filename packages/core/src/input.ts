@@ -2,7 +2,7 @@ import { type ZodSchema, z } from "zod";
 import { type DeferredInput, type Input, makeHandle } from "./handles";
 import { globalRegistry } from "./registry";
 
-type InputOpts = { description?: string };
+type InputOpts = { title?: string; description?: string };
 type SecretOpts = InputOpts & { errorMessage?: string };
 
 export function input<T>(
@@ -13,6 +13,7 @@ export function input<T>(
   globalRegistry.registerInput({
     kind: "input",
     id: name,
+    title: opts?.title,
     schema: schema as ZodSchema<unknown>,
     description: opts?.description,
   });
@@ -27,6 +28,7 @@ input.deferred = function deferred<T>(
   globalRegistry.registerInput({
     kind: "deferred_input",
     id: name,
+    title: opts?.title,
     schema: schema as ZodSchema<unknown>,
     description: opts?.description,
   });
@@ -48,6 +50,7 @@ export function secret(
   globalRegistry.registerInput({
     kind: "input",
     id: name,
+    title: opts?.title,
     schema: z.string().min(1, "Secret must not be empty."),
     description: opts?.description,
     secret: true,

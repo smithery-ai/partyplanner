@@ -6,6 +6,7 @@ export type JsonSchema = Record<string, unknown>;
 export type WorkflowInputManifest = {
   id: string;
   kind: "input" | "deferred_input";
+  title?: string;
   secret?: boolean;
   description?: string;
   schema: JsonSchema;
@@ -50,6 +51,7 @@ export function buildWorkflowManifest(args: {
     inputs: args.registry.allInputs().map((input) => ({
       id: input.id,
       kind: input.kind,
+      title: input.title,
       secret: input.secret,
       description: input.description,
       schema: z.toJSONSchema(input.schema),

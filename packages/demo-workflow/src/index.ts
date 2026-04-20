@@ -25,7 +25,10 @@ export const provider = input(
         "Whether Dynamic Client Registration is available at the MCP endpoint.",
       ),
   }),
-  { description: "Connection details for the provider you are onboarding." },
+  {
+    title: "Onboard a provider",
+    description: "Connection details for the provider you are onboarding.",
+  },
 );
 
 export const oauthCreds = input.deferred(
@@ -41,6 +44,7 @@ export const oauthCreds = input.deferred(
       ),
   }),
   {
+    title: "Add OAuth credentials",
     description:
       "Credentials after dynamic or static registration - required to deploy the OAuth proxy.",
   },
@@ -62,6 +66,7 @@ export const overlayReview = input.deferred(
       ),
   }),
   {
+    title: "Review the API overlay",
     description:
       "Human review gate before applying the OpenAPI overlay in the dispatch path.",
   },
@@ -80,6 +85,7 @@ export const prodApproval = input.deferred(
       ),
   }),
   {
+    title: "Approve production deploy",
     description:
       "Final sign-off before production deploy - separate from overlay review.",
   },

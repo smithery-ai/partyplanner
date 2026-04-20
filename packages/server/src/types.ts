@@ -54,6 +54,7 @@ export type WorkflowRunSummary = {
   status: RunSnapshot["status"];
   startedAt: number;
   publishedAt: number;
+  triggerInputId?: string;
   workflowId: string;
   version: number;
   nodeCount: number;

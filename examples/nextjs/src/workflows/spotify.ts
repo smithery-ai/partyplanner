@@ -48,6 +48,7 @@ export const spotifyLogin = input(
     showDialog: z.boolean().default(false),
   }),
   {
+    title: "Connect Spotify",
     description: "Connect Spotify and read the current user's profile.",
   },
 );

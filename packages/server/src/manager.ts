@@ -352,6 +352,7 @@ export function summarizeRun(
     status: document.status,
     startedAt: document.state.startedAt,
     publishedAt: document.publishedAt,
+    triggerInputId: runTriggerInputId(document),
     workflowId: document.workflow.workflowId,
     version: document.version,
     nodeCount: document.nodes.length,
@@ -359,6 +360,20 @@ export function summarizeRun(
     waitingOn: [...waitingOn],
     failedNodeCount,
   };
+}
+
+function runTriggerInputId(document: WorkflowRunDocument): string | undefined {
+  if (document.state.trigger) return document.state.trigger;
+  const queuedInputs = [
+    ...document.queue.pending,
+    ...document.queue.running,
+    ...document.queue.completed,
+    ...document.queue.failed,
+  ]
+    .filter((item) => item.event.kind === "input")
+    .sort((a, b) => a.enqueuedAt - b.enqueuedAt);
+  const first = queuedInputs[0]?.event;
+  return first?.kind === "input" ? first.inputId : undefined;
 }
 
 function isTerminalSummaryNode(
