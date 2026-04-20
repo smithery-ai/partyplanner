@@ -100,6 +100,63 @@ describe("secret()", () => {
     assertWaiting(trace, "useSecret", "apiKey");
   });
 
+  it("wakes downstream steps that inherited a secret wait", async () => {
+    const seed = input("seed", z.string());
+    const apiKey = secret("apiKey");
+
+    const loadSecret = atom(
+      (get) => {
+        get(seed);
+        return get(apiKey);
+      },
+      { name: "loadSecret" },
+    );
+
+    atom(
+      (get) => {
+        const key = get(loadSecret);
+        return key.slice(0, 3);
+      },
+      { name: "useSecret" },
+    );
+
+    const initialRuntime = createRuntime();
+    const { state: waitingState, trace: waitingTrace } = await runToIdle(
+      initialRuntime,
+      {
+        kind: "input",
+        eventId: "evt-seed",
+        runId: "run-1",
+        inputId: "seed",
+        payload: "start",
+      },
+    );
+
+    assertWaiting(waitingTrace, "loadSecret", "apiKey");
+    assertWaiting(waitingTrace, "useSecret", "apiKey");
+
+    const resumedRuntime = createRuntime({
+      secretValues: {
+        apiKey: "sk-live-123",
+      },
+    });
+    const { trace } = await runToIdle(
+      resumedRuntime,
+      {
+        kind: "input",
+        eventId: "evt-secret",
+        runId: "run-1",
+        inputId: "apiKey",
+        payload: "sk-live-123",
+      },
+      waitingState,
+    );
+
+    assertResolved(trace, "apiKey", "[secret]");
+    assertResolved(trace, "loadSecret", "sk-live-123");
+    assertResolved(trace, "useSecret", "sk-");
+  });
+
   it("does not expose a deferred secret helper", () => {
     expect("deferred" in secret).toBe(false);
   });

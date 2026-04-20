@@ -81,8 +81,9 @@ class RunSession {
       attempts: 1,
     };
 
-    // On a resumed run, target only steps known to be waiting on this input.
-    const targeted = this.state.waiters[event.inputId] ?? [];
+    // On a resumed run, target steps known to be waiting on this input. Include
+    // older waiting records in case they were not added to the waiter index.
+    const targeted = this.waitersForInput(event.inputId);
     if (targeted.length > 0) {
       delete this.state.waiters[event.inputId];
       return targeted.flatMap((stepId) => this.emitStep(stepId));
@@ -249,6 +250,7 @@ class RunSession {
       if (existing.waitingOn === undefined) {
         throw new Error(`Waiting node "${depId}" is missing waitingOn`);
       }
+      this.registerWaiter(existing.waitingOn, readerStepId);
       throw new WaitError(existing.waitingOn);
     }
     if (existing?.status === "errored") {
@@ -286,6 +288,16 @@ class RunSession {
     const waiters = this.state.waiters[depId] ?? [];
     delete this.state.waiters[depId];
     return waiters.flatMap((stepId) => this.emitStep(stepId));
+  }
+
+  private waitersForInput(inputId: string): string[] {
+    const waiters = new Set(this.state.waiters[inputId] ?? []);
+    for (const [stepId, record] of Object.entries(this.state.nodes)) {
+      if (record.status === "waiting" && record.waitingOn === inputId) {
+        waiters.add(stepId);
+      }
+    }
+    return [...waiters];
   }
 
   private emitStep(stepId: string): QueueEvent[] {

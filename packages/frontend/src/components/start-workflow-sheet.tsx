@@ -20,7 +20,7 @@ export function StartWorkflowSheet({
   inputValues: Record<string, unknown>;
   onInputValuesChange: (id: string, value: unknown) => void;
   canSubmitSeed: boolean;
-  onSubmitSeed: () => void;
+  onSubmitSeed: (inputId: string) => void;
   error?: string;
 }) {
   if (!open) return null;
@@ -68,6 +68,8 @@ export function StartWorkflowSheet({
                       input={input}
                       value={inputValues[input.id]}
                       onChange={(value) => onInputValuesChange(input.id, value)}
+                      canSubmit={canSubmitSeed}
+                      onSubmit={() => onSubmitSeed(input.id)}
                     />
                   ))}
                 </div>
@@ -89,15 +91,10 @@ export function StartWorkflowSheet({
                 </div>
               ) : null}
 
-              {canSubmitSeed ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => onSubmitSeed()}
-                >
-                  Start Workflow
-                </Button>
+              {dataInputs.length === 0 && canSubmitSeed ? (
+                <p className="text-muted-foreground text-sm">
+                  Add a non-secret input to start a run from the UI.
+                </p>
               ) : null}
             </>
           )}
@@ -120,13 +117,17 @@ function WorkflowInputBlock({
   input,
   value,
   onChange,
+  canSubmit,
+  onSubmit,
 }: {
   input: WorkflowInputManifest;
   value: unknown;
   onChange: (value: unknown) => void;
+  canSubmit?: boolean;
+  onSubmit?: () => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-3 rounded-lg border border-border bg-card p-3">
       <div className="space-y-1">
         <code className="block text-[11px] text-foreground">{input.id}</code>
         {input.description ? (
@@ -142,6 +143,11 @@ function WorkflowInputBlock({
         idPrefix={input.id}
         secret={input.secret}
       />
+      {canSubmit && onSubmit ? (
+        <Button type="button" size="sm" onClick={onSubmit}>
+          Start with "{input.id}"
+        </Button>
+      ) : null}
     </div>
   );
 }

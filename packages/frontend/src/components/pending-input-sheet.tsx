@@ -24,6 +24,11 @@ export function PendingInputSheet({
 }) {
   if (!open || !input) return null;
 
+  const title = input.secret ? "Pending secret" : "Pending input";
+  const submitLabel = input.secret
+    ? `Submit secret "${input.id}"`
+    : `Submit "${input.id}"`;
+
   return (
     <>
       <button
@@ -38,7 +43,7 @@ export function PendingInputSheet({
         )}
       >
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="font-semibold text-sm">Pending input</h2>
+          <h2 className="font-semibold text-sm">{title}</h2>
           <Button
             size="icon"
             variant="ghost"
@@ -68,7 +73,7 @@ export function PendingInputSheet({
               secret={input.secret}
             />
             <Button type="button" size="sm" onClick={() => onSubmit()}>
-              Submit "{input.id}"
+              {submitLabel}
             </Button>
           </div>
           {error ? (

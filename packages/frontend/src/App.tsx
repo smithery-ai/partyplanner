@@ -18,7 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ZodError, type ZodTypeAny } from "zod";
+import { ZodError } from "zod";
 import {
   defaultForJsonSchema,
   sanitizeJsonSchemaValue,
@@ -29,8 +29,8 @@ import {
 } from "./components/node-detail-sheet";
 import { PendingInputSheet } from "./components/pending-input-sheet";
 import {
-  deferredInputRequested,
   QueueVisualizer,
+  workflowInputRequested,
 } from "./components/queue-visualizer";
 import { RunStateJsonSheet } from "./components/run-state-json-sheet";
 import { StartWorkflowSheet } from "./components/start-workflow-sheet";
@@ -92,13 +92,16 @@ function findManifestInput(
   return manifest?.inputs.find((input) => input.id === inputId);
 }
 
-function findDeferredWait(
+function findPendingWait(
+  manifest: WorkflowManifest | undefined,
   state: RunState | undefined,
 ): { stepId: string; inputId: string } | undefined {
   if (!state?.nodes) return undefined;
   for (const [stepId, n] of Object.entries(state.nodes)) {
     if (n.status === "waiting" && n.waitingOn) {
-      if (state.nodes[n.waitingOn]?.status === "resolved") continue;
+      const waitingOn = findManifestInput(manifest, n.waitingOn);
+      if (!waitingOn?.secret && state.nodes[n.waitingOn]?.status === "resolved")
+        continue;
       return { stepId, inputId: n.waitingOn };
     }
   }
@@ -106,30 +109,37 @@ function findDeferredWait(
 }
 
 function immediateInputNeedsForm(
+  manifest: WorkflowManifest | undefined,
   nodeId: string | null,
   runState: RunState | undefined,
 ): boolean {
   if (!nodeId) return false;
-  const def = globalRegistry.getInput(nodeId);
+  const def =
+    findManifestInput(manifest, nodeId) ?? globalRegistry.getInput(nodeId);
   if (!def || def.kind !== "input" || def.secret) return false;
   return !runState?.nodes[nodeId];
 }
 
-function deferredInputNeedsForm(
+function pendingInputNeedsForm(
+  manifest: WorkflowManifest | undefined,
   runState: RunState | undefined,
   nodeId: string | null,
 ): boolean {
   if (!nodeId || !runState) return false;
-  const def = globalRegistry.getInput(nodeId);
-  if (!def || def.kind !== "deferred_input") return false;
+  const def =
+    findManifestInput(manifest, nodeId) ?? globalRegistry.getInput(nodeId);
+  if (!def) return false;
   if (runState.nodes[nodeId]?.status === "resolved") return false;
-  return deferredInputRequested(globalRegistry, runState, nodeId);
+  return workflowInputRequested(globalRegistry, manifest, runState, nodeId);
 }
 
-function isRunComplete(runState: RunState | undefined): boolean {
+function isRunComplete(
+  runState: RunState | undefined,
+  manifest: WorkflowManifest | undefined,
+): boolean {
   if (!runState) return false;
   if (Object.keys(runState.nodes).length === 0) return false;
-  if (findDeferredWait(runState)) return false;
+  if (findPendingWait(manifest, runState)) return false;
   for (const n of Object.values(runState.nodes)) {
     if (n.status === "waiting" || n.status === "blocked") return false;
     if (n.status === "errored") return false;
@@ -506,16 +516,19 @@ export function WorkflowRunnerApp({
   const [pendingAutoAdvance, setPendingAutoAdvance] = useState(false);
 
   const runState = workflowRun.runState;
-  const wait = findDeferredWait(runState);
-  const pendingDeferredId = wait?.inputId;
-  const pendingInput = findManifestInput(workflow.manifest, pendingDeferredId);
-  const inputPending = Boolean(pendingDeferredId);
+  const wait = findPendingWait(workflow.manifest, runState);
+  const pendingInputId = wait?.inputId;
+  const pendingInput = findManifestInput(workflow.manifest, pendingInputId);
+  const inputPending = Boolean(pendingInputId);
+  const pendingInputLabel = pendingInputId
+    ? `Provide ${pendingInputId}`
+    : "Input pending";
 
   const nodes = runState?.nodes ?? {};
   const nextWork = nextQueuedWork(workflowRun.queue, globalRegistry);
   const runComplete = workflowRun.snapshot
     ? workflowRun.snapshot.status === "completed"
-    : isRunComplete(runState);
+    : isRunComplete(runState, workflow.manifest);
   const activeAutoAdvance = workflowRun.autoAdvance ?? pendingAutoAdvance;
   const isPending = workflow.isPending || workflowRun.isPending;
   const canManualAdvance = Boolean(
@@ -590,19 +603,9 @@ export function WorkflowRunnerApp({
       return;
     }
     let payload: unknown;
-    let additionalInputs: { inputId: string; payload: unknown }[] | undefined;
     const secretValues = collectSecretValues();
     try {
       payload = sanitizeJsonSchemaValue(seed.schema, inputValues[seed.id]);
-      additionalInputs = immediate
-        .filter((input) => input.id !== seed.id)
-        .filter((input) => !input.secret || secretValues[input.id])
-        .map((input) => ({
-          inputId: input.id,
-          payload: input.secret
-            ? secretValues[input.id]
-            : sanitizeJsonSchemaValue(input.schema, inputValues[input.id]),
-        }));
     } catch (e) {
       setPayloadError(
         errorMessage(e, "Validation failed for the initial inputs."),
@@ -614,7 +617,6 @@ export function WorkflowRunnerApp({
       const result = await workflow.start({
         inputId: seed.id,
         payload,
-        additionalInputs,
         secretValues,
         autoAdvance: pendingAutoAdvance,
       });
@@ -627,12 +629,12 @@ export function WorkflowRunnerApp({
     }
   }
 
-  async function submitDeferredInput(explicitInputId?: string) {
-    const inputId = explicitInputId ?? pendingDeferredId;
+  async function submitPendingInput(explicitInputId?: string) {
+    const inputId = explicitInputId ?? pendingInputId;
     if (!inputId) return;
-    if (inputId !== pendingDeferredId) {
+    if (inputId !== pendingInputId) {
       setPayloadError(
-        `This run is waiting on "${pendingDeferredId ?? "—"}", not "${inputId}".`,
+        `This run is waiting on "${pendingInputId ?? "—"}", not "${inputId}".`,
       );
       return;
     }
@@ -710,13 +712,16 @@ export function WorkflowRunnerApp({
 
   let nodeEditor: NodeDetailEditor | null = null;
   if (selectedNodeId) {
-    const def = globalRegistry.getInput(selectedNodeId);
-    if (def && immediateInputNeedsForm(selectedNodeId, runState)) {
+    const def = findManifestInput(workflow.manifest, selectedNodeId);
+    if (
+      def &&
+      immediateInputNeedsForm(workflow.manifest, selectedNodeId, runState)
+    ) {
       nodeEditor = {
         inputDescription: def.description,
         description:
           "Submit this payload as the seed input event (same as Start Workflow).",
-        schema: def.schema as ZodTypeAny,
+        schema: def.schema,
         secret: def.secret,
         value: inputValues[selectedNodeId],
         onChange: (v) => setInputValue(selectedNodeId, v),
@@ -724,17 +729,21 @@ export function WorkflowRunnerApp({
         submitLabel: `Submit “${selectedNodeId}”`,
         error: payloadError || undefined,
       };
-    } else if (def && deferredInputNeedsForm(runState, selectedNodeId)) {
+    } else if (
+      def &&
+      pendingInputNeedsForm(workflow.manifest, runState, selectedNodeId)
+    ) {
       const id = selectedNodeId;
       nodeEditor = {
         inputDescription: def.description,
-        description:
-          "Deferred input: delivered as a separate queue event when this step is waiting (SPEC: WaitError).",
-        schema: def.schema as ZodTypeAny,
+        description: def.secret
+          ? "Secret required by a waiting step. Submit it to continue this run."
+          : "Input required by a waiting step. Submit it to continue this run.",
+        schema: def.schema,
         secret: def.secret,
         value: inputValues[id],
         onChange: (v) => setInputValue(id, v),
-        onSubmit: () => void submitDeferredInput(id),
+        onSubmit: () => void submitPendingInput(id),
         submitLabel: `Submit “${id}”`,
         error: payloadError || undefined,
       };
@@ -869,7 +878,7 @@ export function WorkflowRunnerApp({
               onClick={() => setPane("pending")}
             >
               <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
-              Input pending
+              {pendingInputLabel}
             </button>
           ) : null}
         </div>
@@ -955,6 +964,7 @@ export function WorkflowRunnerApp({
             runState={runState}
             queue={workflowRun.queue}
             registry={globalRegistry}
+            manifest={workflow.manifest}
             onNodeClick={(id) => setSelectedNodeId(id)}
           />
 
@@ -985,17 +995,17 @@ export function WorkflowRunnerApp({
             inputValues={inputValues}
             onInputValuesChange={setInputValue}
             canSubmitSeed={!runState}
-            onSubmitSeed={() => void runWorkflow()}
+            onSubmitSeed={(inputId) => void runWorkflow(inputId)}
             error={pane === "start" ? payloadError || undefined : undefined}
           />
 
           <PendingInputSheet
-            open={pane === "pending" && Boolean(pendingDeferredId)}
+            open={pane === "pending" && Boolean(pendingInputId)}
             onOpenChange={(o) => setPane(o ? "pending" : null)}
             input={pendingInput}
             inputValues={inputValues}
             onInputValuesChange={setInputValue}
-            onSubmit={() => void submitDeferredInput()}
+            onSubmit={() => void submitPendingInput()}
             error={pane === "pending" ? payloadError || undefined : undefined}
           />
 
