@@ -1,7 +1,7 @@
 import { type ZodSchema, z } from "zod";
 import { NotReadyError, SkipError, WaitError } from "./errors";
 import { type Handle, isHandle } from "./handles";
-import { type AtomDef, globalRegistry, type Registry } from "./registry";
+import { globalRegistry, type Registry, type StepDef } from "./registry";
 import type {
   DispatchResult,
   Get,
@@ -79,6 +79,7 @@ class RunSession {
     }
     this.state.nodes[event.inputId] = {
       status: "resolved",
+      kind: inputDef.kind,
       value: storedValue,
       deps: [],
       duration_ms: 0,
@@ -93,7 +94,8 @@ class RunSession {
       return targeted.flatMap((stepId) => this.emitStep(stepId));
     }
 
-    // Dynamic deps are not known yet, so the first input for a run fans out to all steps once.
+    // Dynamic deps are not known yet, so the first input for a run fans out to all atoms once.
+    // Actions are pull-only: they execute only when some step reads them via get().
     return this.registry.allAtoms().flatMap((step) => this.emitStep(step.id));
   }
 
@@ -109,11 +111,11 @@ class RunSession {
       return [];
     }
 
-    const atomDef = this.registry.getAtom(event.stepId);
-    if (!atomDef) throw new Error(`Unknown step: ${event.stepId}`);
+    const stepDef = this.registry.getStep(event.stepId);
+    if (!stepDef) throw new Error(`Unknown step: ${event.stepId}`);
 
     try {
-      await this.runAtom(atomDef);
+      await this.runStep(stepDef);
       return this.wakeWaiters(event.stepId);
     } catch (e) {
       if (e instanceof NotReadyError) {
@@ -126,7 +128,7 @@ class RunSession {
     }
   }
 
-  private async runAtom(def: AtomDef): Promise<unknown> {
+  private async runStep(def: StepDef): Promise<unknown> {
     const start = Date.now();
     const deps: string[] = [];
     const prev = this.state.nodes[def.id];
@@ -173,6 +175,7 @@ class RunSession {
       const duration_ms = Date.now() - start;
       this.state.nodes[def.id] = {
         status: "resolved",
+        kind: def.kind,
         value,
         deps,
         duration_ms,
@@ -189,6 +192,7 @@ class RunSession {
       if (e instanceof SkipError) {
         this.state.nodes[def.id] = {
           status: "skipped",
+          kind: def.kind,
           deps,
           duration_ms,
           skipReason: e.reason,
@@ -200,6 +204,7 @@ class RunSession {
       if (e instanceof WaitError) {
         this.state.nodes[def.id] = {
           status: "waiting",
+          kind: def.kind,
           deps,
           duration_ms,
           waitingOn: e.inputId,
@@ -211,6 +216,7 @@ class RunSession {
       if (e instanceof NotReadyError) {
         this.state.nodes[def.id] = {
           status: "blocked",
+          kind: def.kind,
           deps,
           duration_ms,
           blockedOn: e.dependencyId,
@@ -223,6 +229,7 @@ class RunSession {
       const err = e as Error;
       this.state.nodes[def.id] = {
         status: "errored",
+        kind: def.kind,
         deps,
         duration_ms,
         attempts: (prev?.attempts ?? 0) + 1,
@@ -240,6 +247,7 @@ class RunSession {
       if (secretValue !== undefined) {
         this.state.nodes[depId] ??= {
           status: "resolved",
+          kind: "input",
           value: redactedSecretValue(),
           deps: [],
           duration_ms: 0,
@@ -284,8 +292,8 @@ class RunSession {
       throw new SkipError(depId);
     }
 
-    const atomDef = this.registry.getAtom(depId);
-    if (!atomDef) throw new Error(`Unknown id: ${depId}`);
+    const stepDef = this.registry.getStep(depId);
+    if (!stepDef) throw new Error(`Unknown id: ${depId}`);
 
     this.registerWaiter(depId, readerStepId);
     throw new NotReadyError(depId);
@@ -377,9 +385,12 @@ class RunSession {
         nodes[id] = { ...rec };
       } else {
         const inputDef = this.registry.getInput(id);
+        const stepDef = inputDef ? undefined : this.registry.getStep(id);
+        const kind = inputDef?.kind ?? stepDef?.kind;
         if (inputDef && inputDef.kind === "input") {
           nodes[id] = {
             status: "skipped",
+            kind,
             deps: [],
             duration_ms: 0,
             attempts: 0,
@@ -387,6 +398,7 @@ class RunSession {
         } else {
           nodes[id] = {
             status: "not_reached",
+            kind,
             deps: [],
             duration_ms: 0,
             attempts: 0,

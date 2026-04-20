@@ -8,6 +8,10 @@
     "VITE_BACKEND_URL",
     "SPOTIFY_CLIENT_ID",
     "SPOTIFY_CLIENT_SECRET",
+    "NOTION_CLIENT_ID",
+    "NOTION_CLIENT_SECRET",
+    "NOTION_PARENT_PAGE_ID",
+    "NOTION_PAGE_ID",
     "OAUTH_STATE_SECRET",
     "NEXT_PUBLIC_APP_URL"
   ],
@@ -20,6 +24,11 @@
       "dependsOn": ["^build"]
     },
     "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "dev:local": {
       "dependsOn": ["^build"],
       "cache": false,
       "persistent": true

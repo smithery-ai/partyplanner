@@ -1,6 +1,6 @@
 export const HANDLE = Symbol.for("@workflow/handle");
 
-export type HandleKind = "input" | "deferred_input" | "atom";
+export type HandleKind = "input" | "deferred_input" | "atom" | "action";
 
 export interface Handle<T = unknown> {
   readonly [HANDLE]: true;
@@ -14,6 +14,7 @@ export type DeferredInput<T> = Handle<T> & {
   readonly __kind: "deferred_input";
 };
 export type Atom<T> = Handle<T> & { readonly __kind: "atom" };
+export type Action<T> = Handle<T> & { readonly __kind: "action" };
 
 export function makeHandle<T>(kind: HandleKind, id: string): Handle<T> {
   return Object.freeze({ [HANDLE]: true as const, __id: id, __kind: kind });

@@ -1,3 +1,5 @@
+export type { ActionOpts } from "./action";
+export { action } from "./action";
 export type { AtomOpts } from "./atom";
 export { atom } from "./atom";
 export {
@@ -6,10 +8,17 @@ export {
   SkipError,
   WaitError,
 } from "./errors";
-export type { Atom, DeferredInput, Handle, HandleKind, Input } from "./handles";
+export type {
+  Action,
+  Atom,
+  DeferredInput,
+  Handle,
+  HandleKind,
+  Input,
+} from "./handles";
 export { HANDLE, isHandle } from "./handles";
 export { input, secret } from "./input";
-export type { AtomDef, InputDef } from "./registry";
+export type { ActionDef, AtomDef, InputDef, StepDef } from "./registry";
 export { globalRegistry, Registry } from "./registry";
 export { createRuntime } from "./runtime";
 export type {
@@ -20,6 +29,7 @@ export type {
   InterventionOptions,
   InterventionRequest,
   JsonSchema,
+  NodeKind,
   NodeRecord,
   NodeStatus,
   QueueEvent,

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "portless run --force --name api.hylo tsx src/index.ts",
+    "dev:local": "tsx src/index.ts",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },

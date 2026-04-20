@@ -73,8 +73,11 @@ export type NodeStatus =
   | "errored"
   | "not_reached";
 
+export type NodeKind = "input" | "deferred_input" | "atom" | "action";
+
 export type NodeRecord = {
   status: NodeStatus;
+  kind?: NodeKind;
   value?: unknown;
   error?: { message: string; stack?: string };
   deps: string[];

@@ -1,3 +1,5 @@
+import { createNotionRoutes } from "@workflow/integrations-notion";
+import { createSpotifyRoutes } from "@workflow/integrations-spotify";
 import { createWorkflow } from "@workflow/server";
 import "@/workflows";
 
@@ -8,7 +10,7 @@ let workflowApp: WorkflowApp | undefined;
 export function getWorkflowApp(): WorkflowApp {
   if (workflowApp) return workflowApp;
 
-  workflowApp = createWorkflow({
+  const app = createWorkflow({
     basePath: "/api/workflow",
     backendApi: backendApiUrl(),
     workflow: {
@@ -18,6 +20,17 @@ export function getWorkflowApp(): WorkflowApp {
     },
   });
 
+  const getStateSecret = () => process.env.OAUTH_STATE_SECRET;
+  app.route(
+    "/api/workflow/integrations/spotify",
+    createSpotifyRoutes({ workflowApp: app, getStateSecret }),
+  );
+  app.route(
+    "/api/workflow/integrations/notion",
+    createNotionRoutes({ workflowApp: app, getStateSecret }),
+  );
+
+  workflowApp = app;
   return workflowApp;
 }
 

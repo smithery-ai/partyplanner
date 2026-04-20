@@ -36,13 +36,22 @@ export function StartWorkflowForm({
     () => secrets.every((s) => s.resolved === true),
     [secrets],
   );
+  const secretsNeedAttention = secrets.length > 0 && !allSecretsResolved;
 
   const [step, setStep] = useState<Step>(
-    secrets.length > 0 ? "secrets" : "choose",
+    secretsNeedAttention ? "secrets" : "choose",
   );
   const [selectedInputId, setSelectedInputId] = useState<string | null>(
     dataInputs.length === 1 ? dataInputs[0].id : null,
   );
+
+  useEffect(() => {
+    if (secretsNeedAttention) {
+      setStep("secrets");
+    } else if (step === "secrets") {
+      setStep("choose");
+    }
+  }, [secretsNeedAttention, step]);
 
   useEffect(() => {
     if (dataInputs.length === 1 && selectedInputId == null) {
@@ -60,7 +69,7 @@ export function StartWorkflowForm({
     );
   }
 
-  if (step === "secrets" && secrets.length > 0) {
+  if (step === "secrets" && secretsNeedAttention) {
     return (
       <Shell
         title="Secrets"
@@ -95,7 +104,7 @@ export function StartWorkflowForm({
           ? "Choose how you want to start this workflow."
           : undefined
       }
-      onBack={secrets.length > 0 ? () => setStep("secrets") : undefined}
+      onBack={secretsNeedAttention ? () => setStep("secrets") : undefined}
     >
       {dataInputs.length === 0 ? (
         <p className="text-muted-foreground text-sm">
