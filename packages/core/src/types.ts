@@ -24,6 +24,12 @@ export type InterventionRequest = {
   title?: string;
   description?: string;
   action?: InterventionAction;
+  /**
+   * URL the human should open to perform the out-of-band action (e.g. an OAuth
+   * consent screen). When set, the UI surfaces this link prominently and
+   * collapses the manual payload form behind a toggle.
+   */
+  actionUrl?: string;
   createdAt: number;
   resolvedAt?: number;
 };
@@ -32,6 +38,8 @@ export type InterventionOptions = {
   title?: string;
   description?: string;
   action?: InterventionAction;
+  /** See {@link InterventionRequest.actionUrl}. */
+  actionUrl?: string;
 };
 
 export type RequestIntervention = <T>(

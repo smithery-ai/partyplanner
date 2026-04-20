@@ -447,6 +447,7 @@ function makeInterventionRequest<T>(
     title: opts?.title,
     description: opts?.description,
     action: opts?.action,
+    actionUrl: opts?.actionUrl,
     createdAt: Date.now(),
   };
 }

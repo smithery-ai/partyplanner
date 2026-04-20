@@ -38,7 +38,8 @@ type StatusVisual =
   | NodeStatus
   | QueueNodeStatus
   | "needs_input"
-  | "pending_input";
+  | "pending_input"
+  | "intervention";
 
 const STATUS_LEGEND: {
   key: StatusVisual;
@@ -71,6 +72,11 @@ const STATUS_LEGEND: {
     hint: "Deferred input required (e.g. approval)",
   },
   {
+    key: "intervention",
+    label: "Needs human input",
+    hint: "A human must resolve this step before the run can continue",
+  },
+  {
     key: "pending_input",
     label: "Pending input",
     hint: "Submit this input or secret to continue",
@@ -99,6 +105,8 @@ type WorkflowNodeData = {
   secret?: boolean;
   /** Waiting on this input or secret (no node record in state until submitted). */
   pendingInput?: boolean;
+  /** Step is waiting on a pending intervention (human input required). */
+  intervention?: boolean;
   status?: NodeRecord["status"] | QueueNodeStatus;
   handles: { target: boolean; source: boolean };
   /** Inline approve/reject when a downstream step is blocked on this deferred input */
@@ -106,6 +114,7 @@ type WorkflowNodeData = {
 };
 
 function statusVisual(data: WorkflowNodeData): StatusVisual {
+  if (data.intervention) return "intervention";
   if (data.inlineActions) return "needs_input";
   if (data.pendingInput) return "pending_input";
   return data.status ?? "not_reached";
@@ -152,6 +161,11 @@ function statusNodeClasses(visual: StatusVisual): {
         header:
           "border-b border-yellow-500/35 bg-yellow-400/18 dark:bg-yellow-400/14 dark:border-yellow-400/35",
       };
+    case "intervention":
+      return {
+        card: "border-yellow-500/50 bg-yellow-400/15 text-yellow-950 dark:border-yellow-500/45 dark:bg-yellow-500/12 dark:text-yellow-50",
+        header: "bg-transparent border-transparent",
+      };
     case "skipped":
       return {
         card: "border-primary/55 ring-1 ring-primary/20",
@@ -187,6 +201,8 @@ const STATUS_SWATCH: Record<StatusVisual, string> = {
   needs_input: "bg-amber-600/45 ring-1 ring-amber-600/25 dark:bg-amber-500/35",
   pending_input:
     "bg-yellow-400/50 ring-1 ring-yellow-500/30 dark:bg-yellow-400/35",
+  intervention:
+    "bg-yellow-400/15 ring-1 ring-yellow-500/50 dark:bg-yellow-500/12 dark:ring-yellow-500/45",
   skipped: "bg-primary/45 ring-1 ring-primary/25",
   blocked: "bg-orange-600/45 ring-1 ring-orange-600/25 dark:bg-orange-500/35",
   errored: "bg-destructive/40 ring-1 ring-destructive/25",
@@ -280,7 +296,14 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
           {data.label}
         </NodeTitle>
         <NodeDescription className="text-[11px] leading-snug">
-          {pendingInline ? (
+          {data.intervention ? (
+            <>
+              {kindLabel} ·{" "}
+              <span className="font-medium text-yellow-950 dark:text-yellow-50">
+                Needs human input
+              </span>
+            </>
+          ) : pendingInline ? (
             <>
               {kindLabel} · <span className="text-foreground">needed</span>
             </>
@@ -660,12 +683,20 @@ function buildFlow(
         workflowInputRequested(registry, manifest, runState, id) &&
         !rec,
     );
+    const waitingInterventionId =
+      rec?.status === "waiting" && rec.waitingOn ? rec.waitingOn : undefined;
+    const intervention = Boolean(
+      waitingInterventionId &&
+        runState?.interventions?.[waitingInterventionId] &&
+        runState.interventions[waitingInterventionId]?.status !== "resolved",
+    );
     const data: WorkflowNodeData = {
       label: id,
       kind,
       deferred,
       secret,
       pendingInput,
+      intervention,
       status: runningIds.has(id)
         ? "running"
         : queuedIds.has(id)

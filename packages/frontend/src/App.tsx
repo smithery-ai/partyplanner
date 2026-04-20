@@ -125,10 +125,11 @@ function pendingFormForIntervention(
   if (!intervention || intervention.status === "resolved") return undefined;
   return {
     id: intervention.id,
-    title: intervention.title ?? "Intervention required",
+    title: intervention.title ?? "Needs Human Input",
     description: intervention.description,
     schema: intervention.schema,
     action: intervention.action,
+    actionUrl: intervention.actionUrl,
   };
 }
 
@@ -552,7 +553,7 @@ export function WorkflowRunnerApp({
     pendingFormForIntervention(pendingIntervention) ?? pendingInput;
   const inputPending = Boolean(wait);
   const pendingInputLabel = pendingInterventionId
-    ? "Intervention required"
+    ? "Needs Human Input"
     : pendingInputId
       ? pendingInput?.secret
         ? `Missing secret ${pendingInputId}`
@@ -1032,7 +1033,22 @@ export function WorkflowRunnerApp({
             queue={workflowRun.queue}
             registry={globalRegistry}
             manifest={workflow.manifest}
-            onNodeClick={(id) => setSelectedNodeId(id)}
+            onNodeClick={(id) => {
+              const rec = runState?.nodes[id];
+              const waitingOn = rec?.waitingOn;
+              const intervention = waitingOn
+                ? runState?.interventions?.[waitingOn]
+                : undefined;
+              if (
+                rec?.status === "waiting" &&
+                intervention &&
+                intervention.status !== "resolved"
+              ) {
+                setPane("pending");
+                return;
+              }
+              setSelectedNodeId(id);
+            }}
           />
 
           {!runState && (
