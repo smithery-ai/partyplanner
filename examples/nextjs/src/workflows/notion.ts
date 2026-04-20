@@ -39,13 +39,13 @@ export const notionLogRequest = input(
   "notionLogRequest",
   z.object({
     appBaseUrl: z.string().url().default(defaultAppBaseUrl()),
-    parentPageId: z.string().min(1),
+    parentPageId: z.string().default(process.env.NOTION_PARENT_PAGE_ID ?? ""),
     title: z.string().default("Workflow log entry"),
     body: z.string().default("Logged from a Hylo workflow run."),
   }),
   {
     description:
-      "Authorize Notion and create a new page under the provided parent.",
+      "Authorize Notion and create a new page under the provided parent. Defaults the parent to NOTION_PARENT_PAGE_ID.",
   },
 );
 
@@ -82,10 +82,11 @@ export const notionFetchRequest = input(
   "notionFetchRequest",
   z.object({
     appBaseUrl: z.string().url().default(defaultAppBaseUrl()),
-    pageId: z.string().min(1),
+    pageId: z.string().default(process.env.NOTION_PAGE_ID ?? ""),
   }),
   {
-    description: "Authorize Notion and fetch a page by ID.",
+    description:
+      "Authorize Notion and fetch a page by ID. Defaults the pageId to NOTION_PAGE_ID.",
   },
 );
 

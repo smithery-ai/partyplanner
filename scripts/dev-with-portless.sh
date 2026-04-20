@@ -1,12 +1,17 @@
 #!/bin/sh
 set -e
 
+TURBO_TASK="dev"
+if [ "$PORTLESS" = "0" ]; then
+  TURBO_TASK="dev:local"
+fi
+
 run_turbo() {
   if [ "${INFISICAL:-1}" != "0" ] && command -v infisical >/dev/null 2>&1; then
-    exec infisical run -- turbo run dev --ui=tui
+    exec infisical run -- turbo run "$TURBO_TASK" --ui=tui
   fi
 
-  exec turbo run dev --ui=tui
+  exec turbo run "$TURBO_TASK" --ui=tui
 }
 
 if [ "$PORTLESS" = "0" ]; then

@@ -69,7 +69,7 @@ export function notionOAuth(opts: NotionOAuthOptions): Atom<NotionAuth> {
         callbackPayloadSchema,
         {
           title: "Connect Notion",
-          description: `Authorize Notion. Callback URI: ${redirectUri}`,
+          description: `Make sure ${redirectUri} is configured as a redirect URI in your Notion integration's developer settings (https://www.notion.so/profile/integrations).`,
           action: {
             type: "open_url",
             url: authorizeUrl,
