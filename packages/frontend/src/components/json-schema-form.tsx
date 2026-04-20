@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Input } from "../components/ui/input";
 import type { JsonSchema } from "../types";
 
@@ -278,7 +279,7 @@ function FieldLabel({
   label: string;
   optional?: boolean;
   description?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="space-y-1">

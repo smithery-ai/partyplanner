@@ -508,6 +508,7 @@ export function WorkflowRunnerApp({
   const runState = workflowRun.runState;
   const wait = findDeferredWait(runState);
   const pendingDeferredId = wait?.inputId;
+  const pendingInput = findManifestInput(workflow.manifest, pendingDeferredId);
   const inputPending = Boolean(pendingDeferredId);
 
   const nodes = runState?.nodes ?? {};
@@ -980,44 +981,22 @@ export function WorkflowRunnerApp({
           <StartWorkflowSheet
             open={pane === "start"}
             onOpenChange={(o) => setPane(o ? "start" : null)}
-            registry={globalRegistry}
+            inputs={workflow.manifest?.inputs ?? []}
             inputValues={inputValues}
             onInputValuesChange={setInputValue}
-            seedInputId={seedInputId}
-            onSeedInputIdChange={setSeedInputId}
-            vaultEntries={secretVault.entries}
-            secretBindings={secretBindings}
-            onSecretBindingChange={setSecretBinding}
-            newSecretValues={newSecretValues}
-            onNewSecretValueChange={setNewSecretValue}
             canSubmitSeed={!runState}
             onSubmitSeed={() => void runWorkflow()}
-            error={
-              pane === "start"
-                ? payloadError || secretVault.error?.message || undefined
-                : undefined
-            }
+            error={pane === "start" ? payloadError || undefined : undefined}
           />
 
           <PendingInputSheet
             open={pane === "pending" && Boolean(pendingDeferredId)}
             onOpenChange={(o) => setPane(o ? "pending" : null)}
-            registry={globalRegistry}
-            pendingInputId={pendingDeferredId}
+            input={pendingInput}
             inputValues={inputValues}
             onInputValuesChange={setInputValue}
-            vaultEntries={secretVault.entries}
-            secretBindings={secretBindings}
-            onSecretBindingChange={setSecretBinding}
-            newSecretValues={newSecretValues}
-            onNewSecretValueChange={setNewSecretValue}
             onSubmit={() => void submitDeferredInput()}
-            onBindSecret={() => void bindPendingSecret()}
-            error={
-              pane === "pending"
-                ? payloadError || secretVault.error?.message || undefined
-                : undefined
-            }
+            error={pane === "pending" ? payloadError || undefined : undefined}
           />
 
           <NodeDetailSheet
