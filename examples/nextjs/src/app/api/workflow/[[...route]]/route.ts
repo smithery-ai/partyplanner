@@ -1,23 +1,16 @@
-import {
-  createRemoteWorkflowQueue,
-  createRemoteWorkflowStateStore,
-} from "@workflow/remote";
-import { createWorkflowServer } from "@workflow/server";
+import { createWorkflow } from "@workflow/server";
 import "@/workflows";
 
-type WorkflowApp = ReturnType<typeof createWorkflowServer>;
+type WorkflowApp = ReturnType<typeof createWorkflow>;
 
 let workflowApp: WorkflowApp | undefined;
 
 function getWorkflowApp(): WorkflowApp {
   if (workflowApp) return workflowApp;
 
-  const remoteRuntimeUrl = runtimeBackendUrl();
-
-  workflowApp = createWorkflowServer({
+  workflowApp = createWorkflow({
     basePath: "/api/workflow",
-    stateStore: createRemoteWorkflowStateStore(remoteRuntimeUrl),
-    queue: createRemoteWorkflowQueue(remoteRuntimeUrl),
+    backendApi: backendApiUrl(),
     workflow: {
       id: "nextjs-example",
       version: "v1",
@@ -28,15 +21,14 @@ function getWorkflowApp(): WorkflowApp {
   return workflowApp;
 }
 
-function runtimeBackendUrl(): string {
+function backendApiUrl(): string {
   const raw = process.env.HYLO_BACKEND_URL?.trim();
   if (!raw) {
     throw new Error(
       "HYLO_BACKEND_URL is required. Start backend-node locally and set HYLO_BACKEND_URL=http://localhost:8787.",
     );
   }
-  const baseUrl = raw.replace(/\/+$/, "");
-  return baseUrl.endsWith("/runtime") ? baseUrl : `${baseUrl}/runtime`;
+  return raw;
 }
 
 export function GET(request: Request): Response | Promise<Response> {

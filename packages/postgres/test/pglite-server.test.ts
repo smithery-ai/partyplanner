@@ -1,9 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { atom, globalRegistry, input } from "@workflow/core";
-import {
-  createWorkflowServer,
-  type WorkflowRunDocument,
-} from "@workflow/server";
+import { createRemoteRuntimeServer } from "@workflow/remote";
+import { createWorkflow, type WorkflowRunDocument } from "@workflow/server";
 import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -51,9 +49,15 @@ describe("PGlite Workflow server", () => {
 
     client = new PGlite();
     const db = drizzle({ client });
-    const app = createWorkflowServer({
+    const backend = createRemoteRuntimeServer({
       stateStore: createPostgresWorkflowStateStore(db),
       queue: createPostgresWorkflowQueue(db),
+    });
+    const app = createWorkflow({
+      backendApi: {
+        url: "http://backend.test",
+        fetch: localFetch(backend),
+      },
       workflow: {
         id: "example",
         version: "v1",
@@ -107,7 +111,7 @@ describe("PGlite Workflow server", () => {
 });
 
 async function post<T>(
-  app: ReturnType<typeof createWorkflowServer>,
+  app: ReturnType<typeof createWorkflow>,
   path: string,
   body: unknown,
 ): Promise<T> {
@@ -120,8 +124,14 @@ async function post<T>(
   return response.json() as Promise<T>;
 }
 
+function localFetch(app: {
+  fetch(request: Request): Response | Promise<Response>;
+}): typeof fetch {
+  return (input, init) => app.fetch(new Request(input, init));
+}
+
 async function get<T>(
-  app: ReturnType<typeof createWorkflowServer>,
+  app: ReturnType<typeof createWorkflow>,
   path: string,
 ): Promise<T> {
   const response = await app.request(path);

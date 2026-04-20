@@ -11,7 +11,6 @@
   "dependencies": {
     "@workflow/core": "workspace:*",
     "@workflow/frontend": "workspace:*",
-    "@workflow/remote": "workspace:*",
     "@workflow/server": "workspace:*",
     "hono": "^4.12.14",
     "next": "^16.1.0",
