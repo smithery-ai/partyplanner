@@ -16,6 +16,7 @@ import type {
   SetAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
+  SubmitBackendInterventionRequest,
   WorkflowRuntimeResult,
 } from "../types";
 
@@ -39,6 +40,14 @@ export type SubmitWorkflowInputArgs = {
   autoAdvance?: boolean;
 };
 
+export type SubmitWorkflowInterventionArgs = {
+  state?: RunState;
+  interventionId: string;
+  payload: unknown;
+  secretValues?: Record<string, string>;
+  autoAdvance?: boolean;
+};
+
 export type AdvanceWorkflowArgs = {
   state?: RunState;
   secretValues?: Record<string, string>;
@@ -57,6 +66,9 @@ export type PollWorkflowStateArgs = {
 export interface WorkflowRuntime {
   start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult>;
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>;
+  submitIntervention(
+    args: SubmitWorkflowInterventionArgs,
+  ): Promise<WorkflowRuntimeResult>;
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>;
   setAutoAdvance(
     args: SetAutoAdvanceWorkflowArgs,
@@ -106,6 +118,25 @@ export class BackendRuntime implements WorkflowRuntime {
       secretValues: args.secretValues,
       autoAdvance: args.autoAdvance,
     });
+    return documentResult(document);
+  }
+
+  async submitIntervention(
+    args: SubmitWorkflowInterventionArgs,
+  ): Promise<WorkflowRuntimeResult> {
+    if (!args.state)
+      throw new Error("Cannot submit intervention before a run exists.");
+    const document = await this.post<
+      SubmitBackendInterventionRequest,
+      RunStateDocument
+    >(
+      `/runs/${encodeURIComponent(args.state.runId)}/interventions/${encodeURIComponent(args.interventionId)}`,
+      {
+        payload: args.payload,
+        secretValues: args.secretValues,
+        autoAdvance: args.autoAdvance,
+      },
+    );
     return documentResult(document);
   }
 
@@ -232,6 +263,21 @@ export class LocalRuntime implements WorkflowRuntime {
       runId: args.state.runId,
       workflow: this.workflow,
       inputId: args.inputId,
+      payload: args.payload,
+    });
+    return this.finalize(snapshot.runId, snapshot);
+  }
+
+  async submitIntervention(
+    args: SubmitWorkflowInterventionArgs,
+  ): Promise<WorkflowRuntimeResult> {
+    if (!args.state)
+      throw new Error("Cannot submit intervention before a run exists.");
+    this.applyAutoAdvance(args.autoAdvance);
+    const snapshot = await this.scheduler.submitIntervention({
+      runId: args.state.runId,
+      workflow: this.workflow,
+      interventionId: args.interventionId,
       payload: args.payload,
     });
     return this.finalize(snapshot.runId, snapshot);

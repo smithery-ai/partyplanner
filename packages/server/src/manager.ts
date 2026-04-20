@@ -17,6 +17,7 @@ import type {
   SetWorkflowAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
+  SubmitWorkflowInterventionRequest,
   WorkflowEventSink,
   WorkflowQueue,
   WorkflowRunDocument,
@@ -128,6 +129,29 @@ export class WorkflowManager {
       runId,
       workflow: this.definition.ref,
       inputId: request.inputId,
+      payload: request.payload,
+    });
+
+    if (autoAdvance) {
+      await scheduler.drain();
+      snapshot = await scheduler.snapshot(runId);
+    }
+
+    return this.publishSnapshot(snapshot, autoAdvance);
+  }
+
+  async submitIntervention(
+    runId: string,
+    interventionId: string,
+    request: SubmitWorkflowInterventionRequest,
+  ): Promise<WorkflowRunDocument> {
+    const current = await this.requireRun(runId);
+    const autoAdvance = request.autoAdvance ?? current.autoAdvance;
+    const scheduler = this.createScheduler(runId, request.secretValues);
+    let snapshot = await scheduler.submitIntervention({
+      runId,
+      workflow: this.definition.ref,
+      interventionId,
       payload: request.payload,
     });
 

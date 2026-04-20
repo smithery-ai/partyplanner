@@ -8,6 +8,7 @@ export type {
   SecretVaultScope,
   SetAutoAdvanceRequest,
   SubmitBackendInputRequest,
+  SubmitBackendInterventionRequest,
   UpdateSecretVaultEntryRequest,
 } from "./api";
 export type { CreateWorkflowOptions, WorkflowApp } from "./app";
@@ -26,6 +27,7 @@ export type {
   SetWorkflowAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
+  SubmitWorkflowInterventionRequest,
   WorkflowEventSink,
   WorkflowQueue,
   WorkflowRunDocument,

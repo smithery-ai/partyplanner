@@ -94,6 +94,12 @@ export type RunEvent =
       at: number;
     }
   | {
+      type: "intervention_received";
+      runId: string;
+      interventionId: string;
+      at: number;
+    }
+  | {
       type: "node_blocked";
       runId: string;
       nodeId: string;
@@ -214,9 +220,17 @@ export type SubmitInputRequest = {
   workflow?: WorkflowRef;
 };
 
+export type SubmitInterventionRequest = {
+  runId: string;
+  interventionId: string;
+  payload: unknown;
+  workflow?: WorkflowRef;
+};
+
 export interface Scheduler {
   startRun(request: StartRunRequest): Promise<RunSnapshot>;
   submitInput(request: SubmitInputRequest): Promise<RunSnapshot>;
+  submitIntervention(request: SubmitInterventionRequest): Promise<RunSnapshot>;
   processNext(): Promise<void>;
   drain(): Promise<void>;
   processEvent(event: QueueEvent): Promise<void>;

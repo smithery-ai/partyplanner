@@ -428,4 +428,84 @@ describe("LocalScheduler", () => {
       reason: "approval denied",
     });
   });
+
+  it("pauses on an intervention and resumes only its waiting step", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+    let planCalls = 0;
+
+    const plan = atom(
+      (get) => {
+        const initial = get(seed);
+        planCalls++;
+        return `plan:${initial.name}`;
+      },
+      { name: "plan" },
+    );
+
+    atom(
+      (get, requestIntervention) => {
+        const generated = get(plan);
+        const review = requestIntervention(
+          "review",
+          z.object({ approved: z.boolean() }),
+          {
+            title: "Review generated plan",
+            description: `Review ${generated}`,
+          },
+        );
+        if (!review.approved) return get.skip("review denied");
+        return `done:${generated}`;
+      },
+      { name: "finish" },
+    );
+
+    const { scheduler, events } = makeScheduler();
+    await scheduler.startRun({
+      workflow,
+      runId: "run-intervention",
+      input: {
+        inputId: "seed",
+        payload: { name: "Ada" },
+        eventId: "evt-seed",
+      },
+    });
+
+    await scheduler.drain();
+    let snapshot = await scheduler.snapshot("run-intervention");
+    const interventionId = "finish:review";
+
+    expect(snapshot.status).toBe("waiting");
+    expect(snapshot.state.interventions[interventionId]).toMatchObject({
+      id: interventionId,
+      status: "pending",
+      title: "Review generated plan",
+      description: "Review plan:Ada",
+    });
+    expect(snapshot.state.waiters[interventionId]).toEqual(["finish"]);
+
+    snapshot = await scheduler.submitIntervention({
+      runId: "run-intervention",
+      interventionId,
+      payload: { approved: true },
+    });
+
+    expect(snapshot.status).toBe("running");
+    expect(snapshot.queue.pending).toHaveLength(1);
+    expect(snapshot.queue.pending[0]?.event.kind).toBe("step");
+    expect(
+      events.events.some(
+        (event) =>
+          event.type === "intervention_received" &&
+          event.interventionId === interventionId,
+      ),
+    ).toBe(true);
+
+    await scheduler.drain();
+    snapshot = await scheduler.snapshot("run-intervention");
+    expect(snapshot.status).toBe("completed");
+    expect(snapshot.nodes.find((node) => node.id === "finish")?.value).toBe(
+      "done:plan:Ada",
+    );
+    expect(planCalls).toBe(1);
+  });
 });

@@ -1,5 +1,44 @@
+import type { ZodSchema } from "zod";
 import type { Handle } from "./handles";
 import type { Registry } from "./registry";
+
+export type JsonSchema = Record<string, unknown>;
+
+export type InterventionAction =
+  | {
+      type: "open_url";
+      url: string;
+      label?: string;
+    }
+  | {
+      type: "message";
+      label?: string;
+    };
+
+export type InterventionRequest = {
+  id: string;
+  stepId: string;
+  key: string;
+  status: "pending" | "resolved";
+  schema: JsonSchema;
+  title?: string;
+  description?: string;
+  action?: InterventionAction;
+  createdAt: number;
+  resolvedAt?: number;
+};
+
+export type InterventionOptions = {
+  title?: string;
+  description?: string;
+  action?: InterventionAction;
+};
+
+export type RequestIntervention = <T>(
+  key: string,
+  schema: ZodSchema<T>,
+  opts?: InterventionOptions,
+) => T;
 
 export interface Get {
   /** Read a dependency synchronously. Throws SkipError / WaitError / NotReadyError. */
@@ -38,6 +77,8 @@ export type RunState = {
   trigger?: string;
   payload?: unknown;
   inputs: Record<string, unknown>;
+  interventions: Record<string, InterventionRequest>;
+  interventionResponses: Record<string, unknown>;
   nodes: Record<string, NodeRecord>;
   waiters: Record<string, string[]>;
   processedEventIds: Record<string, true>;

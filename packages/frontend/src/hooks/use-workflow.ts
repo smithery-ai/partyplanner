@@ -7,6 +7,7 @@ import type {
   AdvanceWorkflowArgs,
   SetAutoAdvanceWorkflowArgs,
   SubmitWorkflowInputArgs,
+  SubmitWorkflowInterventionArgs,
 } from "../lib/workflow-runtimes";
 import type {
   BindRunSecretRequest,
@@ -18,6 +19,7 @@ import type {
   SetAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
+  SubmitBackendInterventionRequest,
   WorkflowManifest,
   WorkflowRuntimeResult,
 } from "../types";
@@ -54,6 +56,9 @@ export type WorkflowRunState = {
   isPending: boolean;
   error: Error | undefined;
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>;
+  submitIntervention(
+    args: SubmitWorkflowInterventionArgs,
+  ): Promise<WorkflowRuntimeResult>;
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>;
   setAutoAdvance(
     args: SetAutoAdvanceWorkflowArgs,
@@ -217,6 +222,29 @@ function useSubmitInputMutation() {
         await apiPost<SubmitBackendInputRequest, RunStateDocument>(
           config.apiBaseUrl,
           `/runs/${encodeURIComponent(args.state.runId)}/inputs`,
+          body,
+        ),
+      );
+    },
+  });
+}
+
+function useSubmitInterventionMutation() {
+  const config = useWorkflowFrontendConfig();
+  return useMutation({
+    mutationFn: async (args: SubmitWorkflowInterventionArgs) => {
+      if (!args.state)
+        throw new Error("Cannot submit intervention before a run exists.");
+
+      const body: SubmitBackendInterventionRequest = {
+        payload: args.payload as JsonPayload,
+        secretValues: args.secretValues,
+        autoAdvance: args.autoAdvance,
+      };
+      return documentResult(
+        await apiPost<SubmitBackendInterventionRequest, RunStateDocument>(
+          config.apiBaseUrl,
+          `/runs/${encodeURIComponent(args.state.runId)}/interventions/${encodeURIComponent(args.interventionId)}`,
           body,
         ),
       );
@@ -415,6 +443,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
   const queryClient = useQueryClient();
   const stateQuery = useRunStateQuery(runId);
   const submitInputMutation = useSubmitInputMutation();
+  const submitInterventionMutation = useSubmitInterventionMutation();
   const advanceMutation = useAdvanceRunMutation();
   const setAutoAdvanceMutation = useSetAutoAdvanceMutation();
   const bindSecretMutation = useBindRunSecretMutation();
@@ -464,6 +493,12 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     [runMutation, submitInputMutation],
   );
 
+  const submitIntervention = useCallback(
+    (args: SubmitWorkflowInterventionArgs) =>
+      runMutation(submitInterventionMutation, args),
+    [runMutation, submitInterventionMutation],
+  );
+
   const advance = useCallback(
     (args: AdvanceWorkflowArgs) => runMutation(advanceMutation, args),
     [advanceMutation, runMutation],
@@ -487,6 +522,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
   const isPending = useMemo(
     () =>
       submitInputMutation.isPending ||
+      submitInterventionMutation.isPending ||
       advanceMutation.isPending ||
       setAutoAdvanceMutation.isPending ||
       bindSecretMutation.isPending ||
@@ -498,6 +534,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
       stateQuery.isPending,
       runId,
       submitInputMutation.isPending,
+      submitInterventionMutation.isPending,
     ],
   );
 
@@ -513,6 +550,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     isPending,
     error: activeError,
     submitInput,
+    submitIntervention,
     advance,
     setAutoAdvance,
     bindSecret,

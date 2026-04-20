@@ -9,6 +9,7 @@ import { WorkflowManager, type WorkflowManagerOptions } from "./manager";
 import type {
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
+  SubmitWorkflowInterventionRequest,
 } from "./types";
 
 const StartWorkflowRunRequestSchema = z.object({
@@ -27,6 +28,12 @@ const StartWorkflowRunRequestSchema = z.object({
 
 const SubmitWorkflowInputRequestSchema = z.object({
   inputId: z.string(),
+  payload: z.any(),
+  secretValues: z.record(z.string()).optional(),
+  autoAdvance: z.boolean().optional(),
+});
+
+const SubmitWorkflowInterventionRequestSchema = z.object({
   payload: z.any(),
   secretValues: z.record(z.string()).optional(),
   autoAdvance: z.boolean().optional(),
@@ -103,6 +110,26 @@ export function createWorkflow(options: CreateWorkflowOptions) {
       return errorResponse(c, e);
     }
   });
+
+  app.post(
+    routePath(basePath, "/runs/:runId/interventions/:interventionId"),
+    async (c) => {
+      try {
+        const body = SubmitWorkflowInterventionRequestSchema.parse(
+          await readBody(c.req),
+        ) as SubmitWorkflowInterventionRequest;
+        return c.json(
+          await manager.submitIntervention(
+            requireParam(c.req.param("runId")),
+            requireParam(c.req.param("interventionId")),
+            body,
+          ),
+        );
+      } catch (e) {
+        return errorResponse(c, e);
+      }
+    },
+  );
 
   app.post(routePath(basePath, "/runs/:runId/advance"), async (c) => {
     try {
