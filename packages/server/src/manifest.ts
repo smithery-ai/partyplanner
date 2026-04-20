@@ -13,6 +13,12 @@ export type WorkflowInputManifest = {
   errorMessage?: string;
 };
 
+export type WorkflowStepManifest = {
+  id: string;
+  kind: "atom" | "action";
+  description?: string;
+};
+
 export type WorkflowManifest = {
   workflowId: string;
   organizationId?: string;
@@ -21,6 +27,8 @@ export type WorkflowManifest = {
   name?: string;
   createdAt: number;
   inputs: WorkflowInputManifest[];
+  atoms: WorkflowStepManifest[];
+  actions: WorkflowStepManifest[];
 };
 
 export function buildWorkflowManifest(args: {
@@ -53,6 +61,16 @@ export function buildWorkflowManifest(args: {
             errorMessage: input.errorMessage,
           }
         : {}),
+    })),
+    atoms: args.registry.allAtoms().map((a) => ({
+      id: a.id,
+      kind: "atom",
+      description: a.description,
+    })),
+    actions: args.registry.allActions().map((a) => ({
+      id: a.id,
+      kind: "action",
+      description: a.description,
     })),
   };
 }

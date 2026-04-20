@@ -188,6 +188,15 @@ importers:
       '@workflow/frontend':
         specifier: workspace:*
         version: link:../../packages/frontend
+      '@workflow/integrations-notion':
+        specifier: workspace:*
+        version: link:../../packages/integrations/notion
+      '@workflow/integrations-oauth':
+        specifier: workspace:*
+        version: link:../../packages/integrations/_oauth
+      '@workflow/integrations-spotify':
+        specifier: workspace:*
+        version: link:../../packages/integrations/spotify
       '@workflow/server':
         specifier: workspace:*
         version: link:../../packages/server
@@ -314,6 +323,66 @@ importers:
       typescript:
         specifier: ~6.0.2
         version: 6.0.3
+
+  packages/integrations/_oauth:
+    dependencies:
+      hono:
+        specifier: ^4.12.14
+        version: 4.12.14
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
+
+  packages/integrations/notion:
+    dependencies:
+      '@workflow/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@workflow/integrations-oauth':
+        specifier: workspace:*
+        version: link:../_oauth
+      hono:
+        specifier: ^4.12.14
+        version: 4.12.14
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
+
+  packages/integrations/spotify:
+    dependencies:
+      '@workflow/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@workflow/integrations-oauth':
+        specifier: workspace:*
+        version: link:../_oauth
+      hono:
+        specifier: ^4.12.14
+        version: 4.12.14
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
 
   packages/postgres:
     dependencies:

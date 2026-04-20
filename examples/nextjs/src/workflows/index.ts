@@ -1,5 +1,6 @@
 import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
+import "./notion";
 import { exampleSecretValue } from "./secrets";
 import { spotifyProfile } from "./spotify";
 
