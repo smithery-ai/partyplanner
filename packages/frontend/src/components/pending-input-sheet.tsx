@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { JsonSchemaForm } from "../components/json-schema-form";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
@@ -24,10 +24,8 @@ export function PendingInputSheet({
 }) {
   if (!open || !input) return null;
 
-  const title = input.secret ? "Pending secret" : "Pending input";
-  const submitLabel = input.secret
-    ? `Submit secret "${input.id}"`
-    : `Submit "${input.id}"`;
+  const isSecret = Boolean(input.secret);
+  const title = isSecret ? "Pending secret" : "Pending input";
 
   return (
     <>
@@ -54,28 +52,52 @@ export function PendingInputSheet({
           </Button>
         </div>
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          <div className="space-y-2 rounded-lg border border-yellow-500/40 bg-yellow-500/8 p-3">
-            <div className="space-y-1">
-              <code className="block text-[11px] text-foreground">
-                {input.id}
-              </code>
-              {input.description ? (
-                <p className="text-muted-foreground text-[11px] leading-snug">
-                  {input.description}
-                </p>
-              ) : null}
+          {isSecret ? (
+            <div className="space-y-2 rounded-lg border border-yellow-500/50 bg-yellow-500/5 p-3">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle
+                  className="mt-0.5 size-3.5 shrink-0 text-yellow-700 dark:text-yellow-500"
+                  aria-hidden
+                />
+                <div className="min-w-0 space-y-1">
+                  <code className="block text-[11px] text-foreground">
+                    {input.id}
+                  </code>
+                  {input.description ? (
+                    <p className="text-muted-foreground text-[11px] leading-snug">
+                      {input.description}
+                    </p>
+                  ) : null}
+                  <p className="text-[11px] leading-snug text-yellow-800 dark:text-yellow-300">
+                    {input.errorMessage ??
+                      "This step is waiting on a secret. Resolve it in the workflow server, then advance the run."}
+                  </p>
+                </div>
+              </div>
             </div>
-            <JsonSchemaForm
-              schema={input.schema}
-              value={inputValues[input.id]}
-              onChange={(value) => onInputValuesChange(input.id, value)}
-              idPrefix={input.id}
-              secret={input.secret}
-            />
-            <Button type="button" size="sm" onClick={() => onSubmit()}>
-              {submitLabel}
-            </Button>
-          </div>
+          ) : (
+            <div className="space-y-2 rounded-lg border border-yellow-500/40 bg-yellow-500/8 p-3">
+              <div className="space-y-1">
+                <code className="block text-[11px] text-foreground">
+                  {input.id}
+                </code>
+                {input.description ? (
+                  <p className="text-muted-foreground text-[11px] leading-snug">
+                    {input.description}
+                  </p>
+                ) : null}
+              </div>
+              <JsonSchemaForm
+                schema={input.schema}
+                value={inputValues[input.id]}
+                onChange={(value) => onInputValuesChange(input.id, value)}
+                idPrefix={input.id}
+              />
+              <Button type="button" size="sm" onClick={() => onSubmit()}>
+                {`Submit "${input.id}"`}
+              </Button>
+            </div>
+          )}
           {error ? (
             <p
               className="whitespace-pre-line text-destructive text-xs"

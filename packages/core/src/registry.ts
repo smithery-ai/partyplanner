@@ -7,6 +7,8 @@ export type InputDef = {
   schema: ZodSchema<unknown>;
   description?: string;
   secret?: boolean;
+  secretValue?: string;
+  errorMessage?: string;
 };
 
 export type AtomDef = {

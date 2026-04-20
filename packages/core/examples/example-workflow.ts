@@ -77,9 +77,11 @@ export const prodApproval = input.deferred(
   },
 );
 
-export const prodDeployToken = secret("prodDeployToken", {
+export const prodDeployToken = secret("PROD_DEPLOY_TOKEN", undefined, {
   description:
     "Deployment token required by the final production promotion step.",
+  errorMessage:
+    "Provide PROD_DEPLOY_TOKEN by passing it as the secret value in this workflow definition.",
 });
 
 export const assess = atom(

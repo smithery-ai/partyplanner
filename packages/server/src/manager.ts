@@ -184,14 +184,16 @@ export class WorkflowManager {
     runId: string,
     secretValues?: Record<string, string>,
   ): LocalScheduler {
+    const executor =
+      secretValues && Object.keys(secretValues).length > 0
+        ? new RuntimeExecutor(secretResolverFromValues(secretValues))
+        : this.executor;
     return new LocalScheduler({
       loader: this.loader,
       stateStore: this.stateStore,
       queue: new ScopedWorkflowQueue(this.queue, runId),
       events: new StoreWorkflowEventSink(this.stateStore),
-      executor: secretValues
-        ? new RuntimeExecutor(secretResolverFromValues(secretValues))
-        : this.executor,
+      executor,
     });
   }
 

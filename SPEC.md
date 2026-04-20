@@ -57,17 +57,30 @@ type InputOpts = {
 - `schema` is a Zod schema used to validate the payload when the input fires.
 - `description` is optional human text for UI tooltips and docs.
 
-### `secret(name, opts?)`
+### `secret(name, value, opts?)`
 
 ```ts
 function secret(
   name: string,
-  opts?: InputOpts
+  value: string | undefined,
+  opts?: {
+    description?: string;
+    errorMessage?: string;
+  }
 ): Input<string>;
 ```
 
 `secret()` schedules like `input(name, z.string())`, but the registry marks it
-as secret-bearing so UI and trace surfaces redact its displayed value.
+as secret-bearing so UI and trace surfaces redact its displayed value. The
+workflow author passes the resolved `value` directly — typically from
+`process.env.SOMETHING` — and an optional `errorMessage` that the UI shows
+when the value is absent (so the reader is told exactly how to configure the
+workflow server).
+
+Secret names must be `UPPER_SNAKE_CASE` (matching `/^[A-Z][A-Z0-9_]*$/`);
+`secret()` throws at registration if they aren't. This keeps secret ids
+visually distinct from regular inputs and aligns with environment variable
+conventions.
 
 ### `atom(fn, opts?)`
 
@@ -408,14 +421,19 @@ input.deferred = function deferred<T>(
 
 export function secret(
   name: string,
-  opts?: InputOpts
+  value: string | undefined,
+  opts?: InputOpts & { errorMessage?: string }
 ): Input<string> {
+  const resolved =
+    typeof value === "string" && value.length > 0 ? value : undefined;
   globalRegistry.registerInput({
     kind: "input",
     id: name,
-    schema: z.string(),
+    schema: z.string().min(1, "Secret must not be empty."),
     description: opts?.description,
     secret: true,
+    secretValue: resolved,
+    errorMessage: opts?.errorMessage,
   });
   return makeHandle<string>("input", name) as Input<string>;
 }

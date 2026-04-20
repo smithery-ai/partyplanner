@@ -86,7 +86,7 @@ describe("LocalScheduler", () => {
 
   it("injects bound secrets without storing plaintext in run state", async () => {
     const seed = input("seed", z.object({ name: z.string() }));
-    const apiKey = secret("apiKey");
+    const apiKey = secret("API_KEY", undefined);
 
     atom(
       (get) => {
@@ -97,7 +97,7 @@ describe("LocalScheduler", () => {
       { name: "useSecret" },
     );
 
-    const { scheduler } = makeScheduler({ apiKey: "sk-live" });
+    const { scheduler } = makeScheduler({ API_KEY: "sk-live" });
     const started = await scheduler.startRun({
       workflow,
       runId: "run-secret-start",
@@ -116,8 +116,8 @@ describe("LocalScheduler", () => {
     const snapshot = await scheduler.snapshot("run-secret-start");
 
     expect(snapshot.status).toBe("completed");
-    expect(snapshot.state.inputs.apiKey).toBeUndefined();
-    expect(snapshot.nodes.find((node) => node.id === "apiKey")?.value).toBe(
+    expect(snapshot.state.inputs.API_KEY).toBeUndefined();
+    expect(snapshot.nodes.find((node) => node.id === "API_KEY")?.value).toBe(
       "[secret]",
     );
     expect(snapshot.nodes.find((node) => node.id === "useSecret")?.value).toBe(
@@ -127,7 +127,7 @@ describe("LocalScheduler", () => {
 
   it("keeps secret dependency edges when a downstream step waits", async () => {
     const seed = input("seed", z.object({ name: z.string() }));
-    const apiKey = secret("apiKey");
+    const apiKey = secret("API_KEY", undefined);
     const approval = input.deferred(
       "approval",
       z.object({ approved: z.boolean() }),
@@ -144,7 +144,7 @@ describe("LocalScheduler", () => {
       { name: "deploy" },
     );
 
-    const { scheduler } = makeScheduler({ apiKey: "sk-live" });
+    const { scheduler } = makeScheduler({ API_KEY: "sk-live" });
     await scheduler.startRun({
       workflow,
       runId: "run-secret-wait",
@@ -160,11 +160,11 @@ describe("LocalScheduler", () => {
 
     expect(snapshot.status).toBe("waiting");
     expect(snapshot.nodes.find((node) => node.id === "deploy")?.deps).toEqual(
-      expect.arrayContaining(["seed", "apiKey", "approval"]),
+      expect.arrayContaining(["seed", "API_KEY", "approval"]),
     );
     expect(snapshot.edges).toEqual(
       expect.arrayContaining([
-        { id: "apiKey->deploy", source: "apiKey", target: "deploy" },
+        { id: "API_KEY->deploy", source: "API_KEY", target: "deploy" },
         { id: "approval->deploy", source: "approval", target: "deploy" },
       ]),
     );

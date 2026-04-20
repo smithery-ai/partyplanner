@@ -9,6 +9,8 @@ export type WorkflowInputManifest = {
   secret?: boolean;
   description?: string;
   schema: JsonSchema;
+  resolved?: boolean;
+  errorMessage?: string;
 };
 
 export type WorkflowManifest = {
@@ -43,6 +45,14 @@ export function buildWorkflowManifest(args: {
       secret: input.secret,
       description: input.description,
       schema: zodToJsonSchema(input.schema as ZodTypeAny),
+      ...(input.secret
+        ? {
+            resolved:
+              typeof input.secretValue === "string" &&
+              input.secretValue.length > 0,
+            errorMessage: input.errorMessage,
+          }
+        : {}),
     })),
   };
 }

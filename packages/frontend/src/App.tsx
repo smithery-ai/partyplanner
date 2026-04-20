@@ -33,7 +33,7 @@ import {
   workflowInputRequested,
 } from "./components/queue-visualizer";
 import { RunStateJsonSheet } from "./components/run-state-json-sheet";
-import { StartWorkflowSheet } from "./components/start-workflow-sheet";
+import { StartWorkflowForm } from "./components/start-workflow-form";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -50,7 +50,7 @@ import type {
   WorkflowManifest,
 } from "./types";
 
-type SidePane = null | "start" | "pending" | "state";
+type SidePane = null | "pending" | "state";
 
 export type WorkflowNavigation = {
   home(): void;
@@ -521,7 +521,9 @@ export function WorkflowRunnerApp({
   const pendingInput = findManifestInput(workflow.manifest, pendingInputId);
   const inputPending = Boolean(pendingInputId);
   const pendingInputLabel = pendingInputId
-    ? `Provide ${pendingInputId}`
+    ? pendingInput?.secret
+      ? `Missing secret ${pendingInputId}`
+      : `Provide ${pendingInputId}`
     : "Input pending";
 
   const nodes = runState?.nodes ?? {};
@@ -568,18 +570,6 @@ export function WorkflowRunnerApp({
     setInputValues((prev) => ({ ...prev, [id]: value }));
   }
 
-  function collectSecretValues(): Record<string, string> {
-    const secretValues: Record<string, string> = {};
-    for (const input of workflow.manifest?.inputs ?? []) {
-      if (!input.secret) continue;
-      const value = inputValues[input.id];
-      if (typeof value === "string" && value.length > 0) {
-        secretValues[input.id] = value;
-      }
-    }
-    return secretValues;
-  }
-
   function clearRun() {
     workflowRun.clear();
     setSelectedNodeId(null);
@@ -603,7 +593,6 @@ export function WorkflowRunnerApp({
       return;
     }
     let payload: unknown;
-    const secretValues = collectSecretValues();
     try {
       payload = sanitizeJsonSchemaValue(seed.schema, inputValues[seed.id]);
     } catch (e) {
@@ -617,7 +606,6 @@ export function WorkflowRunnerApp({
       const result = await workflow.start({
         inputId: seed.id,
         payload,
-        secretValues,
         autoAdvance: pendingAutoAdvance,
       });
       navigation.run(workflowId, result.state.runId);
@@ -641,14 +629,18 @@ export function WorkflowRunnerApp({
     const def = findManifestInput(workflow.manifest, inputId);
     if (!def) return;
 
+    if (def.secret) {
+      setPayloadError(
+        def.errorMessage ??
+          `"${inputId}" is a secret and must be resolved in the workflow server.`,
+      );
+      return;
+    }
+
     setPayloadError("");
     let payload: unknown;
-    const secretValues = collectSecretValues();
     try {
       payload = sanitizeJsonSchemaValue(def.schema, inputValues[inputId]);
-      if (def.secret && typeof payload === "string" && payload.length > 0) {
-        secretValues[inputId] = payload;
-      }
     } catch (e) {
       setPayloadError(errorMessage(e, `Validation failed for "${inputId}".`));
       return;
@@ -659,7 +651,6 @@ export function WorkflowRunnerApp({
         state: runState,
         inputId,
         payload,
-        secretValues,
         autoAdvance: activeAutoAdvance,
       });
       setPane(null);
@@ -676,7 +667,6 @@ export function WorkflowRunnerApp({
     try {
       await workflowRun.advance({
         state: runState,
-        secretValues: collectSecretValues(),
       });
       setPane(null);
     } catch (e) {
@@ -696,7 +686,6 @@ export function WorkflowRunnerApp({
       await workflowRun.setAutoAdvance({
         state: runState,
         autoAdvance: nextAutoAdvance,
-        secretValues: collectSecretValues(),
       });
     } catch (e) {
       setPendingAutoAdvance(!nextAutoAdvance);
@@ -731,16 +720,15 @@ export function WorkflowRunnerApp({
       };
     } else if (
       def &&
+      !def.secret &&
       pendingInputNeedsForm(workflow.manifest, runState, selectedNodeId)
     ) {
       const id = selectedNodeId;
       nodeEditor = {
         inputDescription: def.description,
-        description: def.secret
-          ? "Secret required by a waiting step. Submit it to continue this run."
-          : "Input required by a waiting step. Submit it to continue this run.",
+        description:
+          "Input required by a waiting step. Submit it to continue this run.",
         schema: def.schema,
-        secret: def.secret,
         value: inputValues[id],
         onChange: (v) => setInputValue(id, v),
         onSubmit: () => void submitPendingInput(id),
@@ -969,15 +957,15 @@ export function WorkflowRunnerApp({
           />
 
           {!runState && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
-              <div className="pointer-events-auto flex max-w-md flex-col items-center gap-5 rounded-xl border border-border bg-card/95 p-8 text-center shadow-lg backdrop-blur-sm">
-                <p className="text-muted-foreground text-sm leading-relaxed">
-                  No run yet. Preview your input and start.
-                </p>
-                <Button type="button" onClick={() => setPane("start")}>
-                  Start Workflow
-                </Button>
-              </div>
+            <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-center overflow-y-auto p-6 md:items-center">
+              <StartWorkflowForm
+                inputs={workflow.manifest?.inputs ?? []}
+                inputValues={inputValues}
+                onInputValuesChange={setInputValue}
+                canSubmitSeed={!runState}
+                onSubmitSeed={(inputId) => void runWorkflow(inputId)}
+                error={payloadError || undefined}
+              />
             </div>
           )}
 
@@ -986,17 +974,6 @@ export function WorkflowRunnerApp({
             onOpenChange={(o) => setPane(o ? "state" : null)}
             runState={runState}
             registry={globalRegistry}
-          />
-
-          <StartWorkflowSheet
-            open={pane === "start"}
-            onOpenChange={(o) => setPane(o ? "start" : null)}
-            inputs={workflow.manifest?.inputs ?? []}
-            inputValues={inputValues}
-            onInputValuesChange={setInputValue}
-            canSubmitSeed={!runState}
-            onSubmitSeed={(inputId) => void runWorkflow(inputId)}
-            error={pane === "start" ? payloadError || undefined : undefined}
           />
 
           <PendingInputSheet

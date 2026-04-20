@@ -90,17 +90,35 @@ export const customerResolutionReview = input.deferred(
   },
 );
 
-export const pagerDutyToken = secret("pagerDutyToken", {
-  description: "Token used to page the incident commander.",
-});
+export const pagerDutyToken = secret(
+  "PAGER_DUTY_TOKEN",
+  process.env.PAGER_DUTY_TOKEN,
+  {
+    description: "Token used to page the incident commander.",
+    errorMessage:
+      "Set process.env.PAGER_DUTY_TOKEN in the Next.js environment.",
+  },
+);
 
-export const financeApiToken = secret("financeApiToken", {
-  description: "Token used to create purchase orders in the finance system.",
-});
+export const financeApiToken = secret(
+  "FINANCE_API_TOKEN",
+  process.env.FINANCE_API_TOKEN,
+  {
+    description: "Token used to create purchase orders in the finance system.",
+    errorMessage:
+      "Set process.env.FINANCE_API_TOKEN in the Next.js environment.",
+  },
+);
 
-export const crmAccessToken = secret("crmAccessToken", {
-  description: "Token used to read and update customer records in the CRM.",
-});
+export const crmAccessToken = secret(
+  "CRM_ACCESS_TOKEN",
+  process.env.CRM_ACCESS_TOKEN,
+  {
+    description: "Token used to read and update customer records in the CRM.",
+    errorMessage:
+      "Set process.env.CRM_ACCESS_TOKEN in the Next.js environment.",
+  },
+);
 
 export const incidentTriage = atom(
   (get) => {
