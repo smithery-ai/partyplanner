@@ -9,12 +9,10 @@
   },
   "dependencies": {
     "@workflow/core": "workspace:*",
-    "@workflow/demo-workflow": "workspace:*",
     "@workflow/remote": "workspace:*",
     "@workflow/runtime": "workspace:*",
     "@workflow/server": "workspace:*",
-    "hono": "^4.12.14",
-    "zod": "^3.25.76"
+    "hono": "^4.12.14"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

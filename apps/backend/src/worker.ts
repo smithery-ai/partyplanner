@@ -7,7 +7,8 @@ export class BackendDurableObject extends DurableObject<Env> {
 
   constructor(state: DurableObjectState, env: Env) {
     super(state, env);
-    this.app = createApp(state.storage, env.WORKFLOW_LOADER);
+    void env;
+    this.app = createApp(state.storage);
   }
 
   fetch(request: Request): Response | Promise<Response> {

@@ -8,6 +8,7 @@ import {
   type RunEvent,
   type RunSnapshot,
   RuntimeExecutor,
+  type SecretResolver,
   StaticWorkflowLoader,
   type WorkflowRef,
 } from "@workflow/runtime";
@@ -25,7 +26,6 @@ import type {
 } from "./types";
 
 export type WorkflowManagerOptions = {
-  workflows: Record<string, unknown>;
   stateStore: WorkflowStateStore;
   queue: WorkflowQueue;
   registry?: Registry;
@@ -46,7 +46,6 @@ export class WorkflowManager {
   private readonly executor: Executor;
 
   constructor(options: WorkflowManagerOptions) {
-    void options.workflows;
     this.stateStore = options.stateStore;
     this.queue = options.queue;
     this.executor = options.executor ?? new RuntimeExecutor();
@@ -87,7 +86,7 @@ export class WorkflowManager {
   }
 
   listRuns(): Promise<WorkflowRunSummary[]> {
-    return this.stateStore.listRunSummaries();
+    return this.stateStore.listRunSummaries(this.definition.ref.workflowId);
   }
 
   getRun(runId: string): Promise<WorkflowRunDocument | undefined> {
@@ -99,7 +98,7 @@ export class WorkflowManager {
   ): Promise<WorkflowRunDocument> {
     const runId = request.runId ?? `run_${randomId()}`;
     const autoAdvance = request.autoAdvance ?? true;
-    const scheduler = this.createScheduler(runId);
+    const scheduler = this.createScheduler(runId, request.secretValues);
     let snapshot = await scheduler.startRun({
       workflow: this.definition.ref,
       runId,
@@ -124,7 +123,7 @@ export class WorkflowManager {
   ): Promise<WorkflowRunDocument> {
     const current = await this.requireRun(runId);
     const autoAdvance = request.autoAdvance ?? current.autoAdvance;
-    const scheduler = this.createScheduler(runId);
+    const scheduler = this.createScheduler(runId, request.secretValues);
     let snapshot = await scheduler.submitInput({
       runId,
       workflow: this.definition.ref,
@@ -140,9 +139,12 @@ export class WorkflowManager {
     return this.publishSnapshot(snapshot, autoAdvance);
   }
 
-  async advanceRun(runId: string): Promise<WorkflowRunDocument> {
+  async advanceRun(
+    runId: string,
+    request: { secretValues?: Record<string, string> } = {},
+  ): Promise<WorkflowRunDocument> {
     await this.requireRun(runId);
-    const scheduler = this.createScheduler(runId);
+    const scheduler = this.createScheduler(runId, request.secretValues);
     await scheduler.startRun({
       workflow: this.definition.ref,
       runId,
@@ -156,7 +158,7 @@ export class WorkflowManager {
     request: SetWorkflowAutoAdvanceRequest,
   ): Promise<WorkflowRunDocument> {
     await this.requireRun(runId);
-    const scheduler = this.createScheduler(runId);
+    const scheduler = this.createScheduler(runId, request.secretValues);
     await scheduler.startRun({
       workflow: this.definition.ref,
       runId,
@@ -178,13 +180,18 @@ export class WorkflowManager {
     return document;
   }
 
-  private createScheduler(runId: string): LocalScheduler {
+  private createScheduler(
+    runId: string,
+    secretValues?: Record<string, string>,
+  ): LocalScheduler {
     return new LocalScheduler({
       loader: this.loader,
       stateStore: this.stateStore,
       queue: new ScopedWorkflowQueue(this.queue, runId),
       events: new StoreWorkflowEventSink(this.stateStore),
-      executor: this.executor,
+      executor: secretValues
+        ? new RuntimeExecutor(secretResolverFromValues(secretValues))
+        : this.executor,
     });
   }
 
@@ -202,6 +209,14 @@ export class WorkflowManager {
     await this.stateStore.saveRunDocument(document);
     return structuredClone(document);
   }
+}
+
+function secretResolverFromValues(
+  values: Record<string, string>,
+): SecretResolver {
+  return {
+    resolve: async ({ logicalName }) => values[logicalName],
+  };
 }
 
 class ScopedWorkflowQueue implements InspectableWorkQueue {

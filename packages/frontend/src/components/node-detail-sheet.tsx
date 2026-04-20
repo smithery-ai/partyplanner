@@ -1,15 +1,15 @@
 import type { NodeRecord } from "@workflow/core";
 import { X } from "lucide-react";
-import type { ZodTypeAny } from "zod";
+import { JsonSchemaForm } from "../components/json-schema-form";
 import { Button } from "../components/ui/button";
-import { ZodSchemaForm } from "../components/zod-schema-form";
 import { cn } from "../lib/utils";
+import type { JsonSchema } from "../types";
 
 export type NodeDetailEditor = {
   /** From `input(..., { description })` in the workflow registry. */
   inputDescription?: string;
   description: string;
-  schema: ZodTypeAny;
+  schema: JsonSchema;
   secret?: boolean;
   value: unknown;
   onChange: (value: unknown) => void;
@@ -70,7 +70,7 @@ export function NodeDetailSheet({
               <p className="text-muted-foreground text-xs leading-snug">
                 {editor.description}
               </p>
-              <ZodSchemaForm
+              <JsonSchemaForm
                 schema={editor.schema}
                 value={editor.value}
                 onChange={editor.onChange}

@@ -9,31 +9,16 @@ import {
   useState,
 } from "react";
 
-export type WorkflowFrontendApiMode = "multi" | "single";
-
-export type DefaultWorkflowUpload = {
-  workflowId?: string;
-  name?: string;
-  source: string;
-};
-
 export type WorkflowFrontendConfig = {
   apiBaseUrl?: string;
-  apiMode?: WorkflowFrontendApiMode;
-  defaultWorkflow?: DefaultWorkflowUpload;
-  defaultWorkflows?: DefaultWorkflowUpload[];
 };
 
 export type ResolvedWorkflowFrontendConfig = {
   apiBaseUrl: string;
-  apiMode: WorkflowFrontendApiMode;
-  defaultWorkflow?: DefaultWorkflowUpload;
-  defaultWorkflows?: DefaultWorkflowUpload[];
 };
 
 const defaultConfig: ResolvedWorkflowFrontendConfig = {
   apiBaseUrl: "/api",
-  apiMode: "multi",
 };
 
 const WorkflowFrontendConfigContext =
@@ -47,13 +32,9 @@ export function WorkflowFrontendProvider({
   children: ReactNode;
 }) {
   const value = useMemo<ResolvedWorkflowFrontendConfig>(() => {
-    const defaultWorkflows =
-      config?.defaultWorkflows ??
-      (config?.defaultWorkflow ? [config.defaultWorkflow] : undefined);
     return {
       ...defaultConfig,
       ...config,
-      defaultWorkflows,
       apiBaseUrl: normalizeApiBaseUrl(config?.apiBaseUrl ?? "/api"),
     };
   }, [config]);

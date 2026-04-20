@@ -7,6 +7,8 @@ import {
 } from "@workflow/postgres";
 import { createRemoteRuntimeServer } from "@workflow/remote";
 import { drizzle } from "drizzle-orm/pglite";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
 
 export type BackendNodeAppOptions = {
   dataDir?: string;
@@ -21,13 +23,25 @@ export function createApp(options: BackendNodeAppOptions = {}) {
   const client = new PGlite(dataDir);
   const db = drizzle({ client });
 
-  const app = createRemoteRuntimeServer({
-    basePath: "/runtime",
-    stateStore: createPostgresWorkflowStateStore(db),
-    queue: createPostgresWorkflowQueue(db),
-  });
-
+  const app = new Hono();
+  app.use(
+    "/*",
+    cors({
+      origin: "*",
+      allowHeaders: ["Content-Type"],
+      allowMethods: ["GET", "PUT", "POST", "OPTIONS"],
+    }),
+  );
   app.get("/health", (c) => c.json({ ok: true }));
+  app.route(
+    "/runtime",
+    createRemoteRuntimeServer({
+      basePath: "/",
+      stateStore: createPostgresWorkflowStateStore(db),
+      queue: createPostgresWorkflowQueue(db),
+      cors: false,
+    }),
+  );
 
   return app;
 }

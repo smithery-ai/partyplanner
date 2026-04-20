@@ -11,5 +11,4 @@ export default {
 
 export type Env = {
   BACKEND: DurableObjectNamespace<BackendDurableObject>;
-  WORKFLOW_LOADER: WorkerLoader;
 };

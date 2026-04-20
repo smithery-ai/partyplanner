@@ -15,6 +15,7 @@ const StartWorkflowRunRequestSchema = z.object({
   secretBindings: z
     .record(z.union([z.string(), z.object({ vaultEntryId: z.string() })]))
     .optional(),
+  secretValues: z.record(z.string()).optional(),
   runId: z.string().optional(),
   autoAdvance: z.boolean().optional(),
 });
@@ -22,11 +23,17 @@ const StartWorkflowRunRequestSchema = z.object({
 const SubmitWorkflowInputRequestSchema = z.object({
   inputId: z.string(),
   payload: z.any(),
+  secretValues: z.record(z.string()).optional(),
   autoAdvance: z.boolean().optional(),
 });
 
 const SetWorkflowAutoAdvanceRequestSchema = z.object({
   autoAdvance: z.boolean(),
+  secretValues: z.record(z.string()).optional(),
+});
+
+const AdvanceWorkflowRunRequestSchema = z.object({
+  secretValues: z.record(z.string()).optional(),
 });
 
 export type CreateWorkflowServerOptions = WorkflowManagerOptions & {
@@ -82,8 +89,9 @@ export function createWorkflowServer(options: CreateWorkflowServerOptions) {
 
   app.post(routePath(basePath, "/runs/:runId/advance"), async (c) => {
     try {
+      const body = AdvanceWorkflowRunRequestSchema.parse(await readBody(c.req));
       return c.json(
-        await manager.advanceRun(requireParam(c.req.param("runId"))),
+        await manager.advanceRun(requireParam(c.req.param("runId")), body),
       );
     } catch (e) {
       return errorResponse(c, e);

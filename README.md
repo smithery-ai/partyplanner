@@ -12,18 +12,15 @@ pnpm dev
 The dev servers run through the repository-local `portless` dependency, so no
 global install is required. On first run, Portless may ask for `sudo` so it can
 bind the HTTPS proxy on port 443 and trust its local development certificate.
-The dev script prints this explanation before starting Portless.
 Each app binds to the free port assigned by Portless, so parallel workspaces do
 not collide on fixed framework ports.
 
 Expected local URLs:
 
 - Client: `https://hylo.localhost`
-- Backend Worker: `https://api-worker.hylo.localhost`
-- Node backend example: `https://api.hylo.localhost`
-
-In git worktrees, Portless adds the worktree branch as a subdomain prefix so
-parallel checkouts do not share routes.
+- Backend Worker DB API: `https://api-worker.hylo.localhost`
+- Node/PGlite DB API: `https://api.hylo.localhost`
+- Next.js workflow server example: `https://nextjs.hylo.localhost`
 
 To bypass Portless and use direct framework ports:
 
@@ -31,86 +28,45 @@ To bypass Portless and use direct framework ports:
 PORTLESS=0 pnpm dev
 ```
 
-The Cloudflare Worker host lives in `apps/backend` and is the client default.
-Uploaded workflow source is validated and executed through a Worker Loader
-Dynamic Worker, while the backend Durable Object owns queue state, run state,
-events, and snapshots. The previous Node/Hono backend remains available in
-`examples/backend-node` for local comparison:
+## Architecture
+
+Hylo is now shaped as a DB API plus workflow server routes:
+
+- `apps/backend` is the Cloudflare Durable Object DB API.
+- `apps/backend-node` is the local Node/PGlite DB API.
+- Workflow code runs in user-owned server routes, such as `examples/nextjs`, or
+  in Cloudflare Worker routes that import the workflow atoms directly.
+- Workflow server routes use `@workflow/remote` adapters to store run state,
+  queue items, events, and run documents in the DB API.
+
+Workflow source is not uploaded to the DB API. Browser clients and backend DB
+services should not evaluate arbitrary workflow code. The server route that owns
+the workflow code is responsible for importing atoms, executing queue events,
+and committing state back through the remote runtime protocol.
+
+## Runtime Protocol
+
+The shared DB API stores:
+
+- optimistic run state versions
+- queue items with claim, complete, and fail operations
+- run events
+- published run documents and summaries
+
+The workflow server route owns:
+
+- workflow registration/manifest for its route
+- atom execution
+- input validation
+- result publication
+- any secret resolution policy needed by that workflow
+
+The Next.js example is the primary local integration:
 
 ```sh
-pnpm --filter workflow-backend-node-example dev
+pnpm --filter backend-node dev
+pnpm --filter workflow-nextjs-example dev
 ```
 
-## Hybrid runtime model
-
-Hylo is intended to support two runtime modes behind the same queue, state, and
-run-inspection API.
-
-### User-managed workflow runtime
-
-In this mode, the user owns the workflow code and the process that executes it.
-The `examples/nextjs` package is the closest local example: the application
-imports the workflow atoms directly and runs the Workflow server inside its own
-Next.js route handler.
-
-The hybrid version of this model moves queue and run state into `apps/backend`
-while leaving atom execution in the user's application:
-
-- the user app publishes a workflow manifest and version to the backend
-- `apps/backend` owns run creation, queue items, events, snapshots, and
-  optimistic state commits
-- the user runtime leases or receives queued step events, executes local atom
-  code, and commits the result back to the backend
-- backend state remains the source of truth for graph status, waiters, retries,
-  idempotency, and audit history
-
-This keeps private application code inside the user's app while still giving
-Hylo one shared backend for orchestration, queue visibility, persistence, and
-the client UI.
-
-To make this reliable, the backend/runtime protocol needs:
-
-- versioned workflow registration with a stable manifest hash
-- a queue leasing API with ack/fail/retry semantics
-- idempotent event and step-result commits keyed by event id
-- optimistic state versions so concurrent workers cannot overwrite run state
-- explicit result envelopes for resolved, skipped, waiting, blocked, and errored
-  step outcomes
-- a secret resolver contract so workflow code asks for logical secret names
-  without receiving the user's whole vault
-- compatibility tests that run the same workflow through in-process, Next.js,
-  and remote-backend queue/state adapters
-
-### Backend-managed uploaded workflows
-
-In this mode, the user creates a workflow by uploading workflow atom code to
-`apps/backend`. The backend owns both orchestration and execution.
-
-The production Cloudflare path for this should use Dynamic Workers rather than
-`eval` or `new Function()` inside the main Worker:
-
-- accept uploaded workflow source or a bundled workflow module
-- compile/bundle TypeScript and npm dependencies before execution
-- compute a content hash and store source, bundle, manifest, and metadata by
-  workflow version
-- load the bundle through a Cloudflare Worker Loader binding
-- execute workflow code in a sandbox with narrow bindings
-- keep run state and queue ownership in the supervisor Durable Object
-
-Uploaded workflow execution needs additional guardrails:
-
-- manifest validation before a workflow version can be activated
-- resource limits, timeouts, and deterministic retry behavior
-- restricted outbound network access by default
-- no direct access to deployment secrets
-- per-run secret bindings from logical workflow secret names to user vault
-  entries
-- clear version pinning so existing runs continue on the workflow version they
-  started with
-
-Current status: `apps/backend` accepts uploaded workflow source, validates it in
-a Dynamic Worker, and executes queue events through the Worker Loader binding.
-The current transformer covers the editor's `@workflow/core` and `zod` import
-shape; full TypeScript and dependency bundling is still future work. The legacy
-dynamic-source implementation remains in `examples/backend-node` for
-development and comparison.
+`examples/nextjs` imports workflow atoms directly and points its remote
+state/queue adapters at `apps/backend-node` through `HYLO_BACKEND_URL`.

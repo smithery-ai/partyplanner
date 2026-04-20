@@ -30,6 +30,7 @@ import {
 } from "../components/ai-elements/node";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
+import type { WorkflowManifest } from "../types";
 
 /** Visual bucket for theming (includes deferred-input gate) */
 type QueueNodeStatus = "queued" | "running";
@@ -37,7 +38,7 @@ type StatusVisual =
   | NodeStatus
   | QueueNodeStatus
   | "needs_input"
-  | "pending_deferred";
+  | "pending_input";
 
 const STATUS_LEGEND: {
   key: StatusVisual;
@@ -70,9 +71,9 @@ const STATUS_LEGEND: {
     hint: "Deferred input required (e.g. approval)",
   },
   {
-    key: "pending_deferred",
-    label: "Deferred pending",
-    hint: "Submit this deferred input to continue",
+    key: "pending_input",
+    label: "Pending input",
+    hint: "Submit this input or secret to continue",
   },
   {
     key: "skipped",
@@ -96,8 +97,8 @@ type WorkflowNodeData = {
   kind: "input" | "atom";
   deferred?: boolean;
   secret?: boolean;
-  /** Waiting on this deferred input (no node record in state until submitted). */
-  pendingDeferred?: boolean;
+  /** Waiting on this input or secret (no node record in state until submitted). */
+  pendingInput?: boolean;
   status?: NodeRecord["status"] | QueueNodeStatus;
   handles: { target: boolean; source: boolean };
   /** Inline approve/reject when a downstream step is blocked on this deferred input */
@@ -106,7 +107,7 @@ type WorkflowNodeData = {
 
 function statusVisual(data: WorkflowNodeData): StatusVisual {
   if (data.inlineActions) return "needs_input";
-  if (data.pendingDeferred) return "pending_deferred";
+  if (data.pendingInput) return "pending_input";
   return data.status ?? "not_reached";
 }
 
@@ -145,7 +146,7 @@ function statusNodeClasses(visual: StatusVisual): {
         header:
           "border-b border-amber-600/30 bg-amber-600/14 dark:bg-amber-500/16 dark:border-amber-500/30",
       };
-    case "pending_deferred":
+    case "pending_input":
       return {
         card: "border-yellow-500/55 ring-1 ring-yellow-500/25 dark:border-yellow-400/50",
         header:
@@ -184,7 +185,7 @@ const STATUS_SWATCH: Record<StatusVisual, string> = {
     "bg-emerald-600/45 ring-1 ring-emerald-600/25 dark:bg-emerald-500/35",
   waiting: "bg-sky-600/45 ring-1 ring-sky-600/25 dark:bg-sky-500/35",
   needs_input: "bg-amber-600/45 ring-1 ring-amber-600/25 dark:bg-amber-500/35",
-  pending_deferred:
+  pending_input:
     "bg-yellow-400/50 ring-1 ring-yellow-500/30 dark:bg-yellow-400/35",
   skipped: "bg-primary/45 ring-1 ring-primary/25",
   blocked: "bg-orange-600/45 ring-1 ring-orange-600/25 dark:bg-orange-500/35",
@@ -283,7 +284,7 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
             <>
               {kindLabel} · <span className="text-foreground">needed</span>
             </>
-          ) : data.pendingDeferred ? (
+          ) : data.pendingInput ? (
             <>
               {kindLabel} · <span className="text-foreground">pending</span>
             </>
@@ -335,15 +336,53 @@ const LAYOUT_COL_STEP = 240;
 /** Vertical gap between nodes that share a layer. */
 const LAYOUT_ROW_GAP = 96;
 
-function compareIdsByRegistry(
+function compareIdsByOrder(
   registry: Registry,
+  manifest: WorkflowManifest | undefined,
 ): (a: string, b: string) => number {
-  const order = registry.allIds();
+  const order = workflowNodeOrder(registry, manifest, undefined, undefined);
   return (a: string, b: string) => {
     const ia = order.indexOf(a);
     const ib = order.indexOf(b);
     return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
   };
+}
+
+function workflowNodeOrder(
+  registry: Registry,
+  manifest: WorkflowManifest | undefined,
+  runState: RunState | undefined,
+  queue: QueueSnapshot | undefined,
+): string[] {
+  const ids = new Set<string>();
+  for (const id of registry.allIds()) ids.add(id);
+  for (const input of manifest?.inputs ?? []) ids.add(input.id);
+  for (const id of Object.keys(runState?.nodes ?? {})) ids.add(id);
+  for (const item of queue?.pending ?? []) ids.add(queueNodeId(item.event));
+  for (const item of queue?.running ?? []) ids.add(queueNodeId(item.event));
+
+  const manifestOrder = new Map(
+    (manifest?.inputs ?? []).map((input, index) => [input.id, index]),
+  );
+  const registryOrder = new Map(
+    registry.allIds().map((id, index) => [id, index + manifestOrder.size]),
+  );
+  return [...ids].sort((a, b) => {
+    const ao = manifestOrder.get(a) ?? registryOrder.get(a) ?? 9999;
+    const bo = manifestOrder.get(b) ?? registryOrder.get(b) ?? 9999;
+    return ao === bo ? a.localeCompare(b) : ao - bo;
+  });
+}
+
+function inputDefinition(
+  registry: Registry,
+  manifest: WorkflowManifest | undefined,
+  id: string,
+): { kind: "input" | "deferred_input"; secret?: boolean } | undefined {
+  const registered = registry.getInput(id);
+  if (registered) return registered;
+  const input = manifest?.inputs.find((item) => item.id === id);
+  return input ? { kind: input.kind, secret: input.secret } : undefined;
 }
 
 function flowTopology(
@@ -496,14 +535,12 @@ function edgeIdFromEndpoints(source: string, target: string): string {
  * Only paths that actually ran contribute; the graph grows as the run explores branches.
  */
 function edgesFromObservedDeps(
-  registry: Registry,
   state: RunState | undefined,
 ): { id: string; source: string; target: string }[] {
   if (!state) return [];
   const out: { id: string; source: string; target: string }[] = [];
   const seen = new Set<string>();
-  for (const id of registry.allIds()) {
-    const rec = state.nodes[id];
+  for (const [id, rec] of Object.entries(state.nodes)) {
     const deps = rec?.deps ?? [];
     for (const dep of new Set(deps)) {
       const idStr = edgeIdFromEndpoints(dep, id);
@@ -535,13 +572,15 @@ function animatedEdgesFromState(state: RunState | undefined): Set<string> {
  * `state.nodes[inputId]` does not exist until the user submits that input.
  */
 /** Exported for the node detail sheet (pending deferred inputs have no `state.nodes` record yet). */
-export function deferredInputRequested(
+export function workflowInputRequested(
   registry: Registry,
+  manifest: WorkflowManifest | undefined,
   runState: RunState,
   id: string,
 ): boolean {
-  const def = registry.getInput(id);
-  if (!def || def.kind !== "deferred_input") return false;
+  const def = inputDefinition(registry, manifest, id);
+  if (!def) return false;
+  if (!def.secret && runState.nodes[id]?.status === "resolved") return false;
   if (runState.waiters[id]?.length) return true;
   for (const n of Object.values(runState.nodes)) {
     if (n.status === "waiting" && n.waitingOn === id) return true;
@@ -549,9 +588,24 @@ export function deferredInputRequested(
   return false;
 }
 
-/** Nodes that have been evaluated, plus deferred inputs currently awaited by a step. */
+/** Exported for older callers that only care about deferred gates. */
+export function deferredInputRequested(
+  registry: Registry,
+  manifest: WorkflowManifest | undefined,
+  runState: RunState,
+  id: string,
+): boolean {
+  const def = inputDefinition(registry, manifest, id);
+  return Boolean(
+    def?.kind === "deferred_input" &&
+      workflowInputRequested(registry, manifest, runState, id),
+  );
+}
+
+/** Nodes that have been evaluated, plus inputs currently awaited by a step. */
 function visibleWorkflowNodeIds(
   registry: Registry,
+  manifest: WorkflowManifest | undefined,
   runState: RunState | undefined,
   queue: QueueSnapshot | undefined,
 ): string[] {
@@ -560,11 +614,11 @@ function visibleWorkflowNodeIds(
     ...(queue?.pending ?? []).map((item) => queueNodeId(item.event)),
     ...(queue?.running ?? []).map((item) => queueNodeId(item.event)),
   ]);
-  return registry.allIds().filter((id) => {
+  return workflowNodeOrder(registry, manifest, runState, queue).filter((id) => {
     const rec = runState.nodes[id];
     if (rec && rec.status !== "not_reached") return true;
     if (queuedIds.has(id)) return true;
-    return deferredInputRequested(registry, runState, id);
+    return workflowInputRequested(registry, manifest, runState, id);
   });
 }
 
@@ -574,6 +628,7 @@ function queueNodeId(event: QueueSnapshot["pending"][number]["event"]): string {
 
 function buildFlow(
   registry: Registry,
+  manifest: WorkflowManifest | undefined,
   visibleIds: readonly string[],
   graphEdges: readonly { id: string; source: string; target: string }[],
   layout: Record<string, { x: number; y: number }>,
@@ -595,14 +650,14 @@ function buildFlow(
 
   const nodes: Node[] = ids.map((id) => {
     const rec = runState?.nodes[id];
-    const inputDef = registry.getInput(id);
+    const inputDef = inputDefinition(registry, manifest, id);
     const kind: WorkflowNodeData["kind"] = inputDef ? "input" : "atom";
     const deferred = Boolean(inputDef?.kind === "deferred_input");
     const secret = Boolean(inputDef?.secret);
-    const pendingDeferred = Boolean(
+    const pendingInput = Boolean(
       runState &&
-        deferred &&
-        deferredInputRequested(registry, runState, id) &&
+        inputDef &&
+        workflowInputRequested(registry, manifest, runState, id) &&
         !rec,
     );
     const data: WorkflowNodeData = {
@@ -610,7 +665,7 @@ function buildFlow(
       kind,
       deferred,
       secret,
-      pendingDeferred,
+      pendingInput,
       status: runningIds.has(id)
         ? "running"
         : queuedIds.has(id)
@@ -628,27 +683,26 @@ function buildFlow(
     };
   });
 
-  const pendingDeferredIdSet = new Set(
+  const pendingInputIdSet = new Set(
     ids.filter((nid) => {
       const r = runState?.nodes[nid];
-      const inputDef = registry.getInput(nid);
-      const def = Boolean(inputDef?.kind === "deferred_input");
+      const inputDef = inputDefinition(registry, manifest, nid);
       return Boolean(
         runState &&
-          def &&
-          deferredInputRequested(registry, runState, nid) &&
+          inputDef &&
+          workflowInputRequested(registry, manifest, runState, nid) &&
           !r,
       );
     }),
   );
 
   const edges: Edge[] = graphEdges.map((e) => {
-    const touchesPendingDeferred =
-      pendingDeferredIdSet.has(e.source) || pendingDeferredIdSet.has(e.target);
+    const touchesPendingInput =
+      pendingInputIdSet.has(e.source) || pendingInputIdSet.has(e.target);
     return {
       ...e,
       animated: animate.has(e.id),
-      ...(touchesPendingDeferred
+      ...(touchesPendingInput
         ? {
             style: PENDING_DEFERRED_EDGE_STYLE,
             markerEnd: PENDING_DEFERRED_EDGE_MARKER,
@@ -664,12 +718,14 @@ function FlowInner({
   runState,
   queue,
   registry,
+  manifest,
   nodeInlineActions,
   onNodeClick,
 }: {
   runState: RunState | undefined;
   queue: QueueSnapshot | undefined;
   registry: Registry;
+  manifest?: WorkflowManifest;
   nodeInlineActions?: Record<
     string,
     { approve: () => void; reject: () => void }
@@ -685,15 +741,15 @@ function FlowInner({
   const { fitView } = useReactFlow();
 
   const visibleIds = useMemo(
-    () => visibleWorkflowNodeIds(registry, runState, queue),
-    [registry, runState, queue],
+    () => visibleWorkflowNodeIds(registry, manifest, runState, queue),
+    [registry, manifest, runState, queue],
   );
 
   const graphEdges = useMemo(() => {
-    const raw = edgesFromObservedDeps(registry, runState);
+    const raw = edgesFromObservedDeps(runState);
     const vis = new Set(visibleIds);
     return raw.filter((e) => vis.has(e.source) && vis.has(e.target));
-  }, [registry, runState, visibleIds]);
+  }, [runState, visibleIds]);
 
   const edgeSig = useMemo(
     () =>
@@ -704,7 +760,10 @@ function FlowInner({
     [graphEdges],
   );
 
-  const cmp = useMemo(() => compareIdsByRegistry(registry), [registry]);
+  const cmp = useMemo(
+    () => compareIdsByOrder(registry, manifest),
+    [registry, manifest],
+  );
   const layout = useMemo(
     () => computeWorkflowLayout(visibleIds, graphEdges, cmp),
     [visibleIds, graphEdges, cmp],
@@ -718,6 +777,7 @@ function FlowInner({
     () =>
       buildFlow(
         registry,
+        manifest,
         visibleIds,
         graphEdges,
         layout,
@@ -728,6 +788,7 @@ function FlowInner({
       ),
     [
       registry,
+      manifest,
       visibleIds,
       graphEdges,
       layout,
@@ -877,6 +938,8 @@ export type QueueVisualizerProps = {
   queue?: QueueSnapshot;
   /** Registry for node list and input vs atom (after importing your workflow module). */
   registry: Registry;
+  /** Manifest inputs are used when the browser has not imported workflow code. */
+  manifest?: WorkflowManifest;
   /** Optional: inline actions on a node (e.g. approve/reject on a deferred input). */
   nodeInlineActions?: Record<
     string,
@@ -891,6 +954,7 @@ export function QueueVisualizer({
   runState,
   queue,
   registry,
+  manifest,
   nodeInlineActions,
   onNodeClick,
   className,
@@ -902,6 +966,7 @@ export function QueueVisualizer({
           runState={runState}
           queue={queue}
           registry={registry}
+          manifest={manifest}
           nodeInlineActions={nodeInlineActions}
           onNodeClick={onNodeClick}
         />
