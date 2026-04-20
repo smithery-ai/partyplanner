@@ -26,6 +26,7 @@ import {
 import {
   type NodeDetailEditor,
   NodeDetailSheet,
+  type NodeIntervention,
 } from "./components/node-detail-sheet";
 import {
   type PendingFormRequest,
@@ -779,6 +780,15 @@ export function WorkflowRunnerApp({
     selectedNodeId ? nodes[selectedNodeId] : undefined,
   );
 
+  const selectedInterventions: NodeIntervention[] = selectedNodeId
+    ? Object.values(runState?.interventions ?? {})
+        .filter((request) => request.stepId === selectedNodeId)
+        .map((request) => ({
+          request,
+          response: runState?.interventionResponses?.[request.id],
+        }))
+    : [];
+
   let nodeEditor: NodeDetailEditor | null = null;
   if (selectedNodeId) {
     const def = findManifestInput(workflow.manifest, selectedNodeId);
@@ -1089,6 +1099,7 @@ export function WorkflowRunnerApp({
             nodeId={selectedNodeId}
             record={selectedRecord}
             editor={nodeEditor}
+            interventions={selectedInterventions}
             open={selectedNodeId !== null}
             onOpenChange={(open) => {
               if (!open) setSelectedNodeId(null);
