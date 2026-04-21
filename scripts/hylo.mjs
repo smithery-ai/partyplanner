@@ -85,7 +85,8 @@ function runDevCommand(args) {
   const workflow = resolveDevWorkflow(parsed);
   const app = resolveDevApp(parsed);
   const devCommand = resolveDevCommand(parsed, { app, workflow });
-  const devUrl = parsed.url?.trim() || packageConfig.devUrl?.trim();
+  const devUrl =
+    parsed.url?.trim() || packageConfig.devUrl?.trim() || app?.devUrl;
   const appUrl = isHttpUrl(devUrl) ? validateHttpUrl(devUrl, "dev url") : "";
   const name = devUrl ? devServiceNameFromUrl(devUrl) : undefined;
 
@@ -99,6 +100,13 @@ function runDevCommand(args) {
     ...(appUrl ? { HYLO_APP_URL: appUrl } : {}),
   };
   const managedBackend = startManagedDevBackend(backend);
+  printDevSummary({
+    app,
+    appUrl,
+    backend,
+    command: devCommand,
+    workflow,
+  });
   const command = name
     ? [
         process.execPath,
@@ -361,6 +369,12 @@ function resolvePackageTarget(name, label) {
   }
 
   return {
+    devUrl: packageJson.hylo?.devUrl
+      ? validateHttpUrl(
+          String(packageJson.hylo.devUrl),
+          `${packagePath(packageDir)} devUrl`,
+        )
+      : undefined,
     packageDir,
     packageName,
     packagePath: packagePath(packageDir),
@@ -589,6 +603,12 @@ function readWorkflowConfig(packageDir) {
   }
 
   return {
+    devUrl: packageJson.hylo?.devUrl
+      ? validateHttpUrl(
+          String(packageJson.hylo.devUrl),
+          `${packagePath(packageDir)} devUrl`,
+        )
+      : undefined,
     packageDir,
     packagePath: packagePath(packageDir),
     packageName,
@@ -619,6 +639,20 @@ function devServiceNameFromUrl(value) {
   } catch {
     return normalized.replace(/^https?:\/\//, "").replace(/\.localhost$/, "");
   }
+}
+
+function printDevSummary({ app, appUrl, backend, command, workflow }) {
+  if (!app || !workflow) return;
+
+  const lines = [
+    "hylo dev",
+    `  app:      ${appUrl || "(Vite will print its local URL)"}`,
+    `  workflow: ${workflow.all ? "all" : (workflow.target?.devUrl ?? workflow.value)}`,
+    `  backend:  ${backend.url}`,
+    `  command:  ${command.join(" ")}`,
+    "",
+  ];
+  process.stderr.write(`${lines.join("\n")}\n`);
 }
 
 function validateHttpUrl(value, label) {
