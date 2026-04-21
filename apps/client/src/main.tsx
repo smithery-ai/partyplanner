@@ -74,10 +74,7 @@ function initialWorkflowConfig(): {
   customWorkflowApiUrl: string;
 } {
   const params = new URLSearchParams(window.location.search);
-  const explicitApiUrl = firstNonEmpty(
-    params.get("workflowApiUrl"),
-    import.meta.env.VITE_WORKFLOW_API_URL,
-  );
+  const explicitApiUrl = firstNonEmpty(params.get("workflowApiUrl"));
 
   return {
     worker: explicitApiUrl
@@ -85,7 +82,7 @@ function initialWorkflowConfig(): {
       : (parseWorkflowWorker(
           firstNonEmpty(
             params.get("worker"),
-            import.meta.env.VITE_WORKFLOW_WORKER,
+            import.meta.env.VITE_HYLO_WORKFLOW,
           ),
         ) ?? "nextjs"),
     customWorkflowApiUrl: explicitApiUrl ?? "",
@@ -100,7 +97,7 @@ function workflowApiBaseUrl(config: {
     config.worker === "custom"
       ? config.customWorkflowApiUrl.trim() || "/api/nextjs"
       : workflowWorkerApiBaseUrl(config.worker);
-  return withBackendUrl(baseUrl, import.meta.env.VITE_HYLO_BACKEND_URL);
+  return baseUrl;
 }
 
 function writeWorkflowConfigToUrl(config: {
@@ -128,20 +125,11 @@ function workflowWorkerApiBaseUrl(worker: WorkflowWorker): string {
   return worker === "cloudflare" ? "/api/cloudflare" : "/api/nextjs";
 }
 
-function withBackendUrl(apiBaseUrl: string, backendUrl: string | undefined) {
-  const resolvedBackendUrl = backendUrl?.trim();
-  if (!resolvedBackendUrl) return apiBaseUrl;
-
-  const parsed = new URL(apiBaseUrl, window.location.origin);
-  parsed.searchParams.set("backendUrl", resolvedBackendUrl);
-  if (isAbsoluteUrl(apiBaseUrl)) return parsed.toString();
-  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-}
-
 function parseWorkflowWorker(
   value: string | undefined,
 ): WorkflowWorker | undefined {
   if (value === "cloudflare" || value === "nextjs") return value;
+  if (value === "cloudflare-worker") return "cloudflare";
   return undefined;
 }
 
@@ -149,10 +137,6 @@ function firstNonEmpty(
   ...values: (string | null | undefined)[]
 ): string | undefined {
   return values.map((value) => value?.trim()).find(Boolean);
-}
-
-function isAbsoluteUrl(value: string): boolean {
-  return /^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith("//");
 }
 
 function setOrDeleteSearchParam(

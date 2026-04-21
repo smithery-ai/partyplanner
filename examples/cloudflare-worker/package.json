@@ -5,13 +5,12 @@
   "type": "module",
   "hylo": {
     "dev": {
-      "url": "https://cloudflare-worker.hylo.localhost",
-      "backend": "node"
+      "url": "https://cloudflare-worker.hylo.localhost"
     }
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "hylo dev -- wrangler dev --ip 127.0.0.1 --port '$PORT'",
+    "dev": "hylo dev --backend node -- wrangler dev --ip 127.0.0.1 --port '$PORT'",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },

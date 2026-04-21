@@ -3,17 +3,11 @@
 Workflow inspection UI. It does not execute workflow code or accept source
 uploads.
 
-Run it through Hylo:
+Use the root quickstart for the full local experience:
 
 ```sh
 pnpm dev
 ```
 
-From the repo root:
-
-```sh
-pnpm --filter client dev
-```
-
-The dev script launches the client through Hylo. Hylo starts the selected local
-backend and injects it through `HYLO_BACKEND_URL`.
+From this directory, `pnpm dev` runs only the Vite client and expects workflow
+services to be running separately.

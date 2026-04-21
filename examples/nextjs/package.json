@@ -5,12 +5,11 @@
   "type": "module",
   "hylo": {
     "dev": {
-      "url": "https://nextjs.hylo.localhost",
-      "backend": "node"
+      "url": "https://nextjs.hylo.localhost"
     }
   },
   "scripts": {
-    "dev": "hylo dev -- next dev",
+    "dev": "hylo dev --backend node -- next dev",
     "build": "next build",
     "typecheck": "tsc --noEmit"
   },

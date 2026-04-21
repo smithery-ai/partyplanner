@@ -1,18 +1,8 @@
 # Hylo
 
-Hylo runs workflow servers against a shared backend API. The workflow server
-owns user code and executes workflow atoms; the backend API stores run state,
-queue items, events, OAuth handoffs, and run documents.
-
-The `hylo` command is the entrypoint for running those servers. It launches your
-process with `HYLO_BACKEND_URL` set to the selected backend:
-
-```sh
-hylo dev -- <server command>
-```
-
-Everything after `--` is your server bootstrap command. Package `dev` scripts
-in this repo are thin wrappers around that shape.
+Hylo runs workflow servers against a backend API. Workflow servers own user code
+and execute atoms; the backend stores run state, queue items, events, OAuth
+handoffs, and run documents.
 
 ## Quickstart
 
@@ -21,32 +11,49 @@ pnpm install
 pnpm dev
 ```
 
-The root `dev` script runs the client package's `hylo dev -- vite` command.
-Hylo starts the default local backend, launches Vite, and injects
-`HYLO_BACKEND_URL`.
+`pnpm dev` is the repo client launcher. It starts:
 
-## Launcher Commands
+- the Node backend
+- the Next.js workflow example
+- the Vite client
 
-- `hylo dev -- <dev command>` starts a local dev server and injects
-  `HYLO_BACKEND_URL`. If a package selects a named local backend, Hylo starts
-  that backend too.
-- `hylo run -- <server command>` launches a long-running server against an
-  already-running or deployed backend.
-- `hylo exec -- <one-off command>` runs migrations and other one-off tasks with
-  the same backend environment.
+The root `package.json` shows the exact Turbo graph: `client` plus the selected
+workflow package. Hylo wraps that graph, starts the selected backend, and
+injects `HYLO_BACKEND_URL`.
 
-Use `--backend node`, `--backend cloudflare`, or `--backend-url https://...`
-when you need to override the package default. `HYLO_BACKEND` and
-`HYLO_BACKEND_URL` provide the same override through environment variables.
+## Switching Targets
+
+Use the same two flags when you need a different shape:
+
+```sh
+pnpm hylo dev --backend cloudflare --workflow nextjs -- <dev command>
+pnpm hylo dev --backend node --workflow cloudflare-worker -- <dev command>
+pnpm hylo dev --backend-url https://api.example.com --workflow nextjs -- <dev command>
+```
+
+For the repo client, `<dev command>` is a Turbo command that includes
+`--filter=client` and one workflow package filter.
+
+## Launcher Modes
+
+- `hylo dev --backend <name|url> [--workflow <name>] -- <command>` is for local
+  development.
+- `hylo run --backend <name|url> -- <command>` is for a long-running workflow
+  server against an already-running backend.
+- `hylo exec --backend <name|url> -- <command>` is for one-off backend-scoped
+  commands such as migrations.
+
+`run` and `exec` do not take `--workflow`; the command after `--` is already
+the thing being run. A future deploy command should keep the same split:
+`hylo deploy --backend cloudflare --workflow cloudflare-worker`.
 
 ## Backends
 
 - `node`: `apps/backend-node`, a Node/Hono backend backed by PGlite.
 - `cloudflare`: `apps/backend-cloudflare`, a Cloudflare Worker backed by D1.
 
-Backend apps declare their Hylo backend URL in `package.json` under
-`hylo.backend.url`. Apps and examples declare their local dev URL under
-`hylo.dev.url`.
+Backend apps declare their URL in `package.json` under `hylo.backend.url`. Apps
+and examples declare their stable local URL under `hylo.dev.url`.
 
 ## Architecture
 

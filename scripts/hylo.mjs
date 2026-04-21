@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const hyloScriptPath = fileURLToPath(import.meta.url);
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const BACKENDS = loadBackendConfigs();
+const WORKFLOWS = ["nextjs", "cloudflare-worker", "all"];
 
 main(process.argv.slice(2));
 
@@ -44,6 +45,12 @@ function runCommand(mode, args) {
     process.exit(0);
   }
 
+  if (parsed.workflow) {
+    die(
+      `--workflow is only supported by hylo dev orchestration, not hylo ${mode}.`,
+    );
+  }
+
   if (parsed.command.length === 0) {
     die(
       `missing command to ${mode}. Usage: hylo ${mode} [options] -- <command...>`,
@@ -52,7 +59,7 @@ function runCommand(mode, args) {
 
   const packageConfig = readCurrentPackageHyloConfig();
   const backendUrl = resolveBackendUrl(parsed, {
-    fallbackBackend: packageConfig.dev?.backend ?? packageConfig.backend?.id,
+    fallbackBackend: packageConfig.backend?.id,
   });
   const env = {
     ...process.env,
@@ -71,38 +78,39 @@ function runDevCommand(args) {
     process.exit(0);
   }
 
-  if (parsed.command.length === 0) {
-    die("missing command to dev. Usage: hylo dev [options] -- <command...>");
-  }
-
   const packageConfig = readCurrentPackageHyloConfig();
+  const workflow = resolveWorkflow(parsed);
+  const devCommand = resolveDevCommand(parsed);
   const devUrl = parsed.url?.trim() || packageConfig.dev?.url?.trim();
+  const appUrl = isHttpUrl(devUrl) ? validateHttpUrl(devUrl, "dev url") : "";
   const name = devUrl ? devServiceNameFromUrl(devUrl) : undefined;
-  if (!name) {
-    die("dev requires --url <url> or package.json hylo.dev.url.");
-  }
 
   const backend = resolveDevBackend(parsed, packageConfig);
   const env = {
     ...process.env,
     HYLO_BACKEND_URL: backend.url,
+    ...(backend.id ? { HYLO_BACKEND: backend.id } : {}),
+    ...(workflow ? { HYLO_WORKFLOW: workflow } : {}),
+    ...(appUrl ? { HYLO_APP_URL: appUrl } : {}),
   };
   const managedBackend = startManagedDevBackend(backend, packageConfig);
-  const command = [
-    process.execPath,
-    portlessBinPath(),
-    "run",
-    "--force",
-    "--name",
-    name,
-    process.execPath,
-    hyloScriptPath,
-    "run",
-    "--backend-url",
-    backend.url,
-    "--",
-    ...parsed.command,
-  ];
+  const command = name
+    ? [
+        process.execPath,
+        portlessBinPath(),
+        "run",
+        "--force",
+        "--name",
+        name,
+        process.execPath,
+        hyloScriptPath,
+        "run",
+        "--backend-url",
+        backend.url,
+        "--",
+        ...devCommand,
+      ]
+    : prepareCommand(devCommand, env);
 
   spawnAndExit(command, env, managedBackend ? [managedBackend] : []);
 }
@@ -129,6 +137,7 @@ function parseOptions(args, options = {}) {
   let backendUrl;
   let help = false;
   let url;
+  let workflow;
   let parsingOptions = true;
 
   for (let i = 0; i < args.length; i++) {
@@ -180,6 +189,18 @@ function parseOptions(args, options = {}) {
       continue;
     }
 
+    if (parsingOptions && arg === "--workflow") {
+      const value = args[++i];
+      if (!value) die("--workflow requires a value.");
+      workflow = value;
+      continue;
+    }
+
+    if (parsingOptions && arg.startsWith("--workflow=")) {
+      workflow = arg.slice("--workflow=".length);
+      continue;
+    }
+
     parsingOptions = false;
     command.push(arg);
   }
@@ -192,7 +213,27 @@ function parseOptions(args, options = {}) {
     die('expected "--" before the command.');
   }
 
-  return { backend, backendUrl, command, help, url };
+  return { backend, backendUrl, command, help, url, workflow };
+}
+
+function resolveDevCommand(parsed) {
+  if (parsed.command.length > 0) return parsed.command;
+
+  die(
+    "missing command to dev. Usage: hylo dev --backend <name|url> [--workflow <name>] -- <command...>.",
+  );
+}
+
+function resolveWorkflow(parsed) {
+  const workflow = parsed.workflow?.trim() || process.env.HYLO_WORKFLOW?.trim();
+  if (!workflow) return undefined;
+
+  const normalized = workflow.toLowerCase();
+  if (WORKFLOWS.includes(normalized)) {
+    return normalized;
+  }
+
+  die(`unknown workflow "${workflow}". Use nextjs, cloudflare-worker, or all.`);
 }
 
 function resolveBackendUrl(parsed, options = {}) {
@@ -223,8 +264,7 @@ function resolveDevBackend(parsed, packageConfig) {
   if (parsed.backendUrl?.trim() || isHttpUrl(parsed.backend)) {
     return {
       url: resolveBackendUrl(parsed, {
-        fallbackBackend:
-          packageConfig.dev?.backend ?? packageConfig.backend?.id,
+        fallbackBackend: packageConfig.backend?.id,
       }),
     };
   }
@@ -237,7 +277,6 @@ function resolveDevBackend(parsed, packageConfig) {
   const backendName =
     process.env.HYLO_BACKEND?.trim() ||
     parsed.backend?.trim() ||
-    packageConfig.dev?.backend?.trim() ||
     packageConfig.backend?.id?.trim();
 
   if (!backendName) dieNoBackend();
@@ -261,8 +300,7 @@ function prepareCommand(command, env) {
   const expanded = command.map((arg) => expandEnvPlaceholders(arg, env));
   if (!isWranglerDevCommand(expanded)) return expanded;
 
-  if (hasWranglerVar(expanded, "HYLO_BACKEND_URL")) return expanded;
-  return [...expanded, "--var", `HYLO_BACKEND_URL:${env.HYLO_BACKEND_URL}`];
+  return withWranglerVars(expanded, env, ["HYLO_BACKEND_URL", "HYLO_APP_URL"]);
 }
 
 function expandEnvPlaceholders(value, env) {
@@ -284,6 +322,16 @@ function hasWranglerVar(command, name) {
       arg.startsWith(`--var=${name}:`) ||
       (command[index - 1] === "--var" && arg.startsWith(`${name}:`)),
   );
+}
+
+function withWranglerVars(command, env, names) {
+  const next = [...command];
+  for (const name of names) {
+    const value = env[name];
+    if (!value || hasWranglerVar(next, name)) continue;
+    next.push("--var", `${name}:${value}`);
+  }
+  return next;
 }
 
 function resolveBackendAlias(name) {
@@ -479,7 +527,7 @@ Usage:
 
 Commands:
   run       Launch a long-running workflow server with HYLO_BACKEND_URL.
-  dev       Launch a local dev server, local backend, and HYLO_BACKEND_URL.
+  dev       Launch a local dev command with HYLO_BACKEND_URL.
   exec      Run a one-off command with HYLO_BACKEND_URL.
   env       Print the resolved Hylo environment.
 
@@ -488,9 +536,14 @@ Backend options:
                           Choices: ${backendChoices()}
   --backend-url <url>     Explicit Hylo backend URL.
 
+Dev orchestration:
+  --workflow <name>       Local workflow service. Choices: nextjs, cloudflare-worker, all.
+
 Environment:
   HYLO_BACKEND_URL        Explicit backend URL. Overrides backend names.
-  HYLO_BACKEND            Backend name. Overrides package-script defaults.
+  HYLO_BACKEND            Backend name.
+  HYLO_WORKFLOW           Local workflow service selection.
+  HYLO_APP_URL            Current app URL when hylo.dev.url is set.
 `);
 }
 
@@ -507,6 +560,9 @@ Runs a ${kind} with HYLO_BACKEND_URL injected.
 Options:
   --backend <name|url>    Backend name or explicit URL.
   --backend-url <url>     Explicit Hylo backend URL.
+
+hylo ${mode} does not accept --workflow. The command after -- is the server or
+one-off task being launched.
 `);
 }
 
@@ -514,16 +570,19 @@ function printDevHelp() {
   console.log(`hylo dev
 
 Usage:
-  hylo dev [options] -- <command...>
+  hylo dev [options] [-- <command...>]
 
-Runs a local dev server with a stable local URL and HYLO_BACKEND_URL injected.
-Named local backends are started automatically. Use --backend-url for an
-already-running or deployed backend.
+Runs a local development command with HYLO_BACKEND_URL injected. --workflow sets
+HYLO_WORKFLOW for commands that need to know the selected workflow service. When
+--url or package.json hylo.dev.url is set, the process is also registered at
+that stable local URL. Named local backends are started automatically. Use
+--backend-url for an already-running or deployed backend.
 
 Options:
   --url <url>             Local dev URL or service name. Defaults to package Hylo metadata.
   --backend <name|url>    Backend name or explicit URL.
   --backend-url <url>     Explicit Hylo backend URL.
+  --workflow <name>       Local workflow service. Choices: nextjs, cloudflare-worker, all.
 `);
 }
 

@@ -1,20 +1,14 @@
 # Workflow Cloudflare Worker Example
 
-Workflow server implemented as a Cloudflare Worker. It imports workflow code
-locally, executes atoms in the Worker, and stores run data through the backend
-selected by Hylo.
+Workflow server implemented as a Cloudflare Worker. It imports workflow code,
+executes atoms in the Worker, and stores run data through the backend selected
+by Hylo.
 
-Run it through Hylo:
+From this directory:
 
 ```sh
 pnpm dev
 ```
 
-Hylo starts the selected local backend and injects it through
-`HYLO_BACKEND_URL`.
-
-From the repo root:
-
-```sh
-pnpm --filter workflow-cloudflare-worker-example dev
-```
+Use the root README when you want to launch the client with this workflow
+example.

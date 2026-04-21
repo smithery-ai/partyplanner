@@ -5,12 +5,11 @@
   "type": "module",
   "hylo": {
     "dev": {
-      "url": "https://hylo.localhost",
-      "backend": "node"
+      "url": "https://hylo.localhost"
     }
   },
   "scripts": {
-    "dev": "hylo dev -- vite",
+    "dev": "hylo dev --backend node -- vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

@@ -8,11 +8,9 @@ From this directory:
 pnpm dev
 ```
 
-From the repo root:
+Schema tasks are package-owned:
 
 ```sh
-pnpm --filter backend-node dev
+pnpm db:migrate
+pnpm db:studio
 ```
-
-This routes through the Hylo launcher. The backend is selected as `node`, and
-its backend URL is declared in `package.json`.

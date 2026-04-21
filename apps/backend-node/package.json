@@ -13,9 +13,9 @@
     }
   },
   "scripts": {
-    "dev": "hylo dev -- tsx src/index.ts",
-    "db:migrate": "hylo exec -- pnpm -C ../../packages/postgres db:migrate",
-    "db:studio": "hylo exec -- pnpm -C ../../packages/postgres db:studio",
+    "dev": "hylo dev --backend node -- tsx src/index.ts",
+    "db:migrate": "hylo exec --backend node -- pnpm -C ../../packages/postgres db:migrate",
+    "db:studio": "hylo exec --backend node -- pnpm -C ../../packages/postgres db:studio",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },

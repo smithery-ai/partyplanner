@@ -1,34 +1,21 @@
 import dns from "node:dns";
+import { readFileSync } from "node:fs";
 import https from "node:https";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const nextjsTarget =
-  process.env.VITE_NEXTJS_WORKER_URL ??
-  derivePortlessServiceUrl(process.env.PORTLESS_URL, "hylo", "nextjs.hylo") ??
-  "http://localhost:3000";
-
-const cloudflareWorkerTarget =
-  process.env.VITE_CLOUDFLARE_WORKER_URL ??
-  derivePortlessServiceUrl(
-    process.env.PORTLESS_URL,
-    "hylo",
-    "cloudflare-worker.hylo",
-  ) ??
-  "http://localhost:8789";
-
-const defaultWorkerTarget =
-  process.env.VITE_WORKFLOW_WORKER === "cloudflare"
-    ? cloudflareWorkerTarget
-    : nextjsTarget;
+const nextjsTarget = packageHyloDevUrl("../../examples/nextjs/package.json");
+const cloudflareWorkerTarget = packageHyloDevUrl(
+  "../../examples/cloudflare-worker/package.json",
+);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
-    "import.meta.env.VITE_HYLO_BACKEND_URL": JSON.stringify(
-      process.env.VITE_HYLO_BACKEND_URL ?? process.env.HYLO_BACKEND_URL ?? "",
+    "import.meta.env.VITE_HYLO_WORKFLOW": JSON.stringify(
+      process.env.HYLO_WORKFLOW ?? "",
     ),
   },
   resolve: {
@@ -43,7 +30,7 @@ export default defineConfig({
         cloudflareWorkerTarget,
         /^\/api\/cloudflare(?=\/|$)/,
       ),
-      "/api": workflowProxy(defaultWorkerTarget, /^\/api(?=\/|$)/),
+      "/api": workflowProxy(nextjsTarget, /^\/api(?=\/|$)/),
     },
   },
 });
@@ -53,45 +40,19 @@ function workflowProxy(target: string, prefix: RegExp) {
     target,
     changeOrigin: true,
     secure: false,
-    agent: portlessLocalAgent(target),
+    agent: hyloLocalAgent(target),
     rewrite: (proxyPath: string) =>
       proxyPath.replace(prefix, "/api/workflow") || "/api/workflow",
   };
 }
 
-function derivePortlessServiceUrl(
-  sourceUrl: string | undefined,
-  sourceName: string,
-  targetName: string,
-): string | undefined {
-  if (!sourceUrl) return undefined;
-
-  try {
-    const url = new URL(sourceUrl);
-    const sourcePrefix = `${sourceName}.`;
-    const sourceMarker = `.${sourceName}.`;
-
-    if (url.hostname.startsWith(sourcePrefix)) {
-      url.hostname = `${targetName}.${url.hostname.slice(sourcePrefix.length)}`;
-      return url.origin;
-    }
-
-    const markerIndex = url.hostname.indexOf(sourceMarker);
-    if (markerIndex === -1) return undefined;
-
-    const prefix = url.hostname.slice(0, markerIndex);
-    const suffix = url.hostname.slice(markerIndex + sourceMarker.length);
-    url.hostname = `${prefix}.${targetName}.${suffix}`;
-    return url.origin;
-  } catch {
-    return undefined;
-  }
-}
-
-function portlessLocalAgent(target: string): https.Agent | undefined {
+function hyloLocalAgent(target: string): https.Agent | undefined {
   try {
     const url = new URL(target);
-    if (url.protocol !== "https:" || !url.hostname.endsWith(".local")) {
+    if (
+      url.protocol !== "https:" ||
+      (!url.hostname.endsWith(".local") && !url.hostname.endsWith(".localhost"))
+    ) {
       return undefined;
     }
     return new https.Agent({
@@ -124,4 +85,14 @@ function portlessLocalAgent(target: string): https.Agent | undefined {
   } catch {
     return undefined;
   }
+}
+
+function packageHyloDevUrl(packageJsonPath: string): string {
+  const absolutePath = path.resolve(__dirname, packageJsonPath);
+  const packageJson = JSON.parse(readFileSync(absolutePath, "utf8"));
+  const devUrl = packageJson.hylo?.dev?.url;
+  if (typeof devUrl === "string" && devUrl.trim()) {
+    return devUrl.trim().replace(/\/$/, "");
+  }
+  throw new Error(`${absolutePath} must define hylo.dev.url`);
 }

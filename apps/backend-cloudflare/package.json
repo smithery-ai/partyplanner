@@ -13,11 +13,11 @@
     }
   },
   "scripts": {
-    "dev": "hylo dev -- wrangler dev --ip 127.0.0.1 --port '$PORT'",
+    "dev": "hylo dev --backend cloudflare -- wrangler dev --ip 127.0.0.1 --port '$PORT'",
     "db:generate": "pnpm -C ../../packages/cloudflare db:generate",
-    "db:migrate": "pnpm -C ../../packages/cloudflare build && hylo exec -- wrangler d1 migrations apply hylo-backend --local",
-    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && hylo exec -- wrangler d1 migrations apply hylo-backend --remote",
-    "db:studio": "pnpm -C ../../packages/cloudflare build && hylo exec -- pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
+    "db:migrate": "pnpm -C ../../packages/cloudflare build && hylo exec --backend cloudflare -- wrangler d1 migrations apply hylo-backend --local",
+    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && hylo exec --backend cloudflare -- wrangler d1 migrations apply hylo-backend --remote",
+    "db:studio": "pnpm -C ../../packages/cloudflare build && hylo exec --backend cloudflare -- pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
     "build": "tsc --noEmit"
   },
   "dependencies": {
