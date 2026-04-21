@@ -1,5 +1,5 @@
 {
-  "name": "@workflow/integrations-oauth",
+  "name": "@workflow/oauth-broker",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,7 +16,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@workflow/core": "workspace:*",
+    "@workflow/integrations-oauth": "workspace:*",
     "hono": "^4.12.14",
     "zod": "^4.3.6"
   },

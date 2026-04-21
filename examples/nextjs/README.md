@@ -34,27 +34,41 @@ own `PORTLESS_URL`, so worktree-prefixed URLs point at the matching
 `api.hylo` service. Set `HYLO_BACKEND_URL` explicitly to point at another
 compatible backend.
 
-## Spotify OAuth
+## OAuth (Spotify, Notion)
 
-The `spotifyLogin` workflow demonstrates a dynamic intervention that opens
-Spotify OAuth, receives the callback, and resumes the waiting run. To run it
-against a real Spotify app, set:
+OAuth runs through the Hylo broker (mounted at `${HYLO_BACKEND_URL}/oauth`),
+not the worker. Provider client credentials live on the backend; the worker
+only sees the resolved access token.
+
+Worker env (`examples/nextjs/.env.local`):
 
 ```sh
+HYLO_BACKEND_URL=http://localhost:8787
+HYLO_API_KEY=local-dev-hylo-api-key   # must match backend-node
+```
+
+Backend env (`apps/backend-node`):
+
+```sh
+HYLO_API_KEY=local-dev-hylo-api-key
 SPOTIFY_CLIENT_ID=...
 SPOTIFY_CLIENT_SECRET=...
-OAUTH_STATE_SECRET=...
-NEXT_PUBLIC_APP_URL=https://nextjs.hylo.localhost
+NOTION_CLIENT_ID=...
+NOTION_CLIENT_SECRET=...
+# In production also set HYLO_BACKEND_PUBLIC_URL so the broker registers
+# a stable, externally-reachable redirect URI.
 ```
 
-Register this redirect URI in the Spotify app settings:
+Register these redirect URIs in the provider dashboards:
 
 ```txt
-https://nextjs.hylo.localhost/api/spotify/callback
+http://localhost:8787/oauth/spotify/callback
+http://localhost:8787/oauth/notion/callback   # Notion requires HTTPS — use Portless / a tunnel
 ```
 
-For a non-Portless local server, use the origin where Next.js is reachable, for
-example `http://127.0.0.1:3000/api/spotify/callback`.
+When `HYLO_API_KEY` is unset and `NODE_ENV !== "production"`, both worker and
+backend-node default to `local-dev-hylo-api-key` so the example just works
+without coordinating env.
 
 Useful requests:
 
