@@ -1,753 +1,500 @@
-# RFC: Typed Step Capabilities and Runtime Plugins
+# RFC: Step Runtime Policy for Reliable Integrations
 
 Status: draft  
 Branch: `rfc/step-capabilities-runtime-plugins`
 
 ## Summary
 
-This RFC proposes a type-safe capability model for Partyplanner based on
-**typed provider contracts** bound directly to steps.
+Partyplanner has a clean model for workflow dataflow: `input`, `atom`,
+`action`, and `get`. What it does not yet have is an equally clean abstraction
+for **cross-cutting execution concerns** that should apply consistently across
+many steps.
 
-The public API should pivot away from string-based runtime capability lookup
-like `use.connection("notion")` and instead move toward:
+Examples of those concerns include:
+
+- retry policy
+- timeout policy
+- attempt visibility
+- future logging, tracing, metrics, redaction, and rate-limit hooks
+
+Today, there is no standard place to attach this kind of policy to a step.
+
+This RFC proposes a small, typed `runtime` option on `atom()` and `action()`:
 
 ```ts
-import { notion } from "@workflow/integrations-notion";
+const githubStarEvent = input(
+  "githubStarEvent",
+  z.object({
+    sender: z.object({ login: z.string() }),
+  }),
+);
 
-const notionWrite = action.using(
-  { notion },
-  async ({ get, notion, signal }) => {
-    const req = get(notionLogRequest);
+const slackMessage = atom(
+  (get) => {
+    const star = get(githubStarEvent);
+    return {
+      channel: "#general",
+      text: `Got new star from ${star.sender.login}`,
+    };
+  },
+  { name: "slackMessage" },
+);
 
-    return notion.pages.create({
-      parentPageId: req.parentPageId,
-      title: req.title,
-      body: req.body,
-      signal,
-    });
+const sendSlackNotification = action(
+  async (get) => {
+    const message = get(slackMessage);
+    return postSlackMessage(message);
   },
   {
-    name: "notionWrite",
-    retry: 3,
-    timeout: "10s",
+    name: "sendSlackNotification",
+    runtime: {
+      retry: 3,
+      timeoutMs: 10_000,
+    },
   },
 );
 ```
 
-Under the hood, the runtime remains pluggable and middleware-like. But the
-workflow authoring API should stay:
+The goal is to support cross-cutting concerns without changing Partyplanner's
+core programming model:
 
-- small
-- declarative
-- strongly typed
-- consistent with `atom()` / `action()`
+- workflow data still flows through `get(...)`
+- integrations still export helpers that return atoms/actions
+- runtime policy is declared once and enforced centrally
+- policy is visible in manifests, run snapshots, and future UI surfaces
 
-The core idea is:
+## Problem
 
-> **Do not inject raw secrets. Inject typed provider clients.**
+Partyplanner is well suited for human-in-the-loop and integration-heavy
+workflows, but the current step API only describes **what** a step does. It does
+not give the runtime a structured place to attach cross-cutting execution
+concerns.
 
-## Why this RFC exists
+That creates three practical issues.
 
-Partyplanner currently has the beginnings of a credential model, but not a
-strong product abstraction for typed integrations or multi-tenant credential
-resolution.
+### 1. Cross-cutting concerns do not have a home
 
-Current pieces include:
+The same concerns show up across unrelated steps:
 
-- `secret(...)` in `@workflow/core`
-- `secretValues` at run submission time
-- `SecretResolver` in `@workflow/runtime`
-- `secretBindings` types in `@workflow/server`
+- retry transient failures
+- stop waiting after a reasonable amount of time
+- expose attempts and failure state consistently
+- later: emit traces, metrics, audit events, and redacted logs
 
-Relevant files:
+Without a shared step-level policy surface, each concern has to be encoded in
+ad hoc wrapper code, custom integration options, or runtime internals that are
+not visible to workflow authors.
 
-- `packages/core/src/input.ts`
-- `packages/core/src/runtime.ts`
-- `packages/core/src/atom.ts`
-- `packages/core/src/action.ts`
-- `packages/runtime/src/executor.ts`
-- `packages/runtime/src/types.ts`
-- `packages/server/src/manager.ts`
+### 2. Workflow authors cannot see or configure policy
 
-These are sufficient for:
-
-- app-owned env secrets
-- examples
-- manual per-run secret injection
-
-They are not sufficient for a production multi-tenant app with:
-
-- per-user Notion connections
-- per-tenant Slack credentials
-- refreshable OAuth tokens
-- provider-specific client contracts
-- typed access to integration features
-
-## Objective
-
-Provide the most understandable and type-safe model possible for external
-capabilities in Partyplanner, while preserving the clarity of the existing
-workflow model.
-
-Specifically, Partyplanner should:
-
-1. let steps declare external capabilities in a typed way
-2. let the runtime resolve those capabilities host-side using run/user/org
-   context
-3. keep workflow dataflow semantics centered on `get(...)`
-4. support retries and timeout without cluttering the public API
-5. remain compatible with the core principles in
-   [SPEC.md](/Users/gnijor/gurdasnijor/partyplanner/SPEC.md)
-
-## Current Pain Points
-
-### 1. `secret(...)` is too low-level for product integrations
-
-Today the common shape is:
+Given this workflow:
 
 ```ts
-export const notionClientSecret = secret(
-  "NOTION_CLIENT_SECRET",
-  process.env.NOTION_CLIENT_SECRET,
-);
+export const notionLogPage = createPage({
+  auth: notionLogAuth,
+  parentPageId: notionLogParent,
+  title: notionLogTitle,
+  body: notionLogBody,
+  actionName: "notionLogPage",
+});
 ```
 
-This is fine for app-owned env vars. It does not model:
+There is no place to answer:
 
-- "use the current user's Notion account"
-- "use the current tenant's Slack connection"
-- "inject a typed Notion client with page APIs"
+- is this action retried?
+- how long can it run?
+- how many attempts have happened?
+- should the UI present it as an external call with runtime policy?
 
-### 2. String-based capability lookup is ergonomic but weakly typed
+### 3. The runtime cannot enforce policy consistently
 
-A model like:
-
-```ts
-const notion = await use.connection("notion");
-```
-
-is simple, but it is still:
-
-- stringly typed
-- runtime-only validated
-- weakly discoverable in editors
-- too generic for provider-specific client behavior
-
-### 3. Large enhancement config objects are hard to reason about
-
-Another explored direction was a large per-step enhancement object. That is
-powerful, but busy. It mixes:
-
-- runtime policy
-- capability declaration
-- instrumentation
-- authorization constraints
-
-That makes the code harder to scan than the current `atom()` / `action()` API.
-
-### 4. Workflow code risks absorbing platform concerns
-
-Without a strong capability contract, workflow code tends to drift toward:
-
-- secret lookup
-- connection lookup
-- provider-specific auth logic
-- retry wrappers
-- timeout wrappers
-
-Those concerns belong in the runtime host and integration layer, not in each
-workflow step.
-
-## Design Principles
-
-1. **Workflow dataflow stays in `get(...)`.**
-2. **External capabilities are not workflow nodes.**
-3. **Public API should be typed and compact.**
-4. **Runtime should stay pluggable internally.**
-5. **Provider packages should define typed client contracts.**
-
-## Alignment with `SPEC.md`
-
-This RFC is intended to stay aligned with the core semantics described in
-[SPEC.md](/Users/gnijor/gurdasnijor/partyplanner/SPEC.md).
-
-Important invariants to preserve:
-
-### 1. `get(...)` remains the workflow dependency mechanism
-
-The spec is explicit that:
-
-- dependencies are discovered at runtime
-- `get()` reads already-materialized workflow values
-- blocked dependencies lead to `NotReadyError`
-
-This RFC preserves that.
-
-Typed capabilities such as `notion` are **not** accessed via `get(...)`.
-
-### 2. External capabilities do not create workflow graph edges
-
-The proposed capability model is separate from workflow handles.
-
-That means:
-
-- `get(notionLogRequest)` creates workflow dependency semantics
-- `notion.pages.create(...)` does not create workflow graph edges
-
-This preserves the runtime’s ability to reason clearly about workflow structure.
-
-### 3. Side effects remain the user’s responsibility
-
-The spec already states:
-
-> Side effects in user code are the user's problem.
-
-This RFC does not change that. It only gives steps a better way to access
-typed external clients and small runtime policy like `retry` and `timeout`.
+Partyplanner already records step attempts and node status. But because retry
+and timeout policy are not part of step metadata, the scheduler cannot apply a
+consistent cross-cutting policy across atoms, actions, and packaged
+integrations.
 
 ## Proposal
 
-## 1. Add `atom.using(...)` and `action.using(...)`
-
-The main public API addition is:
+Add typed runtime policy to step options.
 
 ```ts
-atom.using(capabilities, fn, opts?)
-action.using(capabilities, fn, opts?)
-```
+type RetryPolicy =
+  | number
+  | {
+      maxAttempts: number;
+      backoffMs?: number;
+    };
 
-This is the preferred authoring model for steps that need external
-capabilities.
-
-### Example
-
-```ts
-import { notion } from "@workflow/integrations-notion";
-
-const notionWrite = action.using(
-  { notion },
-  async ({ get, notion, signal }) => {
-    const req = get(notionLogRequest);
-
-    return notion.pages.create({
-      parentPageId: req.parentPageId,
-      title: req.title,
-      body: req.body,
-      signal,
-    });
-  },
-  {
-    name: "notionWrite",
-    retry: 3,
-    timeout: "10s",
-  },
-);
-```
-
-This keeps the authoring shape close to the current API:
-
-- step declaration
-- step function
-- small opts object
-
-## 2. Add Typed Capability Tokens
-
-Provider packages export typed capability tokens, not raw string names.
-
-### Core type
-
-```ts
-export interface CapabilityToken<T> {
-  readonly kind: "capability";
-  readonly id: string;
-  readonly __type?: T;
-}
-```
-
-Helper:
-
-```ts
-export function capability<T>(id: string): CapabilityToken<T>;
-```
-
-### Example provider export
-
-```ts
-export type NotionClient = {
-  pages: {
-    create(input: {
-      parentPageId: string;
-      title: string;
-      body: string;
-      signal?: AbortSignal;
-    }): Promise<{ id: string; url?: string }>;
-    get(input: {
-      pageId: string;
-      signal?: AbortSignal;
-    }): Promise<NotionPage>;
-  };
+type StepRuntimePolicy = {
+  retry?: RetryPolicy;
+  timeoutMs?: number;
 };
 
-export const notion = capability<NotionClient>("integration:notion");
-```
-
-This is the main type-safety win:
-
-- provider contracts are explicit
-- step context is inferred from declared capabilities
-- workflow authors get typed methods instead of bags of credentials
-
-## 3. Add Typed Step Context
-
-Given:
-
-```ts
-action.using(
-  { notion, slack },
-  async (ctx) => { ... }
-)
-```
-
-the handler context should be inferred as:
-
-```ts
-type StepCtx<TCapabilities> = {
-  get: Get;
-  waitFor: RequestIntervention;
-  signal: AbortSignal;
-  run: {
-    id: string;
-    step: string;
-    workflowId?: string;
-    organizationId?: string;
-    userId?: string;
-    attempt: number;
-  };
-} & InferCapabilities<TCapabilities>;
-```
-
-For example:
-
-```ts
-async ({ get, notion, signal }) => { ... }
-```
-
-should infer `notion` as `NotionClient`.
-
-## 4. Keep `opts` Small
-
-The public options object should stay minimal:
-
-```ts
-type StepOpts = {
+type AtomOpts = {
   name?: string;
-  retry?: number | RetryPolicy;
-  timeout?: string | number;
+  description?: string;
+  runtime?: StepRuntimePolicy;
+};
+
+type ActionOpts = {
+  name?: string;
+  description?: string;
+  runtime?: StepRuntimePolicy;
 };
 ```
 
-This is enough for a useful first version.
+The first supported concerns are:
 
-## Clear Code Examples
+- `runtime.retry`: number of attempts or a simple retry policy
+- `runtime.timeoutMs`: maximum time allowed for a step attempt before it is
+  considered timed out
 
-The examples below are the clearest way to explain why this is worth building.
-
-### Example A: Notion write using a typed capability
-
-```ts
-import { notion } from "@workflow/integrations-notion";
-
-const notionWrite = action.using(
-  { notion },
-  async ({ get, notion, signal }) => {
-    const req = get(notionLogRequest);
-
-    return notion.pages.create({
-      parentPageId: req.parentPageId,
-      title: req.title,
-      body: req.body,
-      signal,
-    });
-  },
-  {
-    name: "notionWrite",
-    retry: 3,
-    timeout: "10s",
-  },
-);
-```
-
-Why this makes sense:
-
-- no raw access token handling in workflow code
-- no string capability lookup
-- typed contract is obvious to the reader
-- retry and timeout remain visible and small
-
-### Example B: Notion read atom using the same typed capability
-
-```ts
-import { notion } from "@workflow/integrations-notion";
-
-const notionProfile = atom.using(
-  { notion },
-  async ({ notion, signal }) => {
-    return notion.users.me({ signal });
-  },
-  {
-    name: "notionProfile",
-    timeout: "5s",
-  },
-);
-```
-
-Why this matters:
-
-- capability binding should not be restricted to `action()`
-- typed provider clients are useful for reads and writes
-- the API is consistent across step kinds
-
-### Example C: Slack notification with a typed integration
-
-```ts
-import { slack } from "@workflow/integrations-slack";
-
-const notifySlack = action.using(
-  { slack },
-  async ({ get, slack, signal }) => {
-    const msg = get(notificationDraft);
-
-    return slack.messages.post({
-      channel: msg.channel,
-      text: msg.text,
-      signal,
-    });
-  },
-  {
-    name: "notifySlack",
-    retry: 3,
-    timeout: "5s",
-  },
-);
-```
-
-Why this is better than secrets-only resolution:
-
-- workflow code consumes the domain client, not raw webhook/token details
-- runtime remains free to resolve Slack however it wants
-- provider-specific typing is visible where it matters
-
-### Example D: Generic host-owned secret capability, if needed
-
-Most integrations should prefer typed clients. But there may still be cases
-where a raw secret is useful.
-
-```ts
-const rawWebhook = capability<string>("secret:SLACK_INCOMING_WEBHOOK_URL");
-
-const notifySlack = action.using(
-  { rawWebhook },
-  async ({ get, rawWebhook, signal }) => {
-    const draft = get(notificationDraft);
-    return postSlack(rawWebhook, draft, { signal });
-  },
-  {
-    name: "notifySlack",
-    retry: 3,
-    timeout: "5s",
-  },
-);
-```
-
-This should be the lower-level escape hatch, not the main user path.
-
-## Why This Is Better Than `use.connection("notion")`
-
-`use.connection("notion")` is attractive, but weaker because:
-
-- it is string-based
-- it requires runtime lookup inside the step body
-- it hides available capabilities from the step signature
-- it gives weaker editor/autocomplete support
-
-By contrast, `action.using({ notion }, ...)`:
-
-- makes capability requirements explicit
-- enables strong inference in the step context
-- moves capability wiring closer to the step declaration
-- better matches Partyplanner’s declarative workflow style
-
-## Runtime Architecture
-
-This RFC still recommends a pluggable runtime model internally.
-
-Borrow from Inngest:
-
-- runtime lifecycle hooks
-- dependency injection into handler context
-- layered composition of plugins
-
-Do not borrow:
-
-- middleware-heavy workflow authoring
-
-The runtime should support internal plugins that can:
-
-- resolve typed capability tokens
-- enforce timeout
-- implement retry
-- redact sensitive values in logs/errors
-- emit metrics/tracing
-- enforce org/user context requirements during capability binding
-
-Workflow authors should not have to configure these directly in most cases.
-
-## Credential Vault and Broker Compatibility
-
-This capability model is intentionally flexible about where credentials come
-from.
-
-When a step declares:
-
-```ts
-action.using({ notion }, async ({ notion }) => { ... })
-```
-
-the workflow is only saying:
-
-- "I need a Notion client"
-
-It is **not** saying:
-
-- where the credential lives
-- how the credential is refreshed
-- whether the provider uses static secrets, OAuth tokens, or short-lived
-  brokered credentials
-
-That means the runtime host is free to resolve the capability from any of these
-backends:
-
-- environment variables
-- a tenant/user connection table in the app database
-- an external credential vault
-- a short-lived token broker
-- a provider-specific refresh flow
-
-This is one of the main reasons to prefer typed capability contracts over raw
-secret injection. The workflow depends on a stable typed client contract, while
-the host retains flexibility to evolve credential storage and security policy
-without changing workflow code.
-
-## Capability Resolution
-
-When a step declares:
-
-```ts
-action.using({ notion }, ...)
-```
-
-the runtime should:
-
-1. inspect the step’s declared capability tokens
-2. resolve them using host-side binders/resolvers
-3. inject the resolved typed clients into the handler context
-
-That means the runtime needs a capability resolver interface.
-
-### Resolver shape
-
-```ts
-type CapabilityResolutionRequest = {
-  workflowId?: string;
-  runId: string;
-  stepId: string;
-  organizationId?: string;
-  userId?: string;
-  capabilityId: string;
-};
-
-interface CapabilityResolver {
-  resolve<T>(request: CapabilityResolutionRequest): Promise<T>;
-}
-```
-
-The host implementation decides whether `integration:notion` resolves to:
-
-- a tenant-scoped Notion client
-- a user-scoped Notion client
-- a bootstrap/live-OAuth client
-
-That is a runtime concern, not a workflow concern.
-
-## Multi-Tenant OAuth Model
-
-This RFC does not propose that workflows should keep performing OAuth inside the
-run as their main product model.
-
-Instead, the long-term product path should be:
-
-1. user connects Notion through the app
-2. app stores a durable connection record
-3. runtime resolves the `notion` capability for the current user/org
-4. steps consume the typed Notion client
-
-This separates:
-
-- connection lifecycle
-- workflow execution lifecycle
-
-That is the correct product boundary for multi-tenant SaaS.
-
-## What `signal` Means
-
-`signal` is an `AbortSignal`.
-
-It is the standard JavaScript cancellation primitive used by APIs like
-`fetch(...)`. The runtime uses it to enforce timeout and cancellation.
-
-Example:
-
-```ts
-await fetch(url, { signal });
-```
-
-If the step exceeds its configured timeout, the runtime aborts the signal.
-
-## Inheritance Model
-
-Step configuration should **not** descend to descendant nodes.
-
-For example:
-
-```ts
-{ retry: 3, timeout: "10s" }
-```
-
-on one step should not automatically affect downstream steps.
-
-Reason:
-
-- each step should be readable in isolation
-- Partyplanner steps are independently scheduled
-- ancestor-based policy inheritance is difficult to reason about
-
-If shared defaults are needed, prefer:
-
-1. runtime defaults
-2. workflow-level defaults
-3. explicit step overrides
-
-Not parent-step inheritance.
-
-## Compatibility with `atom()` / `action()`
-
-This proposal does not require replacing existing APIs.
-
-Additive shape:
+No new step constructor is introduced. The public API remains:
 
 - `atom(fn, opts?)`
 - `action(fn, opts?)`
-- `atom.using(capabilities, fn, opts?)`
-- `action.using(capabilities, fn, opts?)`
 
-This keeps the current model intact for simple steps while providing a stronger
-typed contract for integration-heavy steps.
+## Use Case 1: Slack Notification Action
 
-## Alternatives Considered
+Slack notifications are external writes. They can fail transiently because of
+network issues, rate limits, or Slack service errors.
 
-### 1. Keep `use.secret(...)` / `use.connection(...)`
+```ts
+const githubStarEvent = input(
+  "githubStarEvent",
+  z.object({
+    sender: z.object({ login: z.string() }),
+  }),
+);
 
-Pros:
+const slackMessage = atom(
+  (get) => {
+    const star = get(githubStarEvent);
+    return {
+      channel: "#general",
+      text: `Got new star from ${star.sender.login}`,
+    };
+  },
+  { name: "slackMessage" },
+);
 
-- simple
-- small API
+const sendSlackNotification = action(
+  async (get) => {
+    const message = get(slackMessage);
+    return postSlackMessage(message);
+  },
+  {
+    name: "sendSlackNotification",
+    description: "Post the GitHub star notification to Slack.",
+    runtime: {
+      retry: 3,
+      timeoutMs: 5_000,
+    },
+  },
+);
+```
 
-Cons:
+Value:
 
-- string-based
-- weaker typing
-- less declarative
+- the action declares that Slack is allowed three attempts
+- the runtime can retry the same step consistently
+- the manifest can show that this external write has retry/timeout policy
+- the workflow author does not wrap `postSlackMessage(...)` manually
 
-Rejected as the final design direction.
+## Use Case 2: Notion Integration Helper
 
-### 2. Large step enhancement objects
+Existing integration packages already export helpers that create atoms/actions.
+Those helpers can accept `runtime` and forward it to the underlying step.
 
-Pros:
+```ts
+export type CreatePageOptions = {
+  auth: Atom<NotionAuth>;
+  parentPageId: Handle<string>;
+  title: Handle<string>;
+  body?: Handle<string>;
+  actionName?: string;
+  runtime?: StepRuntimePolicy;
+};
 
-- powerful
-- highly configurable
+export function createPage(opts: CreatePageOptions): Action<NotionPage> {
+  return action(
+    async (get) => {
+      const { accessToken } = get(opts.auth);
+      const parentPageId = get(opts.parentPageId);
+      const title = get(opts.title);
+      const body = opts.body ? get(opts.body) : undefined;
 
-Cons:
+      return createNotionPage({
+        accessToken,
+        parentPageId,
+        title,
+        body,
+      });
+    },
+    {
+      name: opts.actionName ?? "notionCreatePage",
+      description: "Create a Notion page.",
+      runtime: opts.runtime,
+    },
+  );
+}
+```
 
-- noisy
-- hard to scan
-- too much framework surface
+Workflow authors then opt into reliability policy at the integration boundary:
 
-Rejected as the primary authoring model.
+```ts
+export const notionLogPage = createPage({
+  auth: notionLogAuth,
+  parentPageId: notionLogParent,
+  title: notionLogTitle,
+  body: notionLogBody,
+  actionName: "notionLogPage",
+  runtime: {
+    retry: { maxAttempts: 3, backoffMs: 1_000 },
+    timeoutMs: 15_000,
+  },
+});
+```
 
-### 3. Public middleware stacks
+Value:
 
-Pros:
+- integration helpers stay idiomatic to Partyplanner
+- reliability policy is typed and visible at call sites
+- integration authors do not need to implement retry wrappers themselves
+- future Notion helpers can expose the same policy consistently
 
-- maximum flexibility
+## Use Case 3: Read Atom with External API
 
-Cons:
+Not every external call is an action. Reads should be able to declare runtime
+policy too.
 
-- too abstract for most workflow authors
-- drifts away from the current Partyplanner ergonomics
+```ts
+const spotifyPlaylists = getCurrentUserPlaylists({
+  auth: spotifyAuth,
+  name: "spotifyPlaylists",
+  runtime: {
+    retry: 2,
+    timeoutMs: 10_000,
+  },
+});
+```
 
-Rejected as the public API, though recommended internally for runtime
-pluggability.
+The helper can forward `runtime` into an `atom(...)`:
 
-## Implementation Sketch
+```ts
+export type GetCurrentUserPlaylistsOptions = {
+  auth: Atom<SpotifyAuth>;
+  name?: string;
+  runtime?: StepRuntimePolicy;
+};
 
-### Phase 1
+export function getCurrentUserPlaylists(
+  opts: GetCurrentUserPlaylistsOptions,
+): Atom<SpotifyPlaylistSummary[]> {
+  return atom(
+    async (get) => {
+      const { accessToken } = get(opts.auth);
+      return fetchSpotifyPlaylists(accessToken);
+    },
+    {
+      name: opts.name ?? "spotifyGetCurrentUserPlaylists",
+      description: "List the current Spotify user's playlists.",
+      runtime: opts.runtime,
+    },
+  );
+}
+```
 
-- add `CapabilityToken<T>`
-- add `atom.using(...)` / `action.using(...)`
-- add typed context inference from capability declarations
-- add `timeout` and `retry` support in opts
+Value:
 
-### Phase 2
+- read atoms and write actions share the same policy model
+- the runtime can apply consistent attempt tracking
+- integration packages do not need separate "reliable atom" and "reliable
+  action" abstractions
 
-- add runtime capability resolver
-- add integration packages exporting typed capability tokens
-- convert Notion example to use typed capability contracts
+## Type Safety
 
-### Phase 3
+This proposal keeps type safety simple.
 
-- add internal runtime plugins for:
-  - capability resolution
-  - timeout
-  - retry
-  - redaction
-  - metrics/logging
+### Workflow values stay typed through handles
 
-### Phase 4
+Existing integration helpers already use typed handles:
 
-- add workflow-level defaults if needed
-- add product-level account connection model that backs capability resolution
+```ts
+const auth = notionOAuth(...);        // Atom<NotionAuth>
+const title = notionLogTitle;         // Atom<string>
+const page = createPage({ auth, title, ... }); // Action<NotionPage>
+```
 
-## Recommendation
+`get(handle)` keeps returning the handle's TypeScript value. This RFC does not
+change dependency discovery or handle typing.
 
-Build:
+### Runtime policy is a typed option object
 
-- a typed capability token model
-- `atom.using(...)` / `action.using(...)`
-- runtime-side capability resolution
-- small step opts with `retry` and `timeout`
-- internal plugin architecture for platform concerns
+Invalid policy is caught at compile time:
 
-Do not build:
+```ts
+action(fn, {
+  name: "badStep",
+  runtime: {
+    retry: "three", // TypeScript error
+    timeoutMs: "10s", // TypeScript error
+  },
+});
+```
 
-- a public middleware-heavy authoring surface
-- a string-based `use.connection("...")` API as the final design
-- large enhancement config objects
+Valid policy is explicit and small:
 
-The clearest and most type-safe Partyplanner model is:
+```ts
+action(fn, {
+  name: "goodStep",
+  runtime: {
+    retry: { maxAttempts: 3, backoffMs: 500 },
+    timeoutMs: 10_000,
+  },
+});
+```
 
-> **Steps declare typed provider capabilities; the runtime resolves them; step
-> code receives typed clients.**
+### Integration options remain typed
 
-That is easier for reviewers to understand, stronger for TypeScript users, and
-more productizable for multi-tenant SaaS than the alternatives explored so far.
+Integration packages expose `runtime?: StepRuntimePolicy` as part of their
+existing option types. This makes cross-cutting policy available without adding
+a new public DSL.
+
+## Runtime Semantics
+
+### Retry
+
+When a step errors and has retry attempts remaining, the scheduler should
+re-enqueue the same step.
+
+Initial semantics:
+
+- retry applies to real errors
+- retry does not apply to `SkipError`
+- retry does not apply while a step is waiting or blocked
+- retry count is step-local
+- retry policy does not descend to downstream nodes
+
+### Timeout
+
+`timeoutMs` defines how long a single step attempt may run before the runtime
+marks that attempt as timed out.
+
+For the first implementation, timeout is an execution outcome:
+
+- the runtime records that the attempt timed out
+- the scheduler may retry if policy allows
+- the public step context does not get a new cancellation primitive
+
+This keeps the public API small. Active cancellation of underlying work can be
+evaluated later if concrete integration code needs it.
+
+### Attempts
+
+`NodeRecord.attempts` already exists. Retry behavior should build on that
+instead of introducing a separate attempt model.
+
+If more visibility is needed, `NodeRecord` can be extended:
+
+```ts
+type NodeRecord = {
+  ...
+  attempts: number;
+  maxAttempts?: number;
+  timedOut?: boolean;
+};
+```
+
+## Manifest
+
+Expose runtime policy on step manifests.
+
+```ts
+type WorkflowStepManifest = {
+  id: string;
+  kind: "atom" | "action";
+  description?: string;
+  runtime?: StepRuntimePolicy;
+};
+```
+
+This enables UI and tooling to show that a step is externally reliable:
+
+- "Retries up to 3 times"
+- "Timeout: 10s"
+- "Attempt 2 of 3"
+
+## Implementation Plan
+
+### Phase 1: Types and registry metadata
+
+Update:
+
+- [`packages/core/src/atom.ts`](/Users/gnijor/gurdasnijor/partyplanner/packages/core/src/atom.ts)
+- [`packages/core/src/action.ts`](/Users/gnijor/gurdasnijor/partyplanner/packages/core/src/action.ts)
+- [`packages/core/src/registry.ts`](/Users/gnijor/gurdasnijor/partyplanner/packages/core/src/registry.ts)
+- [`packages/core/src/types.ts`](/Users/gnijor/gurdasnijor/partyplanner/packages/core/src/types.ts)
+
+Add:
+
+- `StepRuntimePolicy`
+- `runtime?: StepRuntimePolicy` on atom/action options
+- `runtime?: StepRuntimePolicy` on registered step definitions
+
+### Phase 2: Manifest exposure
+
+Update:
+
+- [`packages/server/src/manifest.ts`](/Users/gnijor/gurdasnijor/partyplanner/packages/server/src/manifest.ts)
+
+Expose `runtime` for atoms and actions.
+
+### Phase 3: Scheduler enforcement
+
+Update:
+
+- [`packages/runtime/src/executor.ts`](/Users/gnijor/gurdasnijor/partyplanner/packages/runtime/src/executor.ts)
+- [`packages/runtime/src/scheduler.ts`](/Users/gnijor/gurdasnijor/partyplanner/packages/runtime/src/scheduler.ts)
+
+Add:
+
+- timeout detection
+- retry decision logic
+- re-enqueue on retryable step failure
+- event publishing for retry/timeout if needed
+
+### Phase 4: Integration adoption
+
+Update existing integration helpers to accept and forward `runtime`:
+
+- Notion `createPage(...)`
+- Notion `getPage(...)`
+- Spotify reads
+- Spotify writes
+
+This phase proves the value of the policy model in real package APIs.
+
+## Non-Goals
+
+This RFC does not propose:
+
+- a public middleware system
+- a new step constructor
+- provider-client injection
+- first-class tenant/user connection binding
+- a public cancellation API
+
+Those may be useful later, but they are not required to deliver retry, timeout,
+typed integration options, and manifest visibility.
+
+## Open Questions
+
+1. Should retry be implemented entirely in the scheduler, or should core expose
+   richer failure metadata?
+2. Should default retry policy be `undefined` or should actions get a small
+   default retry count?
+3. Should timeout failures get a distinct node error shape, or is
+   `error.message = "Step timed out"` sufficient for v1?
+4. Should retry events be added to `RunEvent`, or is updated node attempt state
+   enough initially?
