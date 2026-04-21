@@ -124,8 +124,10 @@ A managed REST API. Owns the durable state manager (run state, events, run docum
 
 Two deployable flavors of the **same** backend:
 
-- `apps/backend-node` — Node + PGlite for local dev
-- `apps/backend` — Cloudflare Worker + Durable Object for cloud
+- `apps/backend-node` — Node + PGlite (alternate local dev)
+- `apps/backend` — Cloudflare Worker + D1 (the cloud backend; also runs locally via Wrangler)
+
+The Cloudflare backend also hosts an **OAuth broker** at `/oauth`. Provider client secrets (Spotify, Notion, …) live on the backend, not on workers — workers only ever see resolved access tokens.
 
 ### Pairing
 
@@ -144,8 +146,8 @@ Mixing a local worker with a cloud backend won't work without tunneling.
 
 ```
 apps/
-  backend-node/   Local backend (Node + PGlite)
-  backend/        Cloud backend (Cloudflare Worker + DO)
+  backend/        Cloud backend (Cloudflare Worker + D1)
+  backend-node/   Alternate local backend (Node + PGlite)
   client/         React UI (Vite)
 
 packages/
@@ -153,9 +155,11 @@ packages/
   runtime/        Scheduler + registry + executor
   server/         Worker SDK — createWorkflow() mounts HTTP routes
   remote/         REST transport between worker and backend
-  postgres/       Drizzle schema + adapters for backend-node
+  cloudflare/     D1 adapters for apps/backend
+  postgres/       Drizzle schema + adapters for apps/backend-node
+  oauth-broker/   Backend-hosted OAuth broker (mounted at /oauth)
   frontend/       React components (WorkflowSinglePage)
-  integrations/   OAuth + service integrations (notion, spotify)
+  integrations/   Worker-side OAuth + service integrations
   demo-workflow/  Reference workflow used by the client
 
 examples/
@@ -226,14 +230,23 @@ URLs (portless mode):
 ### Required env for the worker
 
 ```sh
-HYLO_BACKEND_URL=http://localhost:8787   # or the portless URL
+HYLO_BACKEND_URL=http://127.0.0.1:8788      # where the backend is reachable
+HYLO_API_KEY=local-dev-hylo-api-key         # must match backend; defaults to
+                                            # this value in non-prod
 ```
 
-### Local DB
+### Backend DB
 
 ```sh
-pnpm -C apps/backend-node db:migrate
-pnpm -C apps/backend-node db:studio
+pnpm --filter backend db:migrate    # apply D1 migrations for apps/backend
+pnpm --filter backend db:studio     # Drizzle Studio against local D1
+```
+
+For the alternate Node backend:
+
+```sh
+pnpm --filter backend-node db:migrate
+pnpm --filter backend-node db:studio
 ```
 
 ## Scripts
@@ -246,4 +259,4 @@ pnpm -C apps/backend-node db:studio
 | `pnpm fmt`   | Biome format + autofix                          |
 | `pnpm check` | Biome CI check                                  |
 
-See `examples/nextjs` for a complete worker.
+See `examples/nextjs` for a complete worker, including OAuth via the broker.

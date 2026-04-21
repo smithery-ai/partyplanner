@@ -2,10 +2,8 @@ name = "hylo-backend"
 main = "src/index.ts"
 compatibility_date = "2026-04-19"
 
-[[durable_objects.bindings]]
-name = "BACKEND"
-class_name = "BackendDurableObject"
-
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["BackendDurableObject"]
+[[d1_databases]]
+binding = "DB"
+database_name = "hylo-backend"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../packages/cloudflare/drizzle"

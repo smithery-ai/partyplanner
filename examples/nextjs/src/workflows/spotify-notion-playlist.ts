@@ -2,27 +2,21 @@ import { atom, input } from "@workflow/core";
 import {
   NOTION_VERSION,
   type NotionBlock,
-  notionOAuth,
+  notionAuthSchema,
 } from "@workflow/integrations-notion";
+import { createConnection } from "@workflow/integrations-oauth";
 import {
   getCurrentUserPlaylists,
   getPlaylistTracks,
   type SpotifyPlaylistSummary,
   type SpotifyPlaylistTrack,
-  spotifyOAuth,
+  spotifyAuthSchema,
 } from "@workflow/integrations-spotify";
 import { z } from "zod";
-import { notionClientId, notionClientSecret } from "./notion";
-import {
-  oauthStateSecret,
-  spotifyClientId,
-  spotifyClientSecret,
-} from "./spotify";
 
 export const spotifyPlaylistAnalysisRequest = input(
   "spotifyPlaylistAnalysisRequest",
   z.object({
-    appBaseUrl: z.string().url().default(defaultAppBaseUrl()),
     notionParentPageId: z
       .string()
       .default(process.env.NOTION_PARENT_PAGE_ID ?? "")
@@ -47,17 +41,31 @@ export const spotifyPlaylistAnalysisRequest = input(
   },
 );
 
-const spotifyPlaylistAnalysisAuth = spotifyOAuth({
-  login: spotifyPlaylistAnalysisRequest,
-  clientId: spotifyClientId,
-  clientSecret: spotifyClientSecret,
-  stateSecret: oauthStateSecret,
+// Per-run extras: forwarded to the Spotify authorize URL via the broker.
+const spotifyPlaylistAnalysisAuthorizeExtras = atom(
+  (get): Record<string, string> => {
+    const request = get(spotifyPlaylistAnalysisRequest);
+    const extras: Record<string, string> = {};
+    if (request.showDialog) extras.show_dialog = "true";
+    return extras;
+  },
+  { name: "spotifyPlaylistAnalysisAuthorizeExtras" },
+);
+
+// Custom-scoped Spotify connection for this workflow. The package's default
+// `spotify` only requests profile scopes; we need playlist scopes here.
+// Distinct `name` keeps this connection's intervention separate from the
+// default `spotify` one.
+const spotifyPlaylistAnalysisAuth = createConnection({
+  providerId: "spotify",
+  tokenSchema: spotifyAuthSchema,
   scopes: [
     "user-read-private",
     "user-read-email",
     "playlist-read-private",
     "playlist-read-collaborative",
   ],
+  extra: spotifyPlaylistAnalysisAuthorizeExtras,
   name: "spotifyPlaylistAnalysisAuth",
 });
 
@@ -228,11 +236,12 @@ const notionPlaylistPageBlocks = atom(
   },
 );
 
-const notionPlaylistAnalysisAuth = notionOAuth({
-  login: spotifyPlaylistAnalysisRequest,
-  clientId: notionClientId,
-  clientSecret: notionClientSecret,
-  stateSecret: oauthStateSecret,
+// Custom Notion connection that defers OAuth until the page blocks are ready
+// — avoids prompting the user to authorize Notion before we know the playlist
+// fetch succeeded.
+const notionPlaylistAnalysisAuth = createConnection({
+  providerId: "notion",
+  tokenSchema: notionAuthSchema,
   waitFor: notionPlaylistPageBlocks,
   name: "notionPlaylistAnalysisAuth",
 });
@@ -458,11 +467,4 @@ function formatDuration(ms: number): string {
 function truncate(value: string, maxLength: number): string {
   if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength - 3)}...`;
-}
-
-function defaultAppBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
-  if (process.env.PORTLESS_URL) return process.env.PORTLESS_URL;
-  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
-  return "http://127.0.0.1:3000";
 }

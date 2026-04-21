@@ -22,6 +22,16 @@ export type {
   WorkflowManifest,
 } from "./manifest";
 export { buildWorkflowManifest } from "./manifest";
+export type {
+  WorkflowOpenApiMountOptions,
+  WorkflowOpenApiOptions,
+  WorkflowRoutes,
+} from "./openapi";
+export {
+  createWorkflowOpenApiDocument,
+  createWorkflowRoutes,
+  mountWorkflowOpenApi,
+} from "./openapi";
 
 export type {
   SetWorkflowAutoAdvanceRequest,

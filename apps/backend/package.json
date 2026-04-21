@@ -4,13 +4,20 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "portless run --force --name api-worker.hylo sh -c 'wrangler dev --ip 127.0.0.1 --port \"${PORT:-8788}\"'",
-    "db:migrate": "HYLO_DB_APP=backend pnpm -C ../../packages/postgres db:migrate",
-    "db:studio": "HYLO_DB_APP=backend pnpm -C ../../packages/postgres db:studio",
+    "dev": "portless run --force --name api-worker.hylo node scripts/dev.mjs",
+    "dev:local": "node scripts/dev.mjs",
+    "db:generate": "pnpm -C ../../packages/cloudflare db:generate",
+    "db:migrate": "pnpm -C ../../packages/cloudflare db:migrate",
+    "db:migrate:remote": "pnpm -C ../../packages/cloudflare db:migrate:remote",
+    "db:studio": "pnpm -C ../../packages/cloudflare db:studio",
     "build": "tsc --noEmit"
   },
   "dependencies": {
+    "@workflow/cloudflare": "workspace:*",
     "@workflow/core": "workspace:*",
+    "@workflow/integrations-notion": "workspace:*",
+    "@workflow/integrations-spotify": "workspace:*",
+    "@workflow/oauth-broker": "workspace:*",
     "@workflow/remote": "workspace:*",
     "@workflow/runtime": "workspace:*",
     "@workflow/server": "workspace:*",

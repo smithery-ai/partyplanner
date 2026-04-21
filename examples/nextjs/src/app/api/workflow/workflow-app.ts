@@ -1,5 +1,4 @@
-import { createNotionRoutes } from "@workflow/integrations-notion";
-import { createSpotifyRoutes } from "@workflow/integrations-spotify";
+import { createOAuthHandoffRoutes } from "@workflow/integrations-oauth";
 import { createWorkflow } from "@workflow/server";
 import "@/workflows";
 
@@ -10,9 +9,10 @@ let workflowApp: WorkflowApp | undefined;
 export function getWorkflowApp(): WorkflowApp {
   if (workflowApp) return workflowApp;
 
+  const backendApi = backendApiUrl();
   const app = createWorkflow({
     basePath: "/api/workflow",
-    backendApi: backendApiUrl(),
+    backendApi,
     workflow: {
       id: "nextjs-example",
       version: "v1",
@@ -20,14 +20,19 @@ export function getWorkflowApp(): WorkflowApp {
     },
   });
 
-  const getStateSecret = () => process.env.OAUTH_STATE_SECRET;
+  // Handoff routes for Hylo-curated OAuth connections (spotify, notion).
+  // The broker (mounted on the backend) redirects browsers to these paths
+  // with a one-time `handoff` code; the route exchanges it for the token
+  // and resumes the workflow run.
   app.route(
-    "/api/workflow/integrations/spotify",
-    createSpotifyRoutes({ workflowApp: app, getStateSecret }),
-  );
-  app.route(
-    "/api/workflow/integrations/notion",
-    createNotionRoutes({ workflowApp: app, getStateSecret }),
+    "/api/workflow/integrations",
+    createOAuthHandoffRoutes({
+      workflowApp: app,
+      workflowBasePath: "/api/workflow",
+      brokerBaseUrl: `${backendApi.replace(/\/+$/, "")}/oauth`,
+      getAppToken: () => process.env.HYLO_API_KEY,
+      providers: ["spotify", "notion"],
+    }),
   );
 
   workflowApp = app;
@@ -38,7 +43,7 @@ function backendApiUrl(): string {
   const raw = process.env.HYLO_BACKEND_URL?.trim();
   if (!raw) {
     throw new Error(
-      "HYLO_BACKEND_URL is required. Start backend-node locally and set HYLO_BACKEND_URL=http://localhost:8787.",
+      "HYLO_BACKEND_URL is required. Start backend locally and set HYLO_BACKEND_URL=http://127.0.0.1:8788.",
     );
   }
   return raw;

@@ -2,7 +2,10 @@ export type { CreatePageOptions, NotionBlock } from "./actions";
 export { createPage } from "./actions";
 export type { GetPageOptions, NotionPage } from "./atoms";
 export { getPage } from "./atoms";
-export type { NotionAuth, NotionOAuthOptions } from "./oauth";
-export { NOTION_VERSION, notionOAuth } from "./oauth";
-export type { NotionRoutesOptions } from "./routes";
-export { createNotionRoutes } from "./routes";
+export type { NotionAuth } from "./oauth";
+export {
+  NOTION_VERSION,
+  notion,
+  notionAuthSchema,
+  notionProvider,
+} from "./oauth";
