@@ -60,6 +60,15 @@ importers:
       '@hono/node-server':
         specifier: ^1.19.14
         version: 1.19.14(hono@4.12.14)
+      '@workflow/integrations-notion':
+        specifier: workspace:*
+        version: link:../../packages/integrations/notion
+      '@workflow/integrations-spotify':
+        specifier: workspace:*
+        version: link:../../packages/integrations/spotify
+      '@workflow/oauth-broker':
+        specifier: workspace:*
+        version: link:../../packages/oauth-broker
       '@workflow/postgres':
         specifier: workspace:*
         version: link:../../packages/postgres
@@ -326,6 +335,9 @@ importers:
 
   packages/integrations/_oauth:
     dependencies:
+      '@workflow/core':
+        specifier: workspace:*
+        version: link:../../core
       hono:
         specifier: ^4.12.14
         version: 4.12.14
@@ -370,6 +382,25 @@ importers:
       '@workflow/integrations-oauth':
         specifier: workspace:*
         version: link:../_oauth
+      hono:
+        specifier: ^4.12.14
+        version: 4.12.14
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
+
+  packages/oauth-broker:
+    dependencies:
+      '@workflow/integrations-oauth':
+        specifier: workspace:*
+        version: link:../integrations/_oauth
       hono:
         specifier: ^4.12.14
         version: 4.12.14
