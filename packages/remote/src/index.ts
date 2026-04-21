@@ -1,3 +1,4 @@
+import { OpenAPIHono } from "@hono/zod-openapi";
 import type { QueueEvent, RunState } from "@workflow/core";
 import type {
   QueueItem,
@@ -12,8 +13,15 @@ import type {
   WorkflowRunSummary,
   WorkflowStateStore,
 } from "@workflow/server";
-import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { createRemoteRuntimeRoutes } from "./openapi";
+
+export {
+  createRemoteRuntimeOpenApiDocument,
+  createRemoteRuntimeRoutes,
+  mountRemoteRuntimeOpenApi,
+  type RemoteRuntimeOpenApiOptions,
+} from "./openapi";
 
 export type RemoteRuntimeServerOptions = {
   stateStore: WorkflowStateStore;
@@ -28,8 +36,14 @@ export type RemoteRuntimeClientOptions = {
 };
 
 export function createRemoteRuntimeServer(options: RemoteRuntimeServerOptions) {
-  const app = new Hono();
+  const app = new OpenAPIHono({
+    defaultHook: (result, c) => {
+      if (!result.success)
+        return c.json({ message: result.error.message }, 400);
+    },
+  });
   const basePath = normalizeBasePath(options.basePath ?? "/runtime");
+  const routes = createRemoteRuntimeRoutes(basePath);
 
   if (options.cors ?? true) {
     app.use(
@@ -42,127 +56,130 @@ export function createRemoteRuntimeServer(options: RemoteRuntimeServerOptions) {
     );
   }
 
-  app.get(routePath(basePath, "/health"), (c) => c.json({ ok: true }));
+  app.openapi(routes.health, (c) => c.json({ ok: true as const }, 200));
 
-  app.get(routePath(basePath, "/runs"), async (c) => {
-    const workflowId = c.req.query("workflowId");
-    return c.json(await options.stateStore.listRunSummaries(workflowId));
+  app.openapi(routes.listRuns, async (c) => {
+    const { workflowId } = c.req.valid("query");
+    return c.json(await options.stateStore.listRunSummaries(workflowId), 200);
   });
 
-  app.get(routePath(basePath, "/runs/:runId/state"), async (c) => {
-    const state = await options.stateStore.load(
-      requireParam(c.req.param("runId")),
-    );
+  app.openapi(routes.getRunState, async (c) => {
+    const { runId } = c.req.valid("param");
+    const state = await options.stateStore.load(runId);
     if (!state) return c.json({ message: "Unknown run state" }, 404);
-    return c.json(state);
+    return c.json(state, 200);
   });
 
-  app.put(routePath(basePath, "/runs/:runId/state"), async (c) => {
+  app.openapi(routes.saveRunState, async (c) => {
     try {
-      const body = (await readBody(c.req)) as {
-        state?: RunState;
+      const { runId } = c.req.valid("param");
+      const body = c.req.valid("json") as {
+        state: RunState;
         expectedVersion?: number;
       };
-      if (!body.state) throw new Error("Missing state");
       return c.json(
-        await options.stateStore.save(
-          requireParam(c.req.param("runId")),
-          body.state,
-          body.expectedVersion,
-        ),
+        await options.stateStore.save(runId, body.state, body.expectedVersion),
+        200,
       );
     } catch (e) {
-      return errorResponse(c, e);
+      return c.json({ message: errorMessage(e) }, 400);
     }
   });
 
-  app.get(routePath(basePath, "/runs/:runId/events"), async (c) =>
-    c.json(
-      await options.stateStore.listEvents(requireParam(c.req.param("runId"))),
-    ),
-  );
+  app.openapi(routes.listRunEvents, async (c) => {
+    const { runId } = c.req.valid("param");
+    return c.json(await options.stateStore.listEvents(runId), 200);
+  });
 
-  app.post(routePath(basePath, "/events"), async (c) => {
+  app.openapi(routes.publishEvents, async (c) => {
     try {
       const body = (await readBody(c.req)) as { events?: RunEvent[] };
       const events = body.events ?? [];
       await options.stateStore.publishEvents(events);
-      return c.json({ ok: true as const });
+      return c.json({ ok: true as const }, 200);
     } catch (e) {
-      return errorResponse(c, e);
+      return c.json({ message: errorMessage(e) }, 400);
     }
   });
 
-  app.get(routePath(basePath, "/runs/:runId/document"), async (c) => {
-    const document = await options.stateStore.getRunDocument(
-      requireParam(c.req.param("runId")),
-    );
+  app.openapi(routes.getRunDocument, async (c) => {
+    const { runId } = c.req.valid("param");
+    const document = await options.stateStore.getRunDocument(runId);
     if (!document) return c.json({ message: "Unknown run" }, 404);
-    return c.json(document);
+    return c.json(document, 200);
   });
 
-  app.put(routePath(basePath, "/runs/:runId/document"), async (c) => {
+  app.openapi(routes.saveRunDocument, async (c) => {
     try {
-      const body = (await readBody(c.req)) as {
-        document?: WorkflowRunDocument;
+      const { runId } = c.req.valid("param");
+      const body = c.req.valid("json") as {
+        document: WorkflowRunDocument;
       };
-      if (!body.document) throw new Error("Missing document");
-      if (body.document.runId !== requireParam(c.req.param("runId"))) {
+      if (body.document.runId !== runId) {
         throw new Error("Document runId does not match route");
       }
       await options.stateStore.saveRunDocument(body.document);
-      return c.json({ ok: true as const });
+      return c.json({ ok: true as const }, 200);
     } catch (e) {
-      return errorResponse(c, e);
+      return c.json({ message: errorMessage(e) }, 400);
     }
   });
 
-  app.post(routePath(basePath, "/queue/enqueue"), async (c) => {
+  app.openapi(routes.enqueueEvents, async (c) => {
     try {
       const body = (await readBody(c.req)) as { events?: QueueEvent[] };
       const events = body.events ?? [];
       await options.queue.enqueueMany(events);
-      return c.json({ ok: true as const });
+      return c.json({ ok: true as const }, 200);
     } catch (e) {
-      return errorResponse(c, e);
+      return c.json({ message: errorMessage(e) }, 400);
     }
   });
 
-  app.post(routePath(basePath, "/queue/:runId/claim"), async (c) =>
-    c.json({
-      item:
-        (await options.queue.claimNext(requireParam(c.req.param("runId")))) ??
-        null,
-    }),
-  );
-
-  app.post(routePath(basePath, "/queue/:eventId/complete"), async (c) => {
-    await options.queue.complete(requireParam(c.req.param("eventId")));
-    return c.json({ ok: true as const });
+  app.openapi(routes.claimQueueItem, async (c) => {
+    const { runId } = c.req.valid("param");
+    return c.json(
+      {
+        item: (await options.queue.claimNext(runId)) ?? null,
+      },
+      200,
+    );
   });
 
-  app.post(routePath(basePath, "/queue/:eventId/fail"), async (c) => {
+  app.openapi(routes.completeQueueItem, async (c) => {
+    const { eventId } = c.req.valid("param");
+    await options.queue.complete(eventId);
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(routes.failQueueItem, async (c) => {
     try {
+      const { eventId } = c.req.valid("param");
       const body = (await readBody(c.req)) as { message?: string };
       await options.queue.fail(
-        requireParam(c.req.param("eventId")),
+        eventId,
         new Error(body.message ?? "Remote queue item failed"),
       );
-      return c.json({ ok: true as const });
+      return c.json({ ok: true as const }, 200);
     } catch (e) {
-      return errorResponse(c, e);
+      return c.json({ message: errorMessage(e) }, 400);
     }
   });
 
-  app.get(routePath(basePath, "/queue/:runId/snapshot"), async (c) =>
-    c.json(await options.queue.snapshot(requireParam(c.req.param("runId")))),
-  );
+  app.openapi(routes.queueSnapshot, async (c) => {
+    const { runId } = c.req.valid("param");
+    return c.json(await options.queue.snapshot(runId), 200);
+  });
 
-  app.get(routePath(basePath, "/queue/:runId/size"), async (c) =>
-    c.json({
-      size: await options.queue.size(requireParam(c.req.param("runId"))),
-    }),
-  );
+  app.openapi(routes.queueSize, async (c) => {
+    const { runId } = c.req.valid("param");
+    return c.json(
+      {
+        size: await options.queue.size(runId),
+      },
+      200,
+    );
+  });
 
   return app;
 }
@@ -320,17 +337,8 @@ function normalizeBaseUrl(baseUrl: string): string {
   return trimmed.replace(/\/+$/, "");
 }
 
-function routePath(basePath: string, path: string): string {
-  return `${basePath}${path}`;
-}
-
 function url(baseUrl: string, path: string): string {
   return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
-}
-
-function requireParam(value: string | undefined): string {
-  if (value === undefined) throw new Error("Missing route parameter");
-  return value;
 }
 
 async function readBody(req: { json(): Promise<unknown> }): Promise<unknown> {
@@ -354,10 +362,6 @@ async function readJsonResponse<T>(response: Response): Promise<T> {
   return body as T;
 }
 
-function errorResponse(
-  c: { json(body: { message: string }, status: 400): Response },
-  error: unknown,
-): Response {
-  const message = error instanceof Error ? error.message : String(error);
-  return c.json({ message }, 400);
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

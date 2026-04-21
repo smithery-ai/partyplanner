@@ -1,5 +1,8 @@
 import type { QueueEvent, RunState } from "@workflow/core";
-import { createRemoteRuntimeServer } from "@workflow/remote";
+import {
+  createRemoteRuntimeServer,
+  mountRemoteRuntimeOpenApi,
+} from "@workflow/remote";
 import type {
   QueueItem,
   QueueItemStatus,
@@ -32,6 +35,10 @@ export function createApp(storage: DurableObjectStorage) {
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
+  mountRemoteRuntimeOpenApi(app, {
+    title: "Hylo Backend Worker API",
+    runtimeBasePath: "/runtime",
+  });
   app.route(
     "/runtime",
     createRemoteRuntimeServer({
