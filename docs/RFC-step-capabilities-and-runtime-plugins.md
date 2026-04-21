@@ -502,6 +502,42 @@ The runtime should support internal plugins that can:
 
 Workflow authors should not have to configure these directly in most cases.
 
+## Credential Vault and Broker Compatibility
+
+This capability model is intentionally flexible about where credentials come
+from.
+
+When a step declares:
+
+```ts
+action.using({ notion }, async ({ notion }) => { ... })
+```
+
+the workflow is only saying:
+
+- "I need a Notion client"
+
+It is **not** saying:
+
+- where the credential lives
+- how the credential is refreshed
+- whether the provider uses static secrets, OAuth tokens, or short-lived
+  brokered credentials
+
+That means the runtime host is free to resolve the capability from any of these
+backends:
+
+- environment variables
+- a tenant/user connection table in the app database
+- an external credential vault
+- a short-lived token broker
+- a provider-specific refresh flow
+
+This is one of the main reasons to prefer typed capability contracts over raw
+secret injection. The workflow depends on a stable typed client contract, while
+the host retains flexibility to evolve credential storage and security policy
+without changing workflow code.
+
 ## Capability Resolution
 
 When a step declares:
