@@ -304,7 +304,7 @@ function resolveDevCommand(parsed, { app, workflow }) {
       "dev",
       `--filter=${app.packageName}`,
       `--filter=${workflow.target.packageName}`,
-      "--ui=tui",
+      "--ui=stream",
     ];
   }
 
@@ -315,7 +315,7 @@ function resolveDevCommand(parsed, { app, workflow }) {
       "dev",
       `--filter=${app.packageName}`,
       ...WORKFLOWS.map((target) => `--filter=${target.packageName}`),
-      "--ui=tui",
+      "--ui=stream",
     ];
   }
 
