@@ -118,7 +118,7 @@ export const spotifyProfile = atom(
       spotifyCallbackPayloadSchema,
       {
         title: "Connect Spotify",
-        description: `Authorize Spotify with redirect URI ${redirectUri}. The callback will resume this run automatically.`,
+        description: `Authorize Spotify with redirect URI ${redirectUri}. Ensure this exact redirect URI is configured in your Spotify app settings before continuing. The callback will resume this run automatically.`,
         action: {
           type: "open_url",
           url: authorizeUrl,

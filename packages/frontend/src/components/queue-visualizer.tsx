@@ -18,6 +18,7 @@ import {
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
+import { AlertTriangle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "../components/ai-elements/canvas";
 import {
@@ -108,6 +109,7 @@ type WorkflowNodeData = {
   /** Step is waiting on a pending intervention (human input required). */
   intervention?: boolean;
   status?: NodeRecord["status"] | QueueNodeStatus;
+  error?: string;
   handles: { target: boolean; source: boolean };
   /** Inline approve/reject when a downstream step is blocked on this deferred input */
   inlineActions?: { approve: () => void; reject: () => void };
@@ -179,9 +181,9 @@ function statusNodeClasses(visual: StatusVisual): {
       };
     case "errored":
       return {
-        card: "border-destructive/55 ring-1 ring-destructive/20",
+        card: "border-destructive bg-destructive/5 ring-2 ring-destructive/35 shadow-md shadow-destructive/10 dark:bg-destructive/10",
         header:
-          "border-b border-destructive/30 bg-destructive/12 dark:bg-destructive/18",
+          "border-b border-destructive/45 bg-destructive/15 dark:bg-destructive/20",
       };
     default:
       return {
@@ -205,7 +207,7 @@ const STATUS_SWATCH: Record<StatusVisual, string> = {
     "bg-yellow-400/15 ring-1 ring-yellow-500/50 dark:bg-yellow-500/12 dark:ring-yellow-500/45",
   skipped: "bg-primary/45 ring-1 ring-primary/25",
   blocked: "bg-orange-600/45 ring-1 ring-orange-600/25 dark:bg-orange-500/35",
-  errored: "bg-destructive/40 ring-1 ring-destructive/25",
+  errored: "bg-destructive ring-2 ring-destructive/35",
   not_reached: "bg-muted/60 ring-1 ring-muted-foreground/20",
 };
 
@@ -231,6 +233,18 @@ const PENDING_DEFERRED_EDGE_MARKER = {
   width: 14,
   height: 14,
   color: "#eab308",
+} as const;
+
+const ERROR_EDGE_STYLE = {
+  stroke: "var(--destructive)",
+  strokeWidth: 2.25,
+} as const;
+
+const ERROR_EDGE_MARKER = {
+  type: MarkerType.ArrowClosed,
+  width: 14,
+  height: 14,
+  color: "var(--destructive)",
 } as const;
 
 function ConnectionLine(props: ConnectionLineComponentProps) {
@@ -272,6 +286,7 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
   const pendingInline = Boolean(data.inlineActions);
 
   const visual = statusVisual(data);
+  const isErrored = visual === "errored";
   const { card: cardStatus, header: headerStatus } = statusNodeClasses(visual);
 
   const kindLabel =
@@ -292,9 +307,17 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
       )}
     >
       <NodeHeader className={cn("p-2!", headerStatus)}>
-        <NodeTitle className="text-xs font-medium leading-tight">
-          {data.label}
-        </NodeTitle>
+        <div className="flex min-w-0 items-start gap-1.5">
+          {isErrored && (
+            <AlertTriangle
+              className="mt-0.5 size-3.5 shrink-0 text-destructive"
+              aria-hidden
+            />
+          )}
+          <NodeTitle className="min-w-0 text-xs font-medium leading-tight">
+            {data.label}
+          </NodeTitle>
+        </div>
         <NodeDescription className="text-[11px] leading-snug">
           {data.intervention ? (
             <>
@@ -311,6 +334,11 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
             <>
               {kindLabel} · <span className="text-foreground">pending</span>
             </>
+          ) : isErrored ? (
+            <>
+              {kindLabel} ·{" "}
+              <span className="font-semibold text-destructive">failed</span>
+            </>
           ) : (
             <>
               {kindLabel} ·{" "}
@@ -321,6 +349,16 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
           )}
         </NodeDescription>
       </NodeHeader>
+      {isErrored && (
+        <NodeContent className="border-t border-destructive/20 bg-destructive/10 p-2! text-[11px] leading-snug text-destructive dark:bg-destructive/10">
+          <div className="flex min-w-0 items-start gap-1.5">
+            <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
+            <p className="min-w-0 break-words font-medium">
+              {data.error ?? "Step failed"}
+            </p>
+          </div>
+        </NodeContent>
+      )}
       {pendingInline && data.inlineActions && (
         <>
           <NodeContent className="space-y-1.5 p-2! pt-0 text-[11px] leading-snug text-muted-foreground">
@@ -710,6 +748,7 @@ function buildFlow(
         : queuedIds.has(id)
           ? "queued"
           : (rec?.status ?? "not_reached"),
+      error: rec?.error?.message,
       handles: dagHandleSides(id, topology),
     };
     const actions = nodeInlineActions?.[id];
@@ -734,19 +773,29 @@ function buildFlow(
       );
     }),
   );
+  const erroredIdSet = new Set(
+    ids.filter((nid) => runState?.nodes[nid]?.status === "errored"),
+  );
 
   const edges: Edge[] = graphEdges.map((e) => {
+    const touchesErrored =
+      erroredIdSet.has(e.source) || erroredIdSet.has(e.target);
     const touchesPendingInput =
       pendingInputIdSet.has(e.source) || pendingInputIdSet.has(e.target);
     return {
       ...e,
       animated: animate.has(e.id),
-      ...(touchesPendingInput
+      ...(touchesErrored
         ? {
-            style: PENDING_DEFERRED_EDGE_STYLE,
-            markerEnd: PENDING_DEFERRED_EDGE_MARKER,
+            style: ERROR_EDGE_STYLE,
+            markerEnd: ERROR_EDGE_MARKER,
           }
-        : {}),
+        : touchesPendingInput
+          ? {
+              style: PENDING_DEFERRED_EDGE_STYLE,
+              markerEnd: PENDING_DEFERRED_EDGE_MARKER,
+            }
+          : {}),
     };
   });
 
