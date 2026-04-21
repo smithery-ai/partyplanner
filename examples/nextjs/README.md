@@ -1,19 +1,8 @@
-# Workflow Next.js Example
+# Next.js worker example
 
-This example runs workflow atom code inside a Next.js route handler using:
+A **worker** (in Hylo terms — user code that hosts workflow atoms) implemented as a Next.js route handler using `@workflow/server`. Pair it with a local backend (`apps/backend-node`) via `HYLO_BACKEND_URL`.
 
-- `@workflow/server` for the Hono API
-- local workflow imports for execution
-- a `backendApi` URL pointed at a Hylo-compatible backend
-
-This represents the user-managed runtime model: workflow atoms are imported and
-executed by the user's application instead of being uploaded to Hylo for
-execution. Run state, queue items, events, and run documents are stored by the
-backend configured with `HYLO_BACKEND_URL` while execution remains in Next.js.
-
-For local backend development without Wrangler or Cloudflare, run
-`apps/backend-node`; it uses PGlite under the hood and exposes the same runtime
-API that this example consumes.
+Workflow code is imported and executed in this process. The backend only stores durable state — it never sees workflow source.
 
 ## Run
 
@@ -23,22 +12,17 @@ pnpm --filter backend-node dev
 pnpm --filter workflow-nextjs-example dev
 ```
 
-The Workflow API is mounted at:
+Worker API is mounted at:
 
 ```txt
 https://nextjs.hylo.localhost/api/workflow
 ```
 
-When run through Portless, the example derives the sibling backend URL from its
-own `PORTLESS_URL`, so worktree-prefixed URLs point at the matching
-`api.hylo` service. Set `HYLO_BACKEND_URL` explicitly to point at another
-compatible backend.
+Under Portless, the worker derives the sibling backend URL from its own `PORTLESS_URL` (so worktree-prefixed URLs point at the matching `api.hylo` service). Override by setting `HYLO_BACKEND_URL` explicitly.
 
 ## Spotify OAuth
 
-The `spotifyLogin` workflow demonstrates a dynamic intervention that opens
-Spotify OAuth, receives the callback, and resumes the waiting run. To run it
-against a real Spotify app, set:
+The `spotifyLogin` workflow demonstrates a dynamic intervention that opens Spotify OAuth, receives the callback, and resumes the waiting run. For a real Spotify app:
 
 ```sh
 SPOTIFY_CLIENT_ID=...
@@ -53,10 +37,9 @@ Register this redirect URI in the Spotify app settings:
 https://nextjs.hylo.localhost/api/spotify/callback
 ```
 
-For a non-Portless local server, use the origin where Next.js is reachable, for
-example `http://127.0.0.1:3000/api/spotify/callback`.
+For a non-Portless local server, use the origin where Next.js is reachable, e.g. `http://127.0.0.1:3000/api/spotify/callback`.
 
-Useful requests:
+## Useful requests
 
 ```sh
 curl https://nextjs.hylo.localhost/api/workflow/manifest
@@ -66,5 +49,4 @@ curl -X POST https://nextjs.hylo.localhost/api/workflow/runs \
   -d '{"inputId":"lead","payload":{"name":"Ada","plan":"enterprise"}}'
 ```
 
-The backend-node PGlite data directory defaults to `.hylo-backend-node` inside
-`apps/backend-node`. Set `HYLO_BACKEND_NODE_DATA_DIR` to override it.
+The backend-node PGlite data directory defaults to `.hylo-backend-node` inside `apps/backend-node`. Override with `HYLO_BACKEND_NODE_DATA_DIR`.

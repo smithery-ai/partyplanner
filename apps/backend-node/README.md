@@ -1,29 +1,18 @@
-# Hylo Backend Node
+# Backend (Node)
 
-Local Node/Hono implementation of the Hylo backend API. It stores workflow run
-state, queue items, events, and run documents in PGlite so workflow server
-routes can develop against a production-shaped persistence API without Wrangler
-or the Cloudflare runtime.
+Local flavor of the Hylo backend. Node + Hono on top of PGlite so you can develop a worker against a production-shaped persistence API without Wrangler or Cloudflare.
+
+See the root README for the worker/backend architecture. This app pairs with a **local** worker (e.g. `examples/nextjs`).
 
 ```sh
 pnpm --filter backend-node dev
 ```
 
-The health route is mounted at:
+Routes (default port `8787`):
 
-```txt
-http://localhost:8787/health
-```
+- `GET  http://localhost:8787/health`
+- `http://localhost:8787/runtime` — queue + state API (OpenAPI at `/runtime/openapi.json`)
 
-The queue/state API is mounted at:
+PGlite data is stored in `.hylo-backend-node` under this directory. Override with `HYLO_BACKEND_NODE_DATA_DIR`.
 
-```txt
-http://localhost:8787/runtime
-```
-
-Workflow code does not upload to this service. Next.js routes, Cloudflare
-Worker routes, or other user-owned workflow runtimes execute atoms and pass this
-backend URL to `createWorkflow`.
-
-By default, PGlite data is stored in `.hylo-backend-node` under this app
-directory. Set `HYLO_BACKEND_NODE_DATA_DIR` to override it.
+Workflow code never runs here; the backend is stateless with respect to workflow source.

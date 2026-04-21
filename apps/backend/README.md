@@ -1,8 +1,8 @@
-# Hylo Backend Worker
+# Backend (Cloudflare)
 
-Cloudflare Worker host for the Hylo backend API. Incoming Worker requests are
-forwarded to a `BackendDurableObject`, which persists run state, queue items,
-events, and run documents.
+Cloud flavor of the Hylo backend. A Cloudflare Worker that forwards requests to a `BackendDurableObject`, which persists run state, queue items, events, and run documents.
+
+See the root README for the worker/backend architecture. This app is the managed half — it holds state and the mutation queue. Your worker (user code) passes this URL as `backendApi` to `createWorkflow`.
 
 ```sh
 pnpm --filter backend dev
@@ -13,9 +13,9 @@ Local URLs:
 - Portless: `https://api-worker.hylo.localhost`
 - Direct Wrangler: `http://127.0.0.1:8788`
 
-The health route is mounted at `/health`. The queue/state API is mounted at
-`/runtime`.
+Routes:
 
-Workflow code does not upload to this backend. Next.js routes, Cloudflare Worker
-routes, or other user-owned workflow runtimes execute atoms and interact with
-this service by passing its URL to `createWorkflow`.
+- `/health` — health check
+- `/runtime` — queue + state API (OpenAPI at `/runtime/openapi.json`)
+
+Workflow code never runs here; the backend is stateless with respect to workflow source.
