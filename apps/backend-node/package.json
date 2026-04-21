@@ -5,11 +5,9 @@
   "type": "module",
   "hylo": {
     "backend": {
-      "url": "http://localhost:8787"
+      "listenUrl": "http://localhost:8787"
     },
-    "dev": {
-      "url": "https://api.hylo.localhost"
-    }
+    "devUrl": "https://api.hylo.localhost"
   },
   "scripts": {
     "dev": "hylo dev --backend . -- tsx src/index.ts",

@@ -8,9 +8,11 @@ export function localBackendUrl(): string {
   const packageJson = JSON.parse(
     readFileSync(resolve(appRoot, "package.json"), "utf8"),
   );
-  const value = packageJson.hylo?.backend?.url;
+  const value = packageJson.hylo?.backend?.listenUrl;
   if (typeof value !== "string" || !value.trim()) {
-    throw new Error("backend-node package.json must set hylo.backend.url");
+    throw new Error(
+      "backend-node package.json must set hylo.backend.listenUrl",
+    );
   }
   return new URL(value).toString().replace(/\/$/, "");
 }

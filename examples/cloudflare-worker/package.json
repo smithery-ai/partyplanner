@@ -5,9 +5,7 @@
   "type": "module",
   "hylo": {
     "workflow": {},
-    "dev": {
-      "url": "https://cloudflare-worker.hylo.localhost"
-    }
+    "devUrl": "https://cloudflare-worker.hylo.localhost"
   },
   "scripts": {
     "build": "tsc --noEmit",

@@ -74,7 +74,7 @@ function runCommand(mode, args) {
 }
 
 function runDevCommand(args) {
-  const parsed = parseOptions(args);
+  const parsed = parseOptions(args, { requireSeparator: false });
 
   if (parsed.help) {
     printDevHelp();
@@ -85,7 +85,7 @@ function runDevCommand(args) {
   const workflow = resolveDevWorkflow(parsed);
   const app = resolveDevApp(parsed);
   const devCommand = resolveDevCommand(parsed, { app, workflow });
-  const devUrl = parsed.url?.trim() || packageConfig.dev?.url?.trim();
+  const devUrl = parsed.url?.trim() || packageConfig.devUrl?.trim();
   const appUrl = isHttpUrl(devUrl) ? validateHttpUrl(devUrl, "dev url") : "";
   const name = devUrl ? devServiceNameFromUrl(devUrl) : undefined;
 
@@ -200,10 +200,10 @@ function runDeployCommand(args) {
 
 function parseOptions(args, options = {}) {
   const command = [];
-  let app;
   let backend;
   let backendUrl;
   let help = false;
+  let separator = false;
   let url;
   let workflow;
   let parsingOptions = true;
@@ -212,6 +212,7 @@ function parseOptions(args, options = {}) {
     const arg = args[i];
 
     if (parsingOptions && arg === "--") {
+      separator = true;
       parsingOptions = false;
       continue;
     }
@@ -230,18 +231,6 @@ function parseOptions(args, options = {}) {
 
     if (parsingOptions && arg.startsWith("--backend=")) {
       backend = arg.slice("--backend=".length);
-      continue;
-    }
-
-    if (parsingOptions && arg === "--app") {
-      const value = args[++i];
-      if (!value) die("--app requires a value.");
-      app = value;
-      continue;
-    }
-
-    if (parsingOptions && arg.startsWith("--app=")) {
-      app = arg.slice("--app=".length);
       continue;
     }
 
@@ -285,26 +274,27 @@ function parseOptions(args, options = {}) {
     command.push(arg);
   }
 
-  if (
-    options.requireSeparator !== false &&
-    parsingOptions &&
-    command.length > 0
-  ) {
+  if (options.requireSeparator !== false && command.length > 0 && !separator) {
     die('expected "--" before the command.');
   }
 
-  return { app, backend, backendUrl, command, help, url, workflow };
+  return { backend, backendUrl, command, help, separator, url, workflow };
 }
 
 function resolveDevCommand(parsed, { app, workflow }) {
-  if (parsed.command.length > 0) return parsed.command;
+  if (parsed.separator) {
+    if (parsed.command.length > 0) return parsed.command;
+    die("missing command after --.");
+  }
 
   if (app && !workflow) {
-    die("hylo dev --app requires --workflow when no command is provided.");
+    die("hylo dev <app-path> requires --workflow when no command is provided.");
   }
 
   if (workflow && !app) {
-    die("hylo dev --workflow requires --app when no command is provided.");
+    die(
+      "hylo dev --workflow requires an app package path when no command is provided.",
+    );
   }
 
   if (app && workflow?.target) {
@@ -330,14 +320,18 @@ function resolveDevCommand(parsed, { app, workflow }) {
   }
 
   die(
-    "missing command to dev. Usage: hylo dev --backend <path> --app <path> --workflow <path>, or hylo dev --backend <path> -- <command...>.",
+    "missing command to dev. Usage: hylo dev --backend <path> --workflow <path> <app-path>, or hylo dev --backend <path> -- <command...>.",
   );
 }
 
 function resolveDevApp(parsed) {
-  const app = parsed.app?.trim();
-  if (!app) return undefined;
-  return resolvePackageTarget(app, "app");
+  if (parsed.separator || parsed.command.length === 0) return undefined;
+  if (parsed.command.length > 1) {
+    die(
+      'expected "--" before a command. Without --, hylo dev accepts one app package path.',
+    );
+  }
+  return resolvePackageTarget(parsed.command[0], "app");
 }
 
 function resolveDevWorkflow(parsed) {
@@ -542,26 +536,26 @@ function readBackendConfig(appDir) {
   const backend = packageJson.hylo?.backend;
   if (!backend) return undefined;
 
-  const url = String(backend.url ?? "").trim();
+  const listenUrl = String(backend.listenUrl ?? "").trim();
 
-  if (!url) {
-    die(`${packageJsonPath} must set hylo.backend.url`);
+  if (!listenUrl) {
+    die(`${packageJsonPath} must set hylo.backend.listenUrl`);
   }
 
   return {
     packageDir: appDir,
     packagePath: packagePath(appDir),
-    url: validateHttpUrl(url, `${packagePath(appDir)} url`),
+    url: validateHttpUrl(listenUrl, `${packagePath(appDir)} listenUrl`),
     deployUrl: backend.deployUrl
       ? validateHttpUrl(
           String(backend.deployUrl),
           `${packagePath(appDir)} deploy url`,
         )
       : undefined,
-    devUrl: packageJson.hylo?.dev?.url
+    devUrl: packageJson.hylo?.devUrl
       ? validateHttpUrl(
-          String(packageJson.hylo.dev.url),
-          `${packagePath(appDir)} dev url`,
+          String(packageJson.hylo.devUrl),
+          `${packagePath(appDir)} devUrl`,
         )
       : undefined,
   };
@@ -791,7 +785,7 @@ function printHelp() {
 
 Usage:
   hylo run  [options] -- <server command...>
-  hylo dev  [options] [-- <server command...>]
+  hylo dev  [options] [<app-path> | -- <server command...>]
   hylo deploy <target-type> <package-path>
   hylo exec [options] -- <one-off command...>
   hylo env  [options]
@@ -807,18 +801,14 @@ Backend options:
   --backend <path>        Backend package path.
                           Choices: ${backendChoices()}
 
-Dev graph options:
-  --app <path>            App package path.
-
 Workflow option:
   --workflow <path>       Workflow package path. Choices: ${workflowChoices()}, all.
 
 Environment:
   HYLO_BACKEND_URL        Explicit backend URL. Overrides backend targets.
   HYLO_BACKEND            Backend package path.
-  HYLO_APP                App package path.
   HYLO_WORKFLOW           Workflow package path.
-  HYLO_APP_URL            Current app URL when hylo.dev.url is set.
+  HYLO_APP_URL            Current app URL when hylo.devUrl is set.
 `);
 }
 
@@ -847,19 +837,18 @@ function printDevHelp() {
   console.log(`hylo dev
 
 Usage:
-  hylo dev [options] [-- <command...>]
+  hylo dev [options] [<app-path> | -- <command...>]
 
-Runs local development with HYLO_BACKEND_URL injected. With --app, --workflow,
-and no command after --, Hylo starts those explicit packages through Turbo. With
-a command after --, Hylo launches that command directly. When
---url or package.json hylo.dev.url is set, the process is also registered at
+Runs local development with HYLO_BACKEND_URL injected. With an app path and
+--workflow, Hylo starts those explicit packages through Turbo. With a command
+after --, Hylo launches that command directly. When
+--url or package.json hylo.devUrl is set, the process is also registered at
 that stable local URL. Selected local backends are started automatically. Use
 HYLO_BACKEND_URL for an already-running or deployed backend.
 
 Options:
   --url <url>             Local dev URL or service name. Defaults to package Hylo metadata.
   --backend <path>        Backend package path. Choices: ${backendChoices()}.
-  --app <path>            App package path.
   --workflow <path>       Workflow package path. Choices: ${workflowChoices()}, all.
 
 Environment:

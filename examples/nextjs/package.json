@@ -5,9 +5,7 @@
   "type": "module",
   "hylo": {
     "workflow": {},
-    "dev": {
-      "url": "https://nextjs.hylo.localhost"
-    }
+    "devUrl": "https://nextjs.hylo.localhost"
   },
   "scripts": {
     "dev": "hylo dev --backend ../../apps/backend-node -- next dev",

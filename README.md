@@ -231,7 +231,7 @@ Use the CLI when you need to launch or deploy a process that talks to Hylo.
 Local launcher:
 
 ```sh
-pnpm hylo dev --backend ./apps/backend-node --app ./apps/client --workflow ./examples/nextjs
+pnpm hylo dev --backend ./apps/backend-node --workflow ./examples/nextjs ./apps/client
 ```
 
 Deploy targets are explicit:

@@ -9,7 +9,7 @@
     "build": "turbo run build",
     "check": "biome ci --error-on-warnings .",
     "hylo": "node scripts/hylo.mjs",
-    "dev": "pnpm hylo dev --backend ./apps/backend-node --app ./apps/client --workflow ./examples/nextjs",
+    "dev": "pnpm hylo dev --backend ./apps/backend-node --workflow ./examples/nextjs ./apps/client",
     "fmt": "biome check --write --unsafe .",
     "prepare": "husky",
     "test": "turbo run test"

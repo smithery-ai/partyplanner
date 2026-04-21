@@ -90,9 +90,9 @@ function hyloLocalAgent(target: string): https.Agent | undefined {
 function packageHyloDevUrl(packageJsonPath: string): string {
   const absolutePath = path.resolve(__dirname, packageJsonPath);
   const packageJson = JSON.parse(readFileSync(absolutePath, "utf8"));
-  const devUrl = packageJson.hylo?.dev?.url;
+  const devUrl = packageJson.hylo?.devUrl;
   if (typeof devUrl === "string" && devUrl.trim()) {
     return devUrl.trim().replace(/\/$/, "");
   }
-  throw new Error(`${absolutePath} must define hylo.dev.url`);
+  throw new Error(`${absolutePath} must define hylo.devUrl`);
 }

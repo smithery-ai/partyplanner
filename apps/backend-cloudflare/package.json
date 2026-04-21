@@ -5,11 +5,9 @@
   "type": "module",
   "hylo": {
     "backend": {
-      "url": "http://127.0.0.1:8788"
+      "listenUrl": "http://127.0.0.1:8788"
     },
-    "dev": {
-      "url": "https://api-worker.hylo.localhost"
-    }
+    "devUrl": "https://api-worker.hylo.localhost"
   },
   "scripts": {
     "dev": "hylo dev --backend . -- wrangler dev --ip 127.0.0.1 --port '$PORT'",

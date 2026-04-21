@@ -8,6 +8,12 @@ Use the root quickstart for the full local experience:
 pnpm dev
 ```
 
+To launch the client with an explicit workflow service from the repo root:
+
+```sh
+pnpm hylo dev --backend ./apps/backend-node --workflow ./examples/nextjs ./apps/client
+```
+
 From this directory, `pnpm dev` runs only the Vite client and expects workflow
 services to be running separately. The client talks to a worker; the worker
 reads and writes durable state through the selected backend.

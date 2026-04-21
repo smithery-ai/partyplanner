@@ -10,5 +10,14 @@ From this directory:
 pnpm dev
 ```
 
-Use the root README when you want to launch the client with this workflow
-example.
+To launch this workflow service with the client from the repo root:
+
+```sh
+pnpm hylo dev --backend ./apps/backend-node --workflow ./examples/cloudflare-worker ./apps/client
+```
+
+Deploy this workflow target with:
+
+```sh
+pnpm hylo deploy workflow ./examples/cloudflare-worker
+```
