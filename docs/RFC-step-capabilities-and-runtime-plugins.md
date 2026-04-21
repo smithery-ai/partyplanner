@@ -1,28 +1,25 @@
-# RFC: Step Capabilities and Runtime Plugins
+# RFC: Typed Step Capabilities and Runtime Plugins
 
 Status: draft  
-Branch: `sdd/step-middleware-secrets-proxy`
+Branch: `rfc/step-capabilities-runtime-plugins`
 
 ## Summary
 
-This RFC proposes a simple public API for host-resolved capabilities in
-Partyplanner, backed by a pluggable runtime hook system.
+This RFC proposes a type-safe capability model for Partyplanner based on
+**typed provider contracts** bound directly to steps.
 
-The key idea is:
-
-- keep the **workflow authoring API** extremely small and readable
-- put advanced pluggability in the **runtime**, not in workflow definitions
-
-### Proposed public API
+The public API should pivot away from string-based runtime capability lookup
+like `use.connection("notion")` and instead move toward:
 
 ```ts
-const notionWrite = action(
-  async ({ get, use, signal }) => {
-    const req = get(notionLogRequest);
-    const notion = await use.connection("notion");
+import { notion } from "@workflow/integrations-notion";
 
-    return createNotionPage({
-      accessToken: notion.accessToken,
+const notionWrite = action.using(
+  { notion },
+  async ({ get, notion, signal }) => {
+    const req = get(notionLogRequest);
+
+    return notion.pages.create({
       parentPageId: req.parentPageId,
       title: req.title,
       body: req.body,
@@ -37,24 +34,25 @@ const notionWrite = action(
 );
 ```
 
-### Proposed runtime architecture
+Under the hood, the runtime remains pluggable and middleware-like. But the
+workflow authoring API should stay:
 
-- `use.secret(name)` and `use.connection(name)` are resolved by the workflow
-  runtime host, not by workflow code
-- retries, timeout, redaction, logging, and metrics are implemented through
-  runtime plugins/hooks
-- workflow authors do not configure middleware stacks directly
+- small
+- declarative
+- strongly typed
+- consistent with `atom()` / `action()`
 
-This gives Partyplanner:
+The core idea is:
 
-- a simple and ergonomic authoring model
-- a path to multi-tenant credential resolution
-- a pluggable runtime for platform concerns
+> **Do not inject raw secrets. Inject typed provider clients.**
 
 ## Why this RFC exists
 
-The current codebase has the beginnings of a credential model, but not a clean
-product abstraction:
+Partyplanner currently has the beginnings of a credential model, but not a
+strong product abstraction for typed integrations or multi-tenant credential
+resolution.
+
+Current pieces include:
 
 - `secret(...)` in `@workflow/core`
 - `secretValues` at run submission time
@@ -65,41 +63,47 @@ Relevant files:
 
 - `packages/core/src/input.ts`
 - `packages/core/src/runtime.ts`
+- `packages/core/src/atom.ts`
+- `packages/core/src/action.ts`
 - `packages/runtime/src/executor.ts`
 - `packages/runtime/src/types.ts`
 - `packages/server/src/manager.ts`
 
-These pieces are enough for examples and host-owned env secrets. They are not
-yet enough for a production multi-tenant app with:
+These are sufficient for:
 
-- per-tenant API credentials
-- per-user OAuth connections
-- refresh token management
-- host-side policy enforcement
-- step-level retries and timeouts
+- app-owned env secrets
+- examples
+- manual per-run secret injection
+
+They are not sufficient for a production multi-tenant app with:
+
+- per-user Notion connections
+- per-tenant Slack credentials
+- refreshable OAuth tokens
+- provider-specific client contracts
+- typed access to integration features
 
 ## Objective
 
-Enable Partyplanner workflows to use host-resolved capabilities cleanly, without
-forcing workflow authors to hand-roll:
+Provide the most understandable and type-safe model possible for external
+capabilities in Partyplanner, while preserving the clarity of the existing
+workflow model.
 
-- secret lookup
-- tenant-aware connection lookup
-- per-step retry loops
-- per-step timeout logic
+Specifically, Partyplanner should:
 
-The public API should be:
+1. let steps declare external capabilities in a typed way
+2. let the runtime resolve those capabilities host-side using run/user/org
+   context
+3. keep workflow dataflow semantics centered on `get(...)`
+4. support retries and timeout without cluttering the public API
+5. remain compatible with the core principles in
+   [SPEC.md](/Users/gnijor/gurdasnijor/partyplanner/SPEC.md)
 
-1. obvious to read
-2. easy to teach
-3. compatible with the existing `atom()` / `action()` model
-4. powerful enough for multi-tenant SaaS products
+## Current Pain Points
 
-## Pain Points in the Current Model
+### 1. `secret(...)` is too low-level for product integrations
 
-### 1. Secrets are either too static or too ad hoc
-
-Today the normal shape is:
+Today the common shape is:
 
 ```ts
 export const notionClientSecret = secret(
@@ -110,231 +114,122 @@ export const notionClientSecret = secret(
 
 This is fine for app-owned env vars. It does not model:
 
-- "use the current user's Notion connection"
-- "use the current tenant's Slack webhook"
-- "use the refreshable OAuth token stored in our DB"
+- "use the current user's Notion account"
+- "use the current tenant's Slack connection"
+- "inject a typed Notion client with page APIs"
 
-### 2. Workflow code is on track to absorb platform concerns
+### 2. String-based capability lookup is ergonomic but weakly typed
 
-Without a better abstraction, workflow code ends up needing to understand:
-
-- where credentials live
-- which tenant or user to load them for
-- how to handle timeouts
-- how to handle retries
-
-That pushes infrastructure concerns into step bodies.
-
-### 3. Complex enhancement config gets hard to read quickly
-
-One explored direction was a big step-enhancements config object. It is
-powerful, but noisy:
-
-```ts
-action.with(
-  {
-    connections: { ... },
-    logging: true,
-    timeoutMs: 10_000,
-    retry: { ... },
-    redact: [ ... ],
-    require: { ... },
-  },
-  async (...) => { ... },
-  { name: "notionWrite" },
-)
-```
-
-This is difficult to scan and mixes:
-
-- dependencies
-- execution policy
-- instrumentation
-- authorization constraints
-
-### 4. Multi-tenant OAuth is not a first-class concept
-
-The Notion example performs OAuth inside a workflow run:
-
-- `examples/nextjs/src/workflows/notion.ts`
-- `packages/integrations/notion/src/oauth.ts`
-
-That is acceptable for a demo. It is not the right product abstraction for a
-multi-tenant app where users connect Notion once and workflows use that saved
-connection later.
-
-## Design Principles
-
-1. **Public API should stay small.**
-2. **Runtime should handle platform concerns.**
-3. **Capability resolution should be host-side.**
-4. **Workflow code should focus on business logic.**
-5. **Advanced pluggability should be internal-facing first.**
-
-## Proposal
-
-## 1. Add a Context-Based Step API
-
-Keep existing `atom(fn, opts?)` and `action(fn, opts?)` support, but add a
-context form:
-
-```ts
-type StepCtx = {
-  get: Get;
-  waitFor: RequestIntervention;
-  use: {
-    secret(name: string): Promise<string>;
-    connection(name: string): Promise<ResolvedConnection>;
-  };
-  signal: AbortSignal;
-  run: {
-    id: string;
-    step: string;
-    workflowId?: string;
-    organizationId?: string;
-    userId?: string;
-    attempt: number;
-  };
-};
-```
-
-Then allow:
-
-```ts
-atom(async (ctx) => { ... }, opts?)
-action(async (ctx) => { ... }, opts?)
-```
-
-If preserving the current function signature is important, this can also be
-introduced as:
-
-```ts
-atom.step(async (ctx) => { ... }, opts?)
-action.step(async (ctx) => { ... }, opts?)
-```
-
-This RFC prefers the context form because it is easier to extend without adding
-more positional arguments.
-
-## 2. Add `use.secret(name)` and `use.connection(name)`
-
-These are the only new capability lookups in the public API.
-
-### `use.secret(name)`
-
-Used for host-owned or tenant-scoped secret material.
-
-```ts
-const webhook = await use.secret("SLACK_INCOMING_WEBHOOK_URL");
-```
-
-### `use.connection(name)`
-
-Used for user or tenant OAuth-backed connections.
+A model like:
 
 ```ts
 const notion = await use.connection("notion");
 ```
 
-The runtime decides how `notion` is resolved using:
+is simple, but it is still:
 
-- workflow context
-- run context
-- organization id
-- user id
-- host-side connection store
+- stringly typed
+- runtime-only validated
+- weakly discoverable in editors
+- too generic for provider-specific client behavior
 
-The workflow author does not manage lookup logic.
+### 3. Large enhancement config objects are hard to reason about
 
-## 3. Add Minimal Step Policy in `opts`
+Another explored direction was a large per-step enhancement object. That is
+powerful, but busy. It mixes:
 
-The public policy surface should stay extremely small:
+- runtime policy
+- capability declaration
+- instrumentation
+- authorization constraints
+
+That makes the code harder to scan than the current `atom()` / `action()` API.
+
+### 4. Workflow code risks absorbing platform concerns
+
+Without a strong capability contract, workflow code tends to drift toward:
+
+- secret lookup
+- connection lookup
+- provider-specific auth logic
+- retry wrappers
+- timeout wrappers
+
+Those concerns belong in the runtime host and integration layer, not in each
+workflow step.
+
+## Design Principles
+
+1. **Workflow dataflow stays in `get(...)`.**
+2. **External capabilities are not workflow nodes.**
+3. **Public API should be typed and compact.**
+4. **Runtime should stay pluggable internally.**
+5. **Provider packages should define typed client contracts.**
+
+## Alignment with `SPEC.md`
+
+This RFC is intended to stay aligned with the core semantics described in
+[SPEC.md](/Users/gnijor/gurdasnijor/partyplanner/SPEC.md).
+
+Important invariants to preserve:
+
+### 1. `get(...)` remains the workflow dependency mechanism
+
+The spec is explicit that:
+
+- dependencies are discovered at runtime
+- `get()` reads already-materialized workflow values
+- blocked dependencies lead to `NotReadyError`
+
+This RFC preserves that.
+
+Typed capabilities such as `notion` are **not** accessed via `get(...)`.
+
+### 2. External capabilities do not create workflow graph edges
+
+The proposed capability model is separate from workflow handles.
+
+That means:
+
+- `get(notionLogRequest)` creates workflow dependency semantics
+- `notion.pages.create(...)` does not create workflow graph edges
+
+This preserves the runtime’s ability to reason clearly about workflow structure.
+
+### 3. Side effects remain the user’s responsibility
+
+The spec already states:
+
+> Side effects in user code are the user's problem.
+
+This RFC does not change that. It only gives steps a better way to access
+typed external clients and small runtime policy like `retry` and `timeout`.
+
+## Proposal
+
+## 1. Add `atom.using(...)` and `action.using(...)`
+
+The main public API addition is:
 
 ```ts
-type StepOpts = {
-  name?: string;
-  retry?: number | RetryPolicy;
-  timeout?: string | number;
-};
+atom.using(capabilities, fn, opts?)
+action.using(capabilities, fn, opts?)
 ```
 
-Examples:
+This is the preferred authoring model for steps that need external
+capabilities.
+
+### Example
 
 ```ts
-{ name: "postSlack", retry: 3, timeout: "5s" }
-```
+import { notion } from "@workflow/integrations-notion";
 
-This is enough for a useful v1.
-
-## 4. Add Runtime Plugins Internally
-
-Borrow the **internal architecture idea** from Inngest: runtime middleware /
-plugins can hook execution lifecycle and inject dependencies into step context.
-
-Inngest explicitly uses middleware for lifecycle hooks and dependency injection.
-That is a good fit for Partyplanner runtime internals.
-
-However, Partyplanner should **not** expose a middleware-first authoring model
-to workflow authors.
-
-Instead:
-
-- workflow authors use `get`, `use`, `signal`, `retry`, `timeout`
-- runtime/platform authors use plugins/hooks
-
-## Clear Code Examples
-
-The examples below are written to be readable by a reviewer evaluating whether
-this is worth building.
-
-### Example A: Slack notification using a host-resolved secret
-
-Current shape tends toward env-bound secrets:
-
-```ts
-const slackIncomingWebhookUrl = secret(
-  "SLACK_INCOMING_WEBHOOK_URL",
-  process.env.SLACK_INCOMING_WEBHOOK_URL,
-);
-```
-
-Proposed shape:
-
-```ts
-const notifySlack = action(
-  async ({ get, use, signal }) => {
-    const draft = get(notificationDraft);
-    const webhook = await use.secret("SLACK_INCOMING_WEBHOOK_URL");
-
-    return postSlack(webhook, draft, { signal });
-  },
-  {
-    name: "notifySlack",
-    retry: 3,
-    timeout: "5s",
-  },
-);
-```
-
-Why this is better:
-
-- workflow code does not care whether the secret came from env, DB, vault, or
-  tenant-scoped resolver
-- retries and timeout are explicit and easy to read
-- the step body stays focused on the actual business action
-
-### Example B: Notion page creation using a user connection
-
-This is the motivating multi-tenant use case.
-
-```ts
-const notionWrite = action(
-  async ({ get, use, signal }) => {
+const notionWrite = action.using(
+  { notion },
+  async ({ get, notion, signal }) => {
     const req = get(notionLogRequest);
-    const notion = await use.connection("notion");
 
-    return createNotionPage({
-      accessToken: notion.accessToken,
+    return notion.pages.create({
       parentPageId: req.parentPageId,
       title: req.title,
       body: req.body,
@@ -349,20 +244,155 @@ const notionWrite = action(
 );
 ```
 
-Why this is better:
+This keeps the authoring shape close to the current API:
 
-- this reads like business logic, not infrastructure config
-- the workflow does not know how to load the correct Notion connection
-- the same code works whether the connection is user-scoped or tenant-scoped,
-  as long as the runtime resolver knows how to find it
+- step declaration
+- step function
+- small opts object
 
-### Example C: A pure read atom using a connection
+## 2. Add Typed Capability Tokens
+
+Provider packages export typed capability tokens, not raw string names.
+
+### Core type
 
 ```ts
-const notionProfile = atom(
-  async ({ use, signal }) => {
-    const notion = await use.connection("notion");
-    return fetchNotionProfile(notion.accessToken, { signal });
+export interface CapabilityToken<T> {
+  readonly kind: "capability";
+  readonly id: string;
+  readonly __type?: T;
+}
+```
+
+Helper:
+
+```ts
+export function capability<T>(id: string): CapabilityToken<T>;
+```
+
+### Example provider export
+
+```ts
+export type NotionClient = {
+  pages: {
+    create(input: {
+      parentPageId: string;
+      title: string;
+      body: string;
+      signal?: AbortSignal;
+    }): Promise<{ id: string; url?: string }>;
+    get(input: {
+      pageId: string;
+      signal?: AbortSignal;
+    }): Promise<NotionPage>;
+  };
+};
+
+export const notion = capability<NotionClient>("integration:notion");
+```
+
+This is the main type-safety win:
+
+- provider contracts are explicit
+- step context is inferred from declared capabilities
+- workflow authors get typed methods instead of bags of credentials
+
+## 3. Add Typed Step Context
+
+Given:
+
+```ts
+action.using(
+  { notion, slack },
+  async (ctx) => { ... }
+)
+```
+
+the handler context should be inferred as:
+
+```ts
+type StepCtx<TCapabilities> = {
+  get: Get;
+  waitFor: RequestIntervention;
+  signal: AbortSignal;
+  run: {
+    id: string;
+    step: string;
+    workflowId?: string;
+    organizationId?: string;
+    userId?: string;
+    attempt: number;
+  };
+} & InferCapabilities<TCapabilities>;
+```
+
+For example:
+
+```ts
+async ({ get, notion, signal }) => { ... }
+```
+
+should infer `notion` as `NotionClient`.
+
+## 4. Keep `opts` Small
+
+The public options object should stay minimal:
+
+```ts
+type StepOpts = {
+  name?: string;
+  retry?: number | RetryPolicy;
+  timeout?: string | number;
+};
+```
+
+This is enough for a useful first version.
+
+## Clear Code Examples
+
+The examples below are the clearest way to explain why this is worth building.
+
+### Example A: Notion write using a typed capability
+
+```ts
+import { notion } from "@workflow/integrations-notion";
+
+const notionWrite = action.using(
+  { notion },
+  async ({ get, notion, signal }) => {
+    const req = get(notionLogRequest);
+
+    return notion.pages.create({
+      parentPageId: req.parentPageId,
+      title: req.title,
+      body: req.body,
+      signal,
+    });
+  },
+  {
+    name: "notionWrite",
+    retry: 3,
+    timeout: "10s",
+  },
+);
+```
+
+Why this makes sense:
+
+- no raw access token handling in workflow code
+- no string capability lookup
+- typed contract is obvious to the reader
+- retry and timeout remain visible and small
+
+### Example B: Notion read atom using the same typed capability
+
+```ts
+import { notion } from "@workflow/integrations-notion";
+
+const notionProfile = atom.using(
+  { notion },
+  async ({ notion, signal }) => {
+    return notion.users.me({ signal });
   },
   {
     name: "notionProfile",
@@ -371,33 +401,173 @@ const notionProfile = atom(
 );
 ```
 
-Why this is useful:
+Why this matters:
 
-- shows that `use.connection(...)` is not only for actions
-- keeps the same model across reads and writes
+- capability binding should not be restricted to `action()`
+- typed provider clients are useful for reads and writes
+- the API is consistent across step kinds
 
-### Example D: OAuth bootstrap remains possible
+### Example C: Slack notification with a typed integration
 
-This RFC does not remove run-local OAuth flows. It just stops treating them as
-the only model.
+```ts
+import { slack } from "@workflow/integrations-slack";
 
-There are now two valid patterns:
+const notifySlack = action.using(
+  { slack },
+  async ({ get, slack, signal }) => {
+    const msg = get(notificationDraft);
 
-1. **demo / bootstrap flow**
-   - run does live OAuth
-   - run uses token immediately
-2. **product flow**
-   - app stores connection
-   - workflow later calls `use.connection("notion")`
+    return slack.messages.post({
+      channel: msg.channel,
+      text: msg.text,
+      signal,
+    });
+  },
+  {
+    name: "notifySlack",
+    retry: 3,
+    timeout: "5s",
+  },
+);
+```
 
-That separation is important.
+Why this is better than secrets-only resolution:
+
+- workflow code consumes the domain client, not raw webhook/token details
+- runtime remains free to resolve Slack however it wants
+- provider-specific typing is visible where it matters
+
+### Example D: Generic host-owned secret capability, if needed
+
+Most integrations should prefer typed clients. But there may still be cases
+where a raw secret is useful.
+
+```ts
+const rawWebhook = capability<string>("secret:SLACK_INCOMING_WEBHOOK_URL");
+
+const notifySlack = action.using(
+  { rawWebhook },
+  async ({ get, rawWebhook, signal }) => {
+    const draft = get(notificationDraft);
+    return postSlack(rawWebhook, draft, { signal });
+  },
+  {
+    name: "notifySlack",
+    retry: 3,
+    timeout: "5s",
+  },
+);
+```
+
+This should be the lower-level escape hatch, not the main user path.
+
+## Why This Is Better Than `use.connection("notion")`
+
+`use.connection("notion")` is attractive, but weaker because:
+
+- it is string-based
+- it requires runtime lookup inside the step body
+- it hides available capabilities from the step signature
+- it gives weaker editor/autocomplete support
+
+By contrast, `action.using({ notion }, ...)`:
+
+- makes capability requirements explicit
+- enables strong inference in the step context
+- moves capability wiring closer to the step declaration
+- better matches Partyplanner’s declarative workflow style
+
+## Runtime Architecture
+
+This RFC still recommends a pluggable runtime model internally.
+
+Borrow from Inngest:
+
+- runtime lifecycle hooks
+- dependency injection into handler context
+- layered composition of plugins
+
+Do not borrow:
+
+- middleware-heavy workflow authoring
+
+The runtime should support internal plugins that can:
+
+- resolve typed capability tokens
+- enforce timeout
+- implement retry
+- redact sensitive values in logs/errors
+- emit metrics/tracing
+- enforce org/user context requirements during capability binding
+
+Workflow authors should not have to configure these directly in most cases.
+
+## Capability Resolution
+
+When a step declares:
+
+```ts
+action.using({ notion }, ...)
+```
+
+the runtime should:
+
+1. inspect the step’s declared capability tokens
+2. resolve them using host-side binders/resolvers
+3. inject the resolved typed clients into the handler context
+
+That means the runtime needs a capability resolver interface.
+
+### Resolver shape
+
+```ts
+type CapabilityResolutionRequest = {
+  workflowId?: string;
+  runId: string;
+  stepId: string;
+  organizationId?: string;
+  userId?: string;
+  capabilityId: string;
+};
+
+interface CapabilityResolver {
+  resolve<T>(request: CapabilityResolutionRequest): Promise<T>;
+}
+```
+
+The host implementation decides whether `integration:notion` resolves to:
+
+- a tenant-scoped Notion client
+- a user-scoped Notion client
+- a bootstrap/live-OAuth client
+
+That is a runtime concern, not a workflow concern.
+
+## Multi-Tenant OAuth Model
+
+This RFC does not propose that workflows should keep performing OAuth inside the
+run as their main product model.
+
+Instead, the long-term product path should be:
+
+1. user connects Notion through the app
+2. app stores a durable connection record
+3. runtime resolves the `notion` capability for the current user/org
+4. steps consume the typed Notion client
+
+This separates:
+
+- connection lifecycle
+- workflow execution lifecycle
+
+That is the correct product boundary for multi-tenant SaaS.
 
 ## What `signal` Means
 
 `signal` is an `AbortSignal`.
 
-It is the standard JavaScript cancellation primitive used by APIs such as
-`fetch`. The runtime uses it to enforce step timeout and cancellation.
+It is the standard JavaScript cancellation primitive used by APIs like
+`fetch(...)`. The runtime uses it to enforce timeout and cancellation.
 
 Example:
 
@@ -409,163 +579,139 @@ If the step exceeds its configured timeout, the runtime aborts the signal.
 
 ## Inheritance Model
 
-Step policy should **not** descend to descendant nodes.
+Step configuration should **not** descend to descendant nodes.
 
-For example, if one step has:
+For example:
 
 ```ts
 { retry: 3, timeout: "10s" }
 ```
 
-that should not automatically apply to downstream steps.
+on one step should not automatically affect downstream steps.
 
 Reason:
 
 - each step should be readable in isolation
-- ancestor-based policy inheritance becomes difficult to reason about
-- Partyplanner steps execute independently through the queue
+- Partyplanner steps are independently scheduled
+- ancestor-based policy inheritance is difficult to reason about
 
-If shared defaults are needed, they should come from:
+If shared defaults are needed, prefer:
 
 1. runtime defaults
-2. workflow defaults
+2. workflow-level defaults
 3. explicit step overrides
 
 Not parent-step inheritance.
 
-## Runtime Plugins: What They Would Do
+## Compatibility with `atom()` / `action()`
 
-These plugins are **internal-facing**. They are not the primary workflow
-authoring mechanism.
+This proposal does not require replacing existing APIs.
 
-Potential runtime plugin responsibilities:
+Additive shape:
 
-- resolve `use.secret(name)`
-- resolve `use.connection(name)`
-- apply retry behavior
-- apply timeout / abort behavior
-- redact sensitive values from logs and error surfaces
-- emit metrics
-- emit structured logs
-- enforce org/user requirements when capability resolution requires them
+- `atom(fn, opts?)`
+- `action(fn, opts?)`
+- `atom.using(capabilities, fn, opts?)`
+- `action.using(capabilities, fn, opts?)`
 
-Conceptually, this is similar to Inngest's middleware lifecycle, where hooks can
-run during function execution and dependency injection can add values to
-function context.
+This keeps the current model intact for simple steps while providing a stronger
+typed contract for integration-heavy steps.
 
-That is the right thing to borrow from Inngest.
+## Alternatives Considered
 
-## What Not to Expose Publicly Yet
+### 1. Keep `use.secret(...)` / `use.connection(...)`
 
-The following should remain runtime internals or future work:
+Pros:
 
-- user-authored middleware stacks
-- explicit logging configuration on every step
-- explicit redaction config on every step
-- metrics APIs in the workflow authoring surface
-- large enhancement/config objects
+- simple
+- small API
 
-Those all make the public API noisier without materially improving the main use
-cases.
+Cons:
 
-## Objectives Achieved by This Design
+- string-based
+- weaker typing
+- less declarative
 
-If implemented, this RFC gives Partyplanner:
+Rejected as the final design direction.
 
-### Better ergonomics
+### 2. Large step enhancement objects
 
-Workflow authors write:
+Pros:
 
-```ts
-const notion = await use.connection("notion");
-```
+- powerful
+- highly configurable
 
-instead of:
+Cons:
 
-- env lookups
-- manual DB fetches
-- giant enhancement config
+- noisy
+- hard to scan
+- too much framework surface
 
-### Better multi-tenant fit
+Rejected as the primary authoring model.
 
-The runtime can resolve:
+### 3. Public middleware stacks
 
-- current user's Notion connection
-- current tenant's Slack secret
-- future provider-specific policies
+Pros:
 
-without changing workflow code.
+- maximum flexibility
 
-### Better separation of concerns
+Cons:
 
-- workflow code handles business logic
-- runtime handles platform logic
+- too abstract for most workflow authors
+- drifts away from the current Partyplanner ergonomics
 
-### Better extensibility
-
-The runtime plugin layer can grow over time without turning the public API into
-an orchestration DSL.
+Rejected as the public API, though recommended internally for runtime
+pluggability.
 
 ## Implementation Sketch
 
 ### Phase 1
 
-- add context-based step API
-- add `use.secret(name)`
-- add timeout + retry in opts
-- add runtime support for `signal`
+- add `CapabilityToken<T>`
+- add `atom.using(...)` / `action.using(...)`
+- add typed context inference from capability declarations
+- add `timeout` and `retry` support in opts
 
 ### Phase 2
 
-- add `use.connection(name)`
-- add `ConnectionResolver`
-- thread `organizationId` / `userId` through runtime execution context
+- add runtime capability resolver
+- add integration packages exporting typed capability tokens
+- convert Notion example to use typed capability contracts
 
 ### Phase 3
 
-- add runtime plugin system internally
-- migrate secret resolution / retry / timeout into plugins
-- keep public authoring API unchanged
+- add internal runtime plugins for:
+  - capability resolution
+  - timeout
+  - retry
+  - redaction
+  - metrics/logging
 
-## Alternatives Considered
+### Phase 4
 
-### 1. Big step-enhancements config object
-
-Rejected as primary design because it becomes too noisy and hard to scan.
-
-### 2. Explicit public middleware API
-
-Rejected as primary design because it is too heavy for Partyplanner's current
-authoring model.
-
-### 3. Keep only `secret(...)`
-
-Rejected because it does not solve multi-tenant connection resolution cleanly.
+- add workflow-level defaults if needed
+- add product-level account connection model that backs capability resolution
 
 ## Recommendation
 
 Build:
 
-- a **small context-based step API**
-- a **host-resolved capability model**
-- an **internal runtime plugin system**
+- a typed capability token model
+- `atom.using(...)` / `action.using(...)`
+- runtime-side capability resolution
+- small step opts with `retry` and `timeout`
+- internal plugin architecture for platform concerns
 
-Do **not** build:
+Do not build:
 
-- a middleware-heavy public authoring model
-- a large enhancement DSL
+- a public middleware-heavy authoring surface
+- a string-based `use.connection("...")` API as the final design
+- large enhancement config objects
 
-The clearest public API is:
+The clearest and most type-safe Partyplanner model is:
 
-```ts
-const step = action(
-  async ({ get, use, signal }) => {
-    const conn = await use.connection("notion");
-    ...
-  },
-  { name: "stepName", retry: 3, timeout: "10s" },
-);
-```
+> **Steps declare typed provider capabilities; the runtime resolves them; step
+> code receives typed clients.**
 
-That is easy to understand, easy to explain, and strong enough to justify the
-runtime work behind it.
+That is easier for reviewers to understand, stronger for TypeScript users, and
+more productizable for multi-tenant SaaS than the alternatives explored so far.
