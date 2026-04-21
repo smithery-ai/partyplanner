@@ -130,6 +130,10 @@ function parseWorkflowWorker(
 ): WorkflowWorker | undefined {
   if (value === "cloudflare" || value === "nextjs") return value;
   if (value === "cloudflare-worker") return "cloudflare";
+  if (value === "examples/cloudflare-worker") return "cloudflare";
+  if (value === "./examples/cloudflare-worker") return "cloudflare";
+  if (value === "examples/nextjs") return "nextjs";
+  if (value === "./examples/nextjs") return "nextjs";
   return undefined;
 }
 

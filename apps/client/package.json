@@ -9,7 +9,7 @@
     }
   },
   "scripts": {
-    "dev": "hylo dev --backend node -- vite",
+    "dev": "hylo dev --backend ../backend-node -- vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

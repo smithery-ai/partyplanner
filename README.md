@@ -217,51 +217,37 @@ pnpm install
 pnpm dev
 ```
 
-Local dev URLs:
+`pnpm dev` starts the default local stack: Node backend, Next.js workflow
+service, and the client.
 
 - Client: `https://hylo.localhost`
-- Backend (node): `https://api.hylo.localhost`
-- Backend (cloudflare dev): `https://api-worker.hylo.localhost`
-- Worker example (nextjs): `https://nextjs.hylo.localhost`
+- Backend: `https://api.hylo.localhost`
+- Workflow service: `https://nextjs.hylo.localhost`
 
 ### Hylo CLI
 
-Hylo wraps the command after `--` and gives it the backend environment it needs.
-There are three knobs:
+Use the CLI when you need to launch or deploy a process that talks to Hylo.
 
-- Mode: `dev`, `deploy`, `run`, or `exec`.
-- Backend: which Hylo backend API to use.
-- Workflow: which workflow server this repo should launch with the client.
-
-Common usage:
+Local launcher:
 
 ```sh
-pnpm dev
-pnpm hylo dev --backend cloudflare --workflow <workflow> -- <dev command>
-HYLO_BACKEND_URL=https://api.example.com pnpm hylo deploy --workflow cloudflare-worker
-pnpm hylo deploy --backend cloudflare
-HYLO_BACKEND_URL=https://api.example.com pnpm hylo run -- <server command>
-pnpm hylo exec --backend cloudflare -- <one-off command>
+pnpm hylo dev --backend ./apps/backend-node --app ./apps/client --workflow ./examples/nextjs
 ```
 
-Everything after `--` is the command Hylo launches with the selected backend
-environment. `run` and `exec` do not take `--workflow`; the command after `--`
-is already the thing being run.
-
-For deploys, `--workflow` is the usual user path: it deploys your workflow
-service against the backend URL in `HYLO_BACKEND_URL`. `--backend` is for
-self-hosting the Hylo backend API itself. The browser client is not deployed by
-`hylo deploy` in this repo.
-
-### Worker env outside the launcher
-
-`hylo dev` and `hylo run` set `HYLO_BACKEND_URL` for the command they launch.
-If you run or deploy a worker directly, set the equivalent environment:
+Deploy targets are explicit:
 
 ```sh
-HYLO_BACKEND_URL=http://127.0.0.1:8788      # where the backend is reachable
-HYLO_API_KEY=local-dev-hylo-api-key         # must match backend; defaults to
-                                            # this value in non-prod
+pnpm hylo deploy workflow ./examples/nextjs
+pnpm hylo deploy backend ./apps/backend-cloudflare
+```
+
+`workflow` means your workflow service. `backend` means the Hylo state/API
+backend. This repo does not deploy the browser client through `hylo deploy`.
+
+For one-off commands, use `exec`:
+
+```sh
+pnpm hylo exec --backend ./apps/backend-cloudflare -- <one-off command>
 ```
 
 ### Backend DB

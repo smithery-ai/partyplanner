@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const hyloScriptPath = fileURLToPath(import.meta.url);
@@ -62,7 +62,7 @@ function runCommand(mode, args) {
 
   const packageConfig = readCurrentPackageHyloConfig();
   const backendUrl = resolveBackendUrl(parsed, {
-    fallbackBackend: packageConfig.backend?.id,
+    fallbackBackend: packageConfig.backend ? "." : undefined,
   });
   const env = {
     ...process.env,
@@ -82,8 +82,9 @@ function runDevCommand(args) {
   }
 
   const packageConfig = readCurrentPackageHyloConfig();
-  const workflow = resolveWorkflow(parsed);
-  const devCommand = resolveDevCommand(parsed);
+  const workflow = resolveDevWorkflow(parsed);
+  const app = resolveDevApp(parsed);
+  const devCommand = resolveDevCommand(parsed, { app, workflow });
   const devUrl = parsed.url?.trim() || packageConfig.dev?.url?.trim();
   const appUrl = isHttpUrl(devUrl) ? validateHttpUrl(devUrl, "dev url") : "";
   const name = devUrl ? devServiceNameFromUrl(devUrl) : undefined;
@@ -92,11 +93,12 @@ function runDevCommand(args) {
   const env = {
     ...process.env,
     HYLO_BACKEND_URL: backend.url,
-    ...(backend.id ? { HYLO_BACKEND: backend.id } : {}),
-    ...(workflow ? { HYLO_WORKFLOW: workflow } : {}),
+    ...(backend.packagePath ? { HYLO_BACKEND: backend.packagePath } : {}),
+    ...(app?.packagePath ? { HYLO_APP: app.packagePath } : {}),
+    ...(workflow?.value ? { HYLO_WORKFLOW: workflow.value } : {}),
     ...(appUrl ? { HYLO_APP_URL: appUrl } : {}),
   };
-  const managedBackend = startManagedDevBackend(backend, packageConfig);
+  const managedBackend = startManagedDevBackend(backend);
   const command = name
     ? [
         process.execPath,
@@ -135,71 +137,70 @@ function printEnv(args) {
 }
 
 function runDeployCommand(args) {
-  const parsed = parseOptions(args, { requireSeparator: false });
-
-  if (parsed.help) {
+  if (args.includes("--help") || args.includes("-h")) {
     printDeployHelp();
     process.exit(0);
   }
 
-  if (parsed.command.length > 0) {
-    die("deploy does not accept a command. Usage: hylo deploy [options]");
+  const [targetType, targetName, ...rest] = args;
+  if (!targetType) {
+    printDeployHelp();
+    process.exit(0);
   }
 
-  if (parsed.backendUrl?.trim()) {
-    die("deploy uses HYLO_BACKEND_URL for existing backend endpoints.");
-  }
-
-  const backend = parsed.backend?.trim()
-    ? resolveDeployBackendTarget(parsed.backend)
-    : undefined;
-  const workflow = parsed.workflow?.trim()
-    ? resolveWorkflowTarget(parsed.workflow)
-    : undefined;
-
-  if (!backend && !workflow) {
-    die("deploy requires --backend <name>, --workflow <name>, or both.");
-  }
-
-  const explicitBackendUrl = process.env.HYLO_BACKEND_URL?.trim();
-  const backendUrl = explicitBackendUrl
-    ? validateHttpUrl(explicitBackendUrl, "HYLO_BACKEND_URL")
-    : backend?.deployUrl;
-
-  if (workflow && !backendUrl) {
+  if (targetType === "--backend" || targetType === "--workflow") {
     die(
-      "HYLO_BACKEND_URL is required when deploying a workflow. Set it to the public backend URL, or deploy only the backend first.",
+      "deploy target type is positional. Use hylo deploy backend <path> or hylo deploy workflow <path>.",
     );
   }
 
-  const env = {
-    ...process.env,
-    ...(backendUrl ? { HYLO_BACKEND_URL: backendUrl } : {}),
-    ...(backend?.id ? { HYLO_BACKEND: backend.id } : {}),
-    ...(workflow?.id ? { HYLO_WORKFLOW: workflow.id } : {}),
-  };
+  if (!["backend", "workflow"].includes(targetType)) {
+    die('deploy target must be "backend" or "workflow".');
+  }
 
-  if (backend) {
+  if (!targetName) {
+    die(
+      `missing ${targetType} target. Usage: hylo deploy ${targetType} <path>`,
+    );
+  }
+
+  if (rest.length > 0) {
+    die("deploy does not accept a command after the target name.");
+  }
+
+  if (targetType === "backend") {
+    const backend = resolveDeployBackendTarget(targetName);
     runPackageScript({
-      env,
+      env: {
+        ...process.env,
+        HYLO_BACKEND: backend.packagePath,
+      },
       packageDir: backend.packageDir,
       script: "deploy",
-      targetLabel: `backend "${backend.id}"`,
+      targetLabel: `backend target ${formatPackagePath(backend.packageDir)}`,
     });
+    return;
   }
 
-  if (workflow) {
-    runPackageScript({
-      env,
-      packageDir: workflow.packageDir,
-      script: "deploy",
-      targetLabel: `workflow "${workflow.id}"`,
-    });
-  }
+  const workflow = resolveWorkflowTarget(targetName);
+  const backendUrl = process.env.HYLO_BACKEND_URL?.trim();
+  runPackageScript({
+    env: {
+      ...process.env,
+      HYLO_WORKFLOW: workflow.packagePath,
+      ...(backendUrl
+        ? { HYLO_BACKEND_URL: validateHttpUrl(backendUrl, "HYLO_BACKEND_URL") }
+        : {}),
+    },
+    packageDir: workflow.packageDir,
+    script: "deploy",
+    targetLabel: `workflow target ${formatPackagePath(workflow.packageDir)}`,
+  });
 }
 
 function parseOptions(args, options = {}) {
   const command = [];
+  let app;
   let backend;
   let backendUrl;
   let help = false;
@@ -229,6 +230,18 @@ function parseOptions(args, options = {}) {
 
     if (parsingOptions && arg.startsWith("--backend=")) {
       backend = arg.slice("--backend=".length);
+      continue;
+    }
+
+    if (parsingOptions && arg === "--app") {
+      const value = args[++i];
+      if (!value) die("--app requires a value.");
+      app = value;
+      continue;
+    }
+
+    if (parsingOptions && arg.startsWith("--app=")) {
+      app = arg.slice("--app=".length);
       continue;
     }
 
@@ -280,30 +293,84 @@ function parseOptions(args, options = {}) {
     die('expected "--" before the command.');
   }
 
-  return { backend, backendUrl, command, help, url, workflow };
+  return { app, backend, backendUrl, command, help, url, workflow };
 }
 
-function resolveDevCommand(parsed) {
+function resolveDevCommand(parsed, { app, workflow }) {
   if (parsed.command.length > 0) return parsed.command;
 
+  if (app && !workflow) {
+    die("hylo dev --app requires --workflow when no command is provided.");
+  }
+
+  if (workflow && !app) {
+    die("hylo dev --workflow requires --app when no command is provided.");
+  }
+
+  if (app && workflow?.target) {
+    return [
+      "turbo",
+      "run",
+      "dev",
+      `--filter=${app.packageName}`,
+      `--filter=${workflow.target.packageName}`,
+      "--ui=tui",
+    ];
+  }
+
+  if (app && workflow?.all) {
+    return [
+      "turbo",
+      "run",
+      "dev",
+      `--filter=${app.packageName}`,
+      ...WORKFLOWS.map((target) => `--filter=${target.packageName}`),
+      "--ui=tui",
+    ];
+  }
+
   die(
-    "missing command to dev. Usage: hylo dev --backend <name> [--workflow <name>] -- <command...>.",
+    "missing command to dev. Usage: hylo dev --backend <path> --app <path> --workflow <path>, or hylo dev --backend <path> -- <command...>.",
   );
 }
 
-function resolveWorkflow(parsed) {
-  const workflow = parsed.workflow?.trim() || process.env.HYLO_WORKFLOW?.trim();
+function resolveDevApp(parsed) {
+  const app = parsed.app?.trim();
+  if (!app) return undefined;
+  return resolvePackageTarget(app, "app");
+}
+
+function resolveDevWorkflow(parsed) {
+  const workflow = parsed.workflow?.trim();
   if (!workflow) return undefined;
 
-  const normalized = workflow.toLowerCase();
-  if (
-    WORKFLOWS.some((candidate) => candidate.id === normalized) ||
-    normalized === "all"
-  ) {
-    return normalized;
+  if (workflow.toLowerCase() === "all") return { all: true, value: "all" };
+
+  const target = resolveWorkflowTarget(workflow);
+  return {
+    target,
+    value: target.packagePath,
+  };
+}
+
+function resolvePackageTarget(name, label) {
+  const packageDir = resolvePackageDir(name);
+  const packageJson = packageJsonAt(packageDir);
+  const packageName = String(packageJson.name ?? "").trim();
+  if (!packageName) {
+    die(`${formatPackagePath(packageDir)} must set package.json name`);
+  }
+  if (!packageJson.scripts?.dev) {
+    die(
+      `${label} target ${formatPackagePath(packageDir)} must define a dev script`,
+    );
   }
 
-  die(`unknown workflow "${workflow}". Use ${workflowChoices()}, or all.`);
+  return {
+    packageDir,
+    packageName,
+    packagePath: packagePath(packageDir),
+  };
 }
 
 function resolveBackendUrl(parsed, options = {}) {
@@ -315,13 +382,13 @@ function resolveBackendUrl(parsed, options = {}) {
   if (envUrl) return validateHttpUrl(envUrl, "HYLO_BACKEND_URL");
 
   const envBackendName = process.env.HYLO_BACKEND?.trim();
-  if (envBackendName) return resolveBackendAlias(envBackendName).url;
+  if (envBackendName) return resolveBackendTarget(envBackendName).url;
 
   const backendName = parsed.backend?.trim();
-  if (backendName) return resolveBackendAlias(backendName).url;
+  if (backendName) return resolveBackendTarget(backendName).url;
 
   const fallbackBackend = options.fallbackBackend?.trim();
-  if (fallbackBackend) return resolveBackendAlias(fallbackBackend).url;
+  if (fallbackBackend) return resolveBackendTarget(fallbackBackend).url;
 
   dieNoBackend();
 }
@@ -330,7 +397,7 @@ function resolveDevBackend(parsed, packageConfig) {
   if (parsed.backendUrl?.trim()) {
     return {
       url: resolveBackendUrl(parsed, {
-        fallbackBackend: packageConfig.backend?.id,
+        fallbackBackend: packageConfig.backend ? "." : undefined,
       }),
     };
   }
@@ -343,21 +410,21 @@ function resolveDevBackend(parsed, packageConfig) {
   const backendName =
     process.env.HYLO_BACKEND?.trim() ||
     parsed.backend?.trim() ||
-    packageConfig.backend?.id?.trim();
+    (packageConfig.backend ? "." : undefined);
 
   if (!backendName) dieNoBackend();
 
-  const backend = resolveBackendAlias(backendName);
+  const backend = resolveBackendTarget(backendName);
   return {
-    id: backend.id,
+    packagePath: backend.packagePath,
     packageDir: backend.packageDir,
     url: backend.devUrl ?? backend.url,
   };
 }
 
-function startManagedDevBackend(backend, packageConfig) {
-  if (!backend.id || !backend.packageDir) return undefined;
-  if (backend.id === packageConfig.backend?.id) return undefined;
+function startManagedDevBackend(backend) {
+  if (!backend.packagePath || !backend.packageDir) return undefined;
+  if (backend.packageDir === process.cwd()) return undefined;
 
   return spawnChild("pnpm", ["--dir", backend.packageDir, "dev"], process.env);
 }
@@ -400,15 +467,21 @@ function withWranglerVars(command, env, names) {
   return next;
 }
 
-function resolveBackendAlias(name) {
-  const normalized = name.toLowerCase();
-  const backend = BACKENDS.find((candidate) => candidate.id === normalized);
+function resolveBackendTarget(name) {
+  if (isHttpUrl(name)) {
+    die(
+      "backend targets are package paths. Use HYLO_BACKEND_URL for an existing backend endpoint.",
+    );
+  }
+
+  const packageDir = resolvePackageDir(name);
+  const backend = BACKENDS.find(
+    (candidate) => candidate.packageDir === packageDir,
+  );
 
   if (!backend) {
     die(
-      `unknown backend "${name}". Use ${BACKENDS.map((b) => b.id).join(
-        ", ",
-      )}, or set HYLO_BACKEND_URL.`,
+      `"${name}" is not a Hylo backend package. Use ${backendChoices()}, or set HYLO_BACKEND_URL.`,
     );
   }
 
@@ -418,21 +491,32 @@ function resolveBackendAlias(name) {
 function resolveDeployBackendTarget(name) {
   if (isHttpUrl(name)) {
     die(
-      "deploy --backend expects a managed backend target. Use HYLO_BACKEND_URL for an existing backend endpoint.",
+      "hylo deploy backend expects a backend package path. Use HYLO_BACKEND_URL for an existing backend endpoint.",
     );
   }
-  return resolveBackendAlias(name);
+  return resolveBackendTarget(name);
 }
 
 function resolveWorkflowTarget(name) {
-  const normalized = name.toLowerCase();
-  const workflow = WORKFLOWS.find((candidate) => candidate.id === normalized);
+  const packageDir = resolvePackageDir(name);
+  const workflow = WORKFLOWS.find(
+    (candidate) => candidate.packageDir === packageDir,
+  );
 
   if (!workflow) {
-    die(`unknown workflow "${name}". Use ${workflowChoices()}.`);
+    die(`"${name}" is not a Hylo workflow package. Use ${workflowChoices()}.`);
   }
 
   return workflow;
+}
+
+function resolvePackageDir(value) {
+  const packageDir = resolve(process.cwd(), value);
+  const packageJsonPath = join(packageDir, "package.json");
+  if (!existsSync(packageJsonPath)) {
+    die(`target path "${value}" must point to a package directory.`);
+  }
+  return packageDir;
 }
 
 function loadBackendConfigs() {
@@ -441,7 +525,7 @@ function loadBackendConfigs() {
     .filter((entry) => entry.isDirectory())
     .map((entry) => readBackendConfig(join(appsDir, entry.name)))
     .filter(Boolean)
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort((left, right) => left.packagePath.localeCompare(right.packagePath));
 
   if (backends.length === 0) {
     die(`no backend configs found under ${appsDir}`);
@@ -458,22 +542,27 @@ function readBackendConfig(appDir) {
   const backend = packageJson.hylo?.backend;
   if (!backend) return undefined;
 
-  const id = String(backend.id ?? "").trim();
   const url = String(backend.url ?? "").trim();
 
-  if (!id || !url) {
-    die(`${packageJsonPath} must set hylo.backend.id and hylo.backend.url`);
+  if (!url) {
+    die(`${packageJsonPath} must set hylo.backend.url`);
   }
 
   return {
-    id,
     packageDir: appDir,
-    url: validateHttpUrl(url, `${id} url`),
+    packagePath: packagePath(appDir),
+    url: validateHttpUrl(url, `${packagePath(appDir)} url`),
     deployUrl: backend.deployUrl
-      ? validateHttpUrl(String(backend.deployUrl), `${id} deploy url`)
+      ? validateHttpUrl(
+          String(backend.deployUrl),
+          `${packagePath(appDir)} deploy url`,
+        )
       : undefined,
     devUrl: packageJson.hylo?.dev?.url
-      ? validateHttpUrl(String(packageJson.hylo.dev.url), `${id} dev url`)
+      ? validateHttpUrl(
+          String(packageJson.hylo.dev.url),
+          `${packagePath(appDir)} dev url`,
+        )
       : undefined,
   };
 }
@@ -490,7 +579,7 @@ function loadWorkflowConfigs() {
   return packageDirs
     .map((packageDir) => readWorkflowConfig(packageDir))
     .filter(Boolean)
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort((left, right) => left.packagePath.localeCompare(right.packagePath));
 }
 
 function readWorkflowConfig(packageDir) {
@@ -500,15 +589,15 @@ function readWorkflowConfig(packageDir) {
   const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
   const workflow = packageJson.hylo?.workflow;
   if (!workflow) return undefined;
-
-  const id = String(workflow.id ?? "").trim();
-  if (!id) {
-    die(`${packageJsonPath} must set hylo.workflow.id`);
+  const packageName = String(packageJson.name ?? "").trim();
+  if (!packageName) {
+    die(`${packageJsonPath} must set name for hylo workflow dev orchestration`);
   }
 
   return {
-    id,
     packageDir,
+    packagePath: packagePath(packageDir),
+    packageName,
   };
 }
 
@@ -615,11 +704,23 @@ function shellQuote(value) {
 }
 
 function backendChoices() {
-  return BACKENDS.map((backend) => backend.id).join(", ");
+  return BACKENDS.map((backend) => formatPackagePath(backend.packageDir)).join(
+    ", ",
+  );
 }
 
 function workflowChoices() {
-  return WORKFLOWS.map((workflow) => workflow.id).join(", ");
+  return WORKFLOWS.map((workflow) =>
+    formatPackagePath(workflow.packageDir),
+  ).join(", ");
+}
+
+function packagePath(packageDir) {
+  return relative(repoRoot, packageDir);
+}
+
+function formatPackagePath(packageDir) {
+  return `./${packagePath(packageDir)}`;
 }
 
 function packageJsonAt(packageDir) {
@@ -632,7 +733,7 @@ function packageJsonAt(packageDir) {
 
 function printDeployTarget(packageDir, targetLabel) {
   console.error(
-    `hylo: deploying ${targetLabel} from ${relative(repoRoot, packageDir)}`,
+    `hylo: deploying ${targetLabel} from ${formatPackagePath(packageDir)}`,
   );
 }
 
@@ -670,12 +771,12 @@ function dieNoBackend() {
 
 Set one of:
   HYLO_BACKEND_URL=https://...
-  HYLO_BACKEND=node
-  --backend node
+  HYLO_BACKEND=./apps/backend-node
+  --backend ./apps/backend-node
 
 Examples:
-  hylo run --backend node -- npm start
-  hylo run --backend cloudflare -- npm start
+  hylo run --backend ./apps/backend-node -- npm start
+  hylo run --backend ./apps/backend-cloudflare -- npm start
   HYLO_BACKEND_URL=https://api.example.com hylo run -- npm start`);
   process.exit(1);
 }
@@ -690,29 +791,33 @@ function printHelp() {
 
 Usage:
   hylo run  [options] -- <server command...>
-  hylo dev  [options] -- <server command...>
-  hylo deploy [options]
+  hylo dev  [options] [-- <server command...>]
+  hylo deploy <target-type> <package-path>
   hylo exec [options] -- <one-off command...>
   hylo env  [options]
 
 Commands:
   run       Launch a long-running workflow server with HYLO_BACKEND_URL.
-  dev       Launch a local dev command with HYLO_BACKEND_URL.
-  deploy    Deploy a backend or workflow target by running its package script.
+  dev       Launch local dev with HYLO_BACKEND_URL.
+  deploy    Deploy a backend or workflow package by running its package script.
   exec      Run a one-off command with HYLO_BACKEND_URL.
   env       Print the resolved Hylo environment.
 
 Backend options:
-  --backend <name>        Managed backend target.
+  --backend <path>        Backend package path.
                           Choices: ${backendChoices()}
 
+Dev graph options:
+  --app <path>            App package path.
+
 Workflow option:
-  --workflow <name>       Workflow target. Choices: ${workflowChoices()}, all.
+  --workflow <path>       Workflow package path. Choices: ${workflowChoices()}, all.
 
 Environment:
   HYLO_BACKEND_URL        Explicit backend URL. Overrides backend targets.
-  HYLO_BACKEND            Backend name.
-  HYLO_WORKFLOW           Workflow target selection.
+  HYLO_BACKEND            Backend package path.
+  HYLO_APP                App package path.
+  HYLO_WORKFLOW           Workflow package path.
   HYLO_APP_URL            Current app URL when hylo.dev.url is set.
 `);
 }
@@ -728,7 +833,7 @@ Usage:
 Runs a ${kind} with HYLO_BACKEND_URL injected.
 
 Options:
-  --backend <name>        Managed backend target. Choices: ${backendChoices()}.
+  --backend <path>        Backend package path. Choices: ${backendChoices()}.
 
 Environment:
   HYLO_BACKEND_URL        Explicit backend URL. Overrides backend targets.
@@ -744,16 +849,18 @@ function printDevHelp() {
 Usage:
   hylo dev [options] [-- <command...>]
 
-Runs a local development command with HYLO_BACKEND_URL injected. --workflow sets
-HYLO_WORKFLOW for the command after --. When
+Runs local development with HYLO_BACKEND_URL injected. With --app, --workflow,
+and no command after --, Hylo starts those explicit packages through Turbo. With
+a command after --, Hylo launches that command directly. When
 --url or package.json hylo.dev.url is set, the process is also registered at
-that stable local URL. Named local backends are started automatically. Use
+that stable local URL. Selected local backends are started automatically. Use
 HYLO_BACKEND_URL for an already-running or deployed backend.
 
 Options:
   --url <url>             Local dev URL or service name. Defaults to package Hylo metadata.
-  --backend <name>        Managed backend target. Choices: ${backendChoices()}.
-  --workflow <name>       Workflow target. Choices: ${workflowChoices()}, all.
+  --backend <path>        Backend package path. Choices: ${backendChoices()}.
+  --app <path>            App package path.
+  --workflow <path>       Workflow package path. Choices: ${workflowChoices()}, all.
 
 Environment:
   HYLO_BACKEND_URL        Explicit backend URL. Overrides backend targets.
@@ -764,23 +871,20 @@ function printDeployHelp() {
   console.log(`hylo deploy
 
 Usage:
-  hylo deploy [options]
+  hylo deploy workflow <package-path>
+  hylo deploy backend <package-path>
 
-Deploys package-owned targets. --backend deploys a Hylo backend API target for
-self-hosting. --workflow deploys a user workflow service target. HYLO_BACKEND_URL
-is passed to workflow deploys as the public backend API URL. The browser client
-is not deployed by hylo deploy in this repo.
+Deploys one explicit package by running that package's deploy script.
+
+Targets:
+  workflow <path>         User workflow service. Choices: ${workflowChoices()}.
+  backend <path>          Self-hosted Hylo backend API. Choices: ${backendChoices()}.
 
 Typical:
-  HYLO_BACKEND_URL=https://api.example.com hylo deploy --workflow cloudflare-worker
-  hylo deploy --backend cloudflare
+  hylo deploy workflow ./examples/nextjs
+  hylo deploy backend ./apps/backend-cloudflare
 
-Options:
-  --backend <name>        Managed backend target. Choices: ${backendChoices()}.
-  --workflow <name>       Managed workflow target. Choices: ${workflowChoices()}.
-
-Environment:
-  HYLO_BACKEND_URL        Existing/public backend URL for workflow deploys.
+hylo deploy does not deploy the browser client in this repo.
 `);
 }
 
@@ -793,7 +897,7 @@ Usage:
 Prints resolved Hylo environment variables.
 
 Options:
-  --backend <name>        Managed backend target. Choices: ${backendChoices()}.
+  --backend <path>        Backend package path. Choices: ${backendChoices()}.
 
 Environment:
   HYLO_BACKEND_URL        Explicit backend URL. Overrides backend targets.
