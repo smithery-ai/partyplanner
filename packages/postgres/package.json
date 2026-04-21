@@ -16,6 +16,8 @@
   },
   "scripts": {
     "build": "tsc",
+    "db:migrate": "tsx scripts/db-migrate.ts",
+    "db:studio": "tsx scripts/db-studio.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -23,11 +25,15 @@
     "@workflow/core": "workspace:*",
     "@workflow/runtime": "workspace:*",
     "@workflow/server": "workspace:*",
-    "drizzle-orm": "^0.45.1"
+    "drizzle-orm": "^0.45.1",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.14",
+    "@electric-sql/pglite-socket": "^0.0.22",
     "@workflow/remote": "workspace:*",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0",
     "zod": "^4.3.6"

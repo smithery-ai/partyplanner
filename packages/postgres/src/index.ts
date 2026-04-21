@@ -5,8 +5,8 @@ export type {
 export {
   createPostgresWorkflowQueue,
   createPostgresWorkflowStateStore,
-  ensureWorkflowPostgresSchema,
 } from "./adapter";
+export { ensureWorkflowPostgresSchema } from "./migrate";
 
 export {
   workflowEvents,
