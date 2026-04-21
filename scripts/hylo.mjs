@@ -85,10 +85,10 @@ function runDevCommand(args) {
   const workflow = resolveDevWorkflow(parsed);
   const app = resolveDevApp(parsed);
   const devCommand = resolveDevCommand(parsed, { app, workflow });
-  const devUrl =
-    parsed.url?.trim() || packageConfig.devUrl?.trim() || app?.devUrl;
+  const serviceDevUrl = parsed.url?.trim() || packageConfig.devUrl?.trim();
+  const devUrl = serviceDevUrl || app?.devUrl;
   const appUrl = isHttpUrl(devUrl) ? validateHttpUrl(devUrl, "dev url") : "";
-  const name = devUrl ? devServiceNameFromUrl(devUrl) : undefined;
+  const name = serviceDevUrl ? devServiceNameFromUrl(serviceDevUrl) : undefined;
 
   const backend = resolveDevBackend(parsed, packageConfig);
   const env = {
@@ -675,6 +675,7 @@ function isHttpUrl(value) {
 
 function spawnChild(command, args, env) {
   return spawn(command, args, {
+    detached: process.platform !== "win32",
     stdio: "inherit",
     env,
     shell: process.platform === "win32",
@@ -684,12 +685,14 @@ function spawnChild(command, args, env) {
 function spawnAndExit(command, env, managedChildren = []) {
   const child = spawnChild(command[0], command.slice(1), env);
   const children = [...managedChildren, child];
+  let shuttingDown = false;
 
   const signalHandlers = new Map();
   for (const signal of ["SIGINT", "SIGTERM"]) {
     const handler = () => {
+      shuttingDown = true;
       for (const currentChild of children) {
-        if (!currentChild.killed) currentChild.kill(signal);
+        terminateChild(currentChild, signal);
       }
     };
     signalHandlers.set(signal, handler);
@@ -698,9 +701,9 @@ function spawnAndExit(command, env, managedChildren = []) {
 
   for (const managedChild of managedChildren) {
     managedChild.on("exit", (code, signal) => {
-      if (child.killed) return;
-      if (signal) child.kill(signal);
-      else if (code && code !== 0) child.kill("SIGTERM");
+      if (shuttingDown || childHasExited(child)) return;
+      if (signal) terminateChild(child, signal);
+      else if (code && code !== 0) terminateChild(child, "SIGTERM");
     });
   }
 
@@ -709,22 +712,52 @@ function spawnAndExit(command, env, managedChildren = []) {
   });
 
   child.on("exit", (code, signal) => {
+    removeSignalHandlers(signalHandlers);
     if (signal) {
-      for (const [forwardedSignal, handler] of signalHandlers) {
-        process.off(forwardedSignal, handler);
-      }
+      shuttingDown = true;
       for (const managedChild of managedChildren) {
-        if (!managedChild.killed) managedChild.kill(signal);
+        terminateChild(managedChild, signal);
       }
-      process.kill(process.pid, signal);
-      setTimeout(() => process.exit(1), 128).unref();
+      process.exit(signalExitCode(signal));
       return;
     }
+    shuttingDown = true;
     for (const managedChild of managedChildren) {
-      if (!managedChild.killed) managedChild.kill("SIGTERM");
+      terminateChild(managedChild, "SIGTERM");
     }
     process.exit(code ?? 0);
   });
+}
+
+function childHasExited(child) {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+function removeSignalHandlers(signalHandlers) {
+  for (const [signal, handler] of signalHandlers) {
+    process.off(signal, handler);
+  }
+}
+
+function terminateChild(child, signal) {
+  if (childHasExited(child)) return;
+
+  try {
+    if (process.platform === "win32") {
+      child.kill(signal);
+      return;
+    }
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (error?.code !== "ESRCH") {
+      throw error;
+    }
+  }
+}
+
+function signalExitCode(signal) {
+  const codes = { SIGINT: 130, SIGTERM: 143 };
+  return codes[signal] ?? 1;
 }
 
 function shellQuote(value) {
