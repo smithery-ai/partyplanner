@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { z } from "zod";
 import {
   type BackendApiClientOptions,
@@ -11,6 +12,8 @@ import type {
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
 } from "./types";
+
+type CorsOptions = Parameters<typeof cors>[0];
 
 const StartWorkflowRunRequestSchema = z.object({
   inputId: z.string(),
@@ -57,6 +60,7 @@ export type CreateWorkflowOptions = Omit<
 > & {
   backendApi: string | BackendApiClientOptions;
   basePath?: string;
+  cors?: boolean | CorsOptions;
 };
 
 export function createWorkflow(options: CreateWorkflowOptions) {
@@ -71,6 +75,18 @@ export function createWorkflow(options: CreateWorkflowOptions) {
   });
   const app = new Hono();
   const basePath = normalizeBasePath(options.basePath);
+
+  if (options.cors) {
+    const corsOptions: CorsOptions =
+      options.cors === true
+        ? {
+            origin: "*",
+            allowHeaders: ["Content-Type"],
+            allowMethods: ["GET", "PUT", "POST", "OPTIONS"],
+          }
+        : options.cors;
+    app.use(`${basePath}/*`, cors(corsOptions));
+  }
 
   app.get(routePath(basePath, "/health"), (c) => c.json({ ok: true }));
   app.get(routePath(basePath, "/manifest"), (c) => c.json(manager.manifest()));

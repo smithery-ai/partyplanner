@@ -13,6 +13,7 @@ export function getWorkflowApp(): WorkflowApp {
   const app = createWorkflow({
     basePath: "/api/workflow",
     backendApi: backendApiUrl(),
+    cors: true,
     workflow: {
       id: "nextjs-example",
       version: "v1",
