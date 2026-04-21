@@ -29,6 +29,13 @@ The Workflow API is mounted at:
 https://nextjs.hylo.localhost/api/workflow
 ```
 
+The same Hono app exposes generated API docs:
+
+```txt
+https://nextjs.hylo.localhost/api/workflow/openapi.json
+https://nextjs.hylo.localhost/api/workflow/swagger
+```
+
 When run through Portless, the example derives the sibling backend URL from its
 own `PORTLESS_URL`, so worktree-prefixed URLs point at the matching
 `api.hylo` service. Set `HYLO_BACKEND_URL` explicitly to point at another
@@ -74,6 +81,8 @@ Useful requests:
 
 ```sh
 curl https://nextjs.hylo.localhost/api/workflow/manifest
+
+curl https://nextjs.hylo.localhost/api/workflow/openapi.json
 
 curl -X POST https://nextjs.hylo.localhost/api/workflow/runs \
   -H 'content-type: application/json' \
