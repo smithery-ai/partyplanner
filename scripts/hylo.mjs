@@ -125,7 +125,9 @@ function runDevCommand(args) {
       ]
     : prepareCommand(devCommand, env);
 
-  spawnAndExit(command, env, managedBackend ? [managedBackend] : []);
+  spawnAndExit(command, env, managedBackend ? [managedBackend] : [], {
+    filterPortlessOutput: Boolean(name),
+  });
 }
 
 function printEnv(args) {
@@ -313,7 +315,7 @@ function resolveDevCommand(parsed, { app, workflow }) {
       `--filter=${app.packageName}`,
       `--filter=${workflow.target.packageName}`,
       "--ui=stream",
-      "--output-logs=errors-only",
+      "--output-logs=new-only",
     ];
   }
 
@@ -325,7 +327,7 @@ function resolveDevCommand(parsed, { app, workflow }) {
       `--filter=${app.packageName}`,
       ...WORKFLOWS.map((target) => `--filter=${target.packageName}`),
       "--ui=stream",
-      "--output-logs=errors-only",
+      "--output-logs=new-only",
     ];
   }
 
@@ -686,8 +688,15 @@ function spawnChild(command, args, env, options = {}) {
   });
 }
 
-function spawnAndExit(command, env, managedChildren = []) {
-  const child = spawnChild(command[0], command.slice(1), env);
+function spawnAndExit(command, env, managedChildren = [], options = {}) {
+  const child = spawnChild(command[0], command.slice(1), env, {
+    stdio: options.filterPortlessOutput
+      ? ["inherit", "pipe", "pipe"]
+      : "inherit",
+  });
+  if (options.filterPortlessOutput) {
+    pipeFilteredPortlessOutput(child);
+  }
   const children = [...managedChildren, child];
   let shuttingDown = false;
 
@@ -762,6 +771,44 @@ function terminateChild(child, signal) {
 function signalExitCode(signal) {
   const codes = { SIGINT: 130, SIGTERM: 143 };
   return codes[signal] ?? 1;
+}
+
+function pipeFilteredPortlessOutput(child) {
+  pipeFilteredLines(child.stdout, process.stdout);
+  pipeFilteredLines(child.stderr, process.stderr);
+}
+
+function pipeFilteredLines(input, output) {
+  if (!input) return;
+
+  let pending = "";
+  input.on("data", (chunk) => {
+    pending += chunk.toString();
+    const lines = pending.split(/\n/);
+    pending = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!isPortlessBoilerplate(line)) output.write(`${line}\n`);
+    }
+  });
+  input.on("end", () => {
+    if (pending && !isPortlessBoilerplate(pending)) output.write(pending);
+  });
+}
+
+function isPortlessBoilerplate(line) {
+  const text = line.replace(/\r/g, "").trim();
+
+  return (
+    text === "" ||
+    text === "portless" ||
+    text === "-- Proxy is running" ||
+    text.startsWith("-- Name ") ||
+    text.startsWith("-- Using port ") ||
+    (text.startsWith("-- ") && text.includes("(auto-resolves to 127.0.0.1)")) ||
+    text.startsWith("-> https://") ||
+    text.startsWith("Running: PORT=") ||
+    text.startsWith("Killed existing process ")
+  );
 }
 
 function shellQuote(value) {
