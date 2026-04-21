@@ -229,7 +229,7 @@ Local dev URLs:
 Hylo wraps the command after `--` and gives it the backend environment it needs.
 There are three knobs:
 
-- Mode: `dev`, `run`, or `exec`.
+- Mode: `dev`, `deploy`, `run`, or `exec`.
 - Backend: which Hylo backend API to use.
 - Workflow: which workflow server this repo should launch with the client.
 
@@ -238,13 +238,20 @@ Common usage:
 ```sh
 pnpm dev
 pnpm hylo dev --backend cloudflare --workflow <workflow> -- <dev command>
-pnpm hylo run --backend-url https://api.example.com -- <server command>
+HYLO_BACKEND_URL=https://api.example.com pnpm hylo deploy --workflow cloudflare-worker
+pnpm hylo deploy --backend cloudflare
+HYLO_BACKEND_URL=https://api.example.com pnpm hylo run -- <server command>
 pnpm hylo exec --backend cloudflare -- <one-off command>
 ```
 
 Everything after `--` is the command Hylo launches with the selected backend
 environment. `run` and `exec` do not take `--workflow`; the command after `--`
 is already the thing being run.
+
+For deploys, `--workflow` is the usual user path: it deploys your workflow
+service against the backend URL in `HYLO_BACKEND_URL`. `--backend` is for
+self-hosting the Hylo backend API itself. The browser client is not deployed by
+`hylo deploy` in this repo.
 
 ### Worker env outside the launcher
 

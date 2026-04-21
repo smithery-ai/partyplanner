@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "hylo": {
+    "workflow": {
+      "id": "cloudflare-worker"
+    },
     "dev": {
       "url": "https://cloudflare-worker.hylo.localhost"
     }
@@ -11,7 +14,7 @@
   "scripts": {
     "build": "tsc --noEmit",
     "dev": "hylo dev --backend node -- wrangler dev --ip 127.0.0.1 --port '$PORT'",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy --var HYLO_BACKEND_URL:$HYLO_BACKEND_URL",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

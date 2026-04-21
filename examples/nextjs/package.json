@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "hylo": {
+    "workflow": {
+      "id": "nextjs"
+    },
     "dev": {
       "url": "https://nextjs.hylo.localhost"
     }
