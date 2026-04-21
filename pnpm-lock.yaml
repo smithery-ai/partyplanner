@@ -180,6 +180,34 @@ importers:
         specifier: ^8.0.4
         version: 8.0.8(@types/node@24.12.2)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3)
 
+  examples/cloudflare-worker:
+    dependencies:
+      '@workflow/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@workflow/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@workflow/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+      hono:
+        specifier: ^4.12.14
+        version: 4.12.14
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.0.0
+        version: 4.20260418.1
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
+      wrangler:
+        specifier: ^4.53.0
+        version: 4.83.0(@cloudflare/workers-types@4.20260418.1)
+
   examples/nextjs:
     dependencies:
       '@workflow/core':

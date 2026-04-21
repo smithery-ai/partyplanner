@@ -29,6 +29,11 @@ The Workflow API is mounted at:
 https://nextjs.hylo.localhost/api/workflow
 ```
 
+Workflow requests can pass a backend URL with the `backendUrl` query parameter
+or the `x-hylo-backend-url` header. If neither is present, the example uses
+`HYLO_BACKEND_URL`. If that is also missing, requests fail with an explicit
+configuration error.
+
 When run through Portless, the example derives the sibling backend URL from its
 own `PORTLESS_URL`, so worktree-prefixed URLs point at the matching
 `api.hylo` service. Set `HYLO_BACKEND_URL` explicitly to point at another
@@ -59,11 +64,11 @@ example `http://127.0.0.1:3000/api/spotify/callback`.
 Useful requests:
 
 ```sh
-curl https://nextjs.hylo.localhost/api/workflow/manifest
+curl "https://nextjs.hylo.localhost/api/workflow/manifest?backendUrl=http://localhost:8787"
 
-curl -X POST https://nextjs.hylo.localhost/api/workflow/runs \
+curl -X POST "https://nextjs.hylo.localhost/api/workflow/runs?backendUrl=http://localhost:8787" \
   -H 'content-type: application/json' \
-  -d '{"inputId":"lead","payload":{"name":"Ada","plan":"enterprise"}}'
+  -d '{"inputId":"incidentAlert","payload":{"service":"checkout-api","severity":"sev2"}}'
 ```
 
 The backend-node PGlite data directory defaults to `.hylo-backend-node` inside

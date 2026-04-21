@@ -5,22 +5,48 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const backendTarget =
+const nextjsTarget =
+  process.env.VITE_NEXTJS_WORKER_URL ??
   process.env.VITE_BACKEND_URL ??
   derivePortlessServiceUrl(process.env.PORTLESS_URL, "hylo", "nextjs.hylo") ??
   "http://localhost:3000";
 
-const backendProxy = {
-  target: backendTarget,
-  changeOrigin: true,
-  secure: false,
-  agent: portlessLocalAgent(backendTarget),
-  rewrite: (proxyPath: string) =>
-    proxyPath.replace(/^\/api(?=\/|$)/, "/api/workflow") || "/api/workflow",
-};
+const cloudflareWorkerTarget =
+  process.env.VITE_CLOUDFLARE_WORKER_URL ??
+  derivePortlessServiceUrl(
+    process.env.PORTLESS_URL,
+    "hylo",
+    "cloudflare-worker.hylo",
+  ) ??
+  "http://localhost:8789";
+
+const defaultWorkerTarget =
+  process.env.VITE_WORKFLOW_WORKER === "cloudflare"
+    ? cloudflareWorkerTarget
+    : nextjsTarget;
+
+const backendNodeUrl =
+  process.env.VITE_BACKEND_NODE_URL ??
+  derivePortlessServiceUrl(process.env.PORTLESS_URL, "hylo", "api.hylo") ??
+  "http://localhost:8787";
+
+const backendWorkerUrl =
+  process.env.VITE_BACKEND_WORKER_URL ??
+  derivePortlessServiceUrl(
+    process.env.PORTLESS_URL,
+    "hylo",
+    "api-worker.hylo",
+  ) ??
+  "http://localhost:8788";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    "import.meta.env.VITE_RESOLVED_BACKEND_NODE_URL":
+      JSON.stringify(backendNodeUrl),
+    "import.meta.env.VITE_RESOLVED_BACKEND_WORKER_URL":
+      JSON.stringify(backendWorkerUrl),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -28,10 +54,26 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/api": backendProxy,
+      "/api/nextjs": workflowProxy(nextjsTarget, /^\/api\/nextjs(?=\/|$)/),
+      "/api/cloudflare": workflowProxy(
+        cloudflareWorkerTarget,
+        /^\/api\/cloudflare(?=\/|$)/,
+      ),
+      "/api": workflowProxy(defaultWorkerTarget, /^\/api(?=\/|$)/),
     },
   },
 });
+
+function workflowProxy(target: string, prefix: RegExp) {
+  return {
+    target,
+    changeOrigin: true,
+    secure: false,
+    agent: portlessLocalAgent(target),
+    rewrite: (proxyPath: string) =>
+      proxyPath.replace(prefix, "/api/workflow") || "/api/workflow",
+  };
+}
 
 function derivePortlessServiceUrl(
   sourceUrl: string | undefined,

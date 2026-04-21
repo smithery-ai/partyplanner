@@ -1,0 +1,3 @@
+name = "hylo-cloudflare-worker-example"
+main = "src/index.ts"
+compatibility_date = "2026-04-19"

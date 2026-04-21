@@ -1,0 +1,25 @@
+{
+  "name": "workflow-cloudflare-worker-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "dev": "portless run --force --name cloudflare-worker.hylo node scripts/dev.mjs",
+    "dev:local": "HYLO_BACKEND_URL=http://localhost:8787 node scripts/dev.mjs",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workflow/core": "workspace:*",
+    "@workflow/runtime": "workspace:*",
+    "@workflow/server": "workspace:*",
+    "hono": "^4.12.14",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "~6.0.2",
+    "wrangler": "^4.53.0"
+  }
+}

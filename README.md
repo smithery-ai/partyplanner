@@ -21,6 +21,8 @@ Expected local URLs:
 - Backend Worker API: `https://api-worker.hylo.localhost`
 - Node/PGlite backend API: `https://api.hylo.localhost`
 - Next.js workflow server example: `https://nextjs.hylo.localhost`
+- Cloudflare Worker workflow server example:
+  `https://cloudflare-worker.hylo.localhost`
 
 To bypass Portless and use direct framework ports:
 
@@ -70,3 +72,5 @@ pnpm --filter workflow-nextjs-example dev
 
 `examples/nextjs` imports workflow atoms directly and points
 `createWorkflow` at `apps/backend-node` through `HYLO_BACKEND_URL`.
+`examples/cloudflare-worker` provides the same workflow-server shape inside a
+Cloudflare Worker.

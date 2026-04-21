@@ -36,7 +36,7 @@ export async function GET(request: Request): Promise<Response> {
     )}/interventions/${encodeURIComponent(target.interventionId)}`,
     url.origin,
   );
-  const response = await getWorkflowApp().fetch(
+  const response = await getWorkflowApp(request).fetch(
     new Request(workflowUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -674,6 +674,11 @@ async function errorMessageFromResponse(response: Response): Promise<string> {
 }
 
 function apiUrl(apiBaseUrl: string, path: string): string {
+  const suffixIndex = apiBaseUrl.search(/[?#]/);
+  if (suffixIndex !== -1) {
+    return `${apiBaseUrl.slice(0, suffixIndex).replace(/\/+$/, "")}${path}${apiBaseUrl.slice(suffixIndex)}`;
+  }
+
   return `${apiBaseUrl}${path}`;
 }
 
