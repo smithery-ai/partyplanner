@@ -9,7 +9,19 @@ if (!root) {
 }
 
 createRoot(root).render(
-  <WorkflowSinglePage
-    apiBaseUrl={import.meta.env.VITE_BACKEND_URL ?? "/api"}
-  />,
+  <WorkflowSinglePage apiBaseUrl={resolveBackendUrl()} />,
 );
+
+function resolveBackendUrl(): string {
+  const fromQuery = new URLSearchParams(window.location.search)
+    .get("backendUrl")
+    ?.trim();
+  if (fromQuery) return fromQuery;
+
+  const fromEnv = import.meta.env.VITE_BACKEND_URL?.trim();
+  if (fromEnv) return fromEnv;
+
+  throw new Error(
+    "Backend URL is required. Pass it as ?backendUrl=... in the page URL, or set VITE_BACKEND_URL in the client environment.",
+  );
+}
