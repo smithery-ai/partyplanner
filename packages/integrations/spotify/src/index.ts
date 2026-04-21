@@ -14,7 +14,5 @@ export {
   getCurrentUserPlaylists,
   getPlaylistTracks,
 } from "./atoms";
-export type { SpotifyAuth, SpotifyOAuthOptions } from "./oauth";
-export { spotifyOAuth } from "./oauth";
-export type { SpotifyRoutesOptions } from "./routes";
-export { createSpotifyRoutes } from "./routes";
+export type { SpotifyAuth } from "./oauth";
+export { spotify, spotifyAuthSchema, spotifyProvider } from "./oauth";

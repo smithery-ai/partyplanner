@@ -11,15 +11,15 @@ executed by the user's application instead of being uploaded to Hylo for
 execution. Run state, queue items, events, and run documents are stored by the
 backend configured with `HYLO_BACKEND_URL` while execution remains in Next.js.
 
-For local backend development without Wrangler or Cloudflare, run
-`apps/backend-node`; it uses PGlite under the hood and exposes the same runtime
-API that this example consumes.
+For local backend development, run `apps/backend`; it uses Wrangler with a local
+D1 database and exposes the runtime API that this example consumes.
 
 ## Run
 
 ```sh
 pnpm install
-pnpm --filter backend-node dev
+pnpm --filter backend db:migrate
+pnpm --filter backend dev
 pnpm --filter workflow-nextjs-example dev
 ```
 
@@ -34,42 +34,68 @@ or the `x-hylo-backend-url` header. If neither is present, the example uses
 `HYLO_BACKEND_URL`. If that is also missing, requests fail with an explicit
 configuration error.
 
-When run through Portless, the example derives the sibling backend URL from its
-own `PORTLESS_URL`, so worktree-prefixed URLs point at the matching
-`api.hylo` service. Set `HYLO_BACKEND_URL` explicitly to point at another
-compatible backend.
-
-## Spotify OAuth
-
-The `spotifyLogin` workflow demonstrates a dynamic intervention that opens
-Spotify OAuth, receives the callback, and resumes the waiting run. To run it
-against a real Spotify app, set:
-
-```sh
-SPOTIFY_CLIENT_ID=...
-SPOTIFY_CLIENT_SECRET=...
-OAUTH_STATE_SECRET=...
-NEXT_PUBLIC_APP_URL=https://nextjs.hylo.localhost
-```
-
-Register this redirect URI in the Spotify app settings:
+The same Hono app exposes generated API docs:
 
 ```txt
-https://nextjs.hylo.localhost/api/spotify/callback
+https://nextjs.hylo.localhost/api/workflow/openapi.json
+https://nextjs.hylo.localhost/api/workflow/swagger
 ```
 
-For a non-Portless local server, use the origin where Next.js is reachable, for
-example `http://127.0.0.1:3000/api/spotify/callback`.
+When run through Portless, the example derives the sibling backend URL from its
+own `PORTLESS_URL`, so worktree-prefixed URLs point at the matching
+`api-worker.hylo` service. Set `HYLO_BACKEND_URL` explicitly to point at
+another compatible backend.
+
+## OAuth (Spotify, Notion)
+
+OAuth runs through the Hylo broker (mounted at `${HYLO_BACKEND_URL}/oauth`),
+not the worker. Provider client credentials live on the backend; the worker
+only sees the resolved access token.
+
+Worker env (`examples/nextjs/.env.local`):
+
+```sh
+HYLO_BACKEND_URL=http://127.0.0.1:8788
+HYLO_API_KEY=local-dev-hylo-api-key   # must match backend
+```
+
+Backend Worker env:
+
+```sh
+HYLO_API_KEY=local-dev-hylo-api-key
+SPOTIFY_CLIENT_ID=...
+SPOTIFY_CLIENT_SECRET=...
+NOTION_CLIENT_ID=...
+NOTION_CLIENT_SECRET=...
+HYLO_BACKEND_PUBLIC_URL=https://api-worker.hylo.localhost
+```
+
+The provider credentials must be visible to `pnpm dev` or
+`pnpm --filter backend dev`, not only to the Next.js process. The backend dev
+script writes `apps/backend/.dev.vars` for Wrangler from that environment. If
+credentials are missing, `/oauth/:provider/start` returns `unknown_provider`.
+
+Register these redirect URIs in the provider dashboards:
+
+```txt
+http://127.0.0.1:8788/oauth/spotify/callback
+http://127.0.0.1:8788/oauth/notion/callback   # Notion requires HTTPS - use Portless / a tunnel
+```
+
+When `HYLO_API_KEY` is unset and `NODE_ENV !== "production"`, both worker and
+backend default to `local-dev-hylo-api-key` so the example just works without
+coordinating env.
 
 Useful requests:
 
 ```sh
-curl "https://nextjs.hylo.localhost/api/workflow/manifest?backendUrl=http://localhost:8787"
+curl "https://nextjs.hylo.localhost/api/workflow/manifest?backendUrl=http://127.0.0.1:8788"
 
-curl -X POST "https://nextjs.hylo.localhost/api/workflow/runs?backendUrl=http://localhost:8787" \
+curl https://nextjs.hylo.localhost/api/workflow/openapi.json
+
+curl -X POST "https://nextjs.hylo.localhost/api/workflow/runs?backendUrl=http://127.0.0.1:8788" \
   -H 'content-type: application/json' \
   -d '{"inputId":"incidentAlert","payload":{"service":"checkout-api","severity":"sev2"}}'
 ```
 
-The backend-node PGlite data directory defaults to `.hylo-backend-node` inside
-`apps/backend-node`. Set `HYLO_BACKEND_NODE_DATA_DIR` to override it.
+The local backend D1 database is stored under `apps/backend/.wrangler/state`.

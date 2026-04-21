@@ -176,8 +176,8 @@ export class LocalScheduler implements Scheduler {
     const workflow = this.workflowForRun(event.runId);
     const definition = await this.opts.loader.load(workflow);
     const stored = await this.opts.stateStore.load(event.runId);
-    const previous = stored?.state ?? makeEmptyRunState(event.runId);
-    const previousVersion = stored?.version ?? 0;
+    let previous = stored?.state ?? makeEmptyRunState(event.runId);
+    let previousVersion = stored?.version ?? 0;
 
     if (event.kind === "step") {
       await this.opts.events.publish({
@@ -188,15 +188,23 @@ export class LocalScheduler implements Scheduler {
       });
     }
 
+    if (event.kind === "step" && previous.trigger === undefined) {
+      const recovered = await this.recoverMissingTrigger({
+        workflow,
+        definition,
+        state: previous,
+        version: previousVersion,
+      });
+      previous = recovered.state;
+      previousVersion = recovered.version;
+    }
+
     const result = await this.opts.executor.execute({
       workflow,
       registry: definition.registry,
       event,
       state: previous,
     });
-
-    await this.publishStateDelta(event, previous, result.state);
-    await this.enqueueAndPublishMany(result.emitted);
 
     const saved = await this.opts.stateStore.save(
       event.runId,
@@ -205,7 +213,55 @@ export class LocalScheduler implements Scheduler {
     );
     if (!saved.ok) throw new Error(`Unable to save run: ${saved.reason}`);
 
+    await this.publishStateDelta(event, previous, result.state);
+    await this.enqueueAndPublishMany(result.emitted);
     await this.publishRunStatus(event.runId, result.state);
+  }
+
+  private async recoverMissingTrigger(request: {
+    workflow: WorkflowRef;
+    definition: WorkflowDefinition;
+    state: RunState;
+    version: number;
+  }): Promise<{ state: RunState; version: number }> {
+    const triggerEvent = await this.triggerInputFromQueue();
+    if (!triggerEvent) {
+      throw new Error("Cannot process step before trigger input is available");
+    }
+
+    const result = await this.opts.executor.execute({
+      workflow: request.workflow,
+      registry: request.definition.registry,
+      event: triggerEvent,
+      state: request.state,
+    });
+
+    const saved = await this.opts.stateStore.save(
+      triggerEvent.runId,
+      result.state,
+      request.version,
+    );
+    if (!saved.ok) throw new Error(`Unable to recover run: ${saved.reason}`);
+
+    await this.publishStateDelta(triggerEvent, request.state, result.state);
+    await this.enqueueAndPublishMany(result.emitted);
+    return { state: result.state, version: saved.version };
+  }
+
+  private async triggerInputFromQueue(): Promise<
+    Extract<QueueEvent, { kind: "input" }> | undefined
+  > {
+    const queue = await this.opts.queue.snapshot();
+    const items = [
+      ...queue.pending,
+      ...queue.running,
+      ...queue.completed,
+      ...queue.failed,
+    ]
+      .filter((item) => item.event.kind === "input")
+      .sort((a, b) => a.enqueuedAt - b.enqueuedAt);
+    const event = items[0]?.event;
+    return event?.kind === "input" ? event : undefined;
   }
 
   async snapshot(runId: string): Promise<RunSnapshot> {

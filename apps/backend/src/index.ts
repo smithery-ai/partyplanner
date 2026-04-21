@@ -1,14 +1,14 @@
-import { BackendDurableObject } from "./worker";
-
-export { BackendDurableObject };
+import { createWorkflowCloudflareDb } from "@workflow/cloudflare";
+import type { BackendAppEnv } from "./app";
+import { createApp } from "./app";
 
 export default {
   fetch(request, env) {
-    const id = env.BACKEND.idFromName("default");
-    return env.BACKEND.get(id).fetch(request);
+    const db = createWorkflowCloudflareDb(env.DB);
+    return createApp(db, env).fetch(request);
   },
 } satisfies ExportedHandler<Env>;
 
-export type Env = {
-  BACKEND: DurableObjectNamespace<BackendDurableObject>;
+export type Env = BackendAppEnv & {
+  DB: D1Database;
 };

@@ -1,5 +1,11 @@
-import { type Atom, atom, type Handle, type Input } from "@workflow/core";
-import { signOAuthState } from "@workflow/integrations-oauth";
+import {
+  type AuthorizeParamsContext,
+  createConnection,
+  defaultAuthorizeParams,
+  defaultTokenRequest,
+  type OAuthProviderSpec,
+  type TokenRequestContext,
+} from "@workflow/integrations-oauth";
 import { z } from "zod";
 
 export const NOTION_VERSION = "2022-06-28";
@@ -12,25 +18,21 @@ export type NotionAuth = {
   workspaceName?: string;
   workspaceIcon?: string;
   refreshToken?: string;
+  brokerSessionId?: string;
 };
 
-export type NotionOAuthOptions = {
-  login: Input<{ appBaseUrl: string }>;
-  clientId: Input<string>;
-  clientSecret: Input<string>;
-  stateSecret: Input<string>;
-  callbackPath?: string;
-  waitFor?: Handle<unknown>;
-  name?: string;
-};
-
-const callbackPayloadSchema = z.object({
-  code: z.string().optional(),
-  state: z.string(),
-  error: z.string().optional(),
+export const notionAuthSchema: z.ZodType<NotionAuth> = z.object({
+  accessToken: z.string(),
+  tokenType: z.string(),
+  botId: z.string(),
+  workspaceId: z.string().optional(),
+  workspaceName: z.string().optional(),
+  workspaceIcon: z.string().optional(),
+  refreshToken: z.string().optional(),
+  brokerSessionId: z.string().optional(),
 });
 
-const tokenResponseSchema = z
+const rawTokenSchema = z
   .object({
     access_token: z.string(),
     token_type: z.string(),
@@ -42,122 +44,67 @@ const tokenResponseSchema = z
   })
   .passthrough();
 
-export function notionOAuth(opts: NotionOAuthOptions): Atom<NotionAuth> {
-  const callbackPath =
-    opts.callbackPath ?? "/api/workflow/integrations/notion/callback";
+// Notion authorize URL needs `owner=user`. Otherwise standard OAuth 2.0.
+function buildAuthorizeParams(ctx: AuthorizeParamsContext): URLSearchParams {
+  const params = defaultAuthorizeParams(ctx);
+  params.set("owner", "user");
+  return params;
+}
 
-  return atom(
-    async (get, requestIntervention, context) => {
-      if (opts.waitFor) get(opts.waitFor);
-
-      const login = get.maybe(opts.login);
-      if (!login) return get.skip("No Notion login submitted");
-
-      const clientId = get(opts.clientId);
-      const clientSecret = get(opts.clientSecret);
-      const stateSecret = get(opts.stateSecret);
-      const redirectUri = new URL(callbackPath, login.appBaseUrl).toString();
-
-      const interventionKey = "oauth-callback";
-      const interventionId = context.interventionId(interventionKey);
-      const state = await signOAuthState(
-        { runId: context.runId, interventionId, redirectUri },
-        stateSecret,
-      );
-
-      const authorizeUrl = buildAuthorizeUrl({ clientId, redirectUri, state });
-
-      const callback = requestIntervention(
-        interventionKey,
-        callbackPayloadSchema,
-        {
-          title: "Connect Notion",
-          description: `Make sure ${redirectUri} is configured as a redirect URI in your Notion integration's developer settings (https://www.notion.so/profile/integrations).`,
-          action: {
-            type: "open_url",
-            url: authorizeUrl,
-            label: "Connect Notion",
-          },
-        },
-      );
-
-      if (callback.error) {
-        return get.skip(`Notion authorization failed: ${callback.error}`);
-      }
-      if (!callback.code) {
-        throw new Error("Notion OAuth callback did not include a code.");
-      }
-      if (callback.state !== state) {
-        throw new Error("Notion OAuth state mismatch.");
-      }
-
-      const token = await exchangeCode({
-        clientId,
-        clientSecret,
-        code: callback.code,
-        redirectUri,
-      });
-
-      return {
-        accessToken: token.access_token,
-        tokenType: token.token_type,
-        botId: token.bot_id,
-        workspaceId: token.workspace_id,
-        workspaceName: token.workspace_name ?? undefined,
-        workspaceIcon: token.workspace_icon ?? undefined,
-        refreshToken: token.refresh_token,
-      };
-    },
-    { name: opts.name ?? "notionOAuth" },
+// Notion token endpoint expects a JSON body, not form-encoded.
+function buildTokenRequest(ctx: TokenRequestContext): Request {
+  const fallback = defaultTokenRequest(
+    "https://api.notion.com/v1/oauth/token",
+    ctx,
   );
-}
-
-function buildAuthorizeUrl(args: {
-  clientId: string;
-  redirectUri: string;
-  state: string;
-}): string {
-  const url = new URL("https://api.notion.com/v1/oauth/authorize");
-  url.searchParams.set("client_id", args.clientId);
-  url.searchParams.set("redirect_uri", args.redirectUri);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("owner", "user");
-  url.searchParams.set("state", args.state);
-  return url.toString();
-}
-
-async function exchangeCode(args: {
-  clientId: string;
-  clientSecret: string;
-  code: string;
-  redirectUri: string;
-}): Promise<z.infer<typeof tokenResponseSchema>> {
-  const response = await fetch("https://api.notion.com/v1/oauth/token", {
+  return new Request(fallback.url, {
     method: "POST",
     headers: {
-      Authorization: `Basic ${base64(`${args.clientId}:${args.clientSecret}`)}`,
+      Authorization: `Basic ${base64(`${ctx.clientId}:${ctx.clientSecret}`)}`,
       "Content-Type": "application/json",
       "Notion-Version": NOTION_VERSION,
     },
     body: JSON.stringify({
       grant_type: "authorization_code",
-      code: args.code,
-      redirect_uri: args.redirectUri,
+      code: ctx.code,
+      redirect_uri: ctx.redirectUri,
     }),
   });
-  if (!response.ok) {
-    throw new Error(
-      `Notion token exchange failed (${response.status}): ${await preview(response)}`,
-    );
-  }
-  return tokenResponseSchema.parse(await response.json());
-}
-
-async function preview(response: Response): Promise<string> {
-  const text = await response.text();
-  return text.length > 240 ? `${text.slice(0, 237)}...` : text;
 }
 
 function base64(value: string): string {
   return btoa(unescape(encodeURIComponent(value)));
 }
+
+// Provider spec consumed by the OAuth broker on the backend. Worker code
+// does not import this — it's only used by `apps/backend-node` (or other
+// brokers) to register the curated Notion connector.
+export const notionProvider: OAuthProviderSpec<NotionAuth> = {
+  id: "notion",
+  authorizeUrl: "https://api.notion.com/v1/oauth/authorize",
+  tokenUrl: "https://api.notion.com/v1/oauth/token",
+  defaultScopes: [],
+  tokenSchema: notionAuthSchema,
+  buildAuthorizeParams,
+  buildTokenRequest,
+  shapeToken: (raw) => {
+    const parsed = rawTokenSchema.parse(raw);
+    return {
+      accessToken: parsed.access_token,
+      tokenType: parsed.token_type,
+      botId: parsed.bot_id,
+      workspaceId: parsed.workspace_id,
+      workspaceName: parsed.workspace_name ?? undefined,
+      workspaceIcon: parsed.workspace_icon ?? undefined,
+      refreshToken: parsed.refresh_token,
+    };
+  },
+};
+
+// Pre-built brokered connection. Import this in worker code:
+//   import { notion } from "@workflow/integrations-notion";
+export const notion = createConnection({
+  providerId: "notion",
+  tokenSchema: notionAuthSchema,
+  name: "notion",
+});

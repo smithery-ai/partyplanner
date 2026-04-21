@@ -1,5 +1,4 @@
-import { createNotionRoutes } from "@workflow/integrations-notion";
-import { createSpotifyRoutes } from "@workflow/integrations-spotify";
+import { createOAuthHandoffRoutes } from "@workflow/integrations-oauth";
 import { createWorkflow } from "@workflow/server";
 import "@/workflows";
 
@@ -22,14 +21,19 @@ export function getWorkflowApp(request?: Request): WorkflowApp {
     },
   });
 
-  const getStateSecret = () => process.env.OAUTH_STATE_SECRET;
+  // Handoff routes for Hylo-curated OAuth connections (spotify, notion).
+  // The broker (mounted on the backend) redirects browsers to these paths
+  // with a one-time `handoff` code; the route exchanges it for the token
+  // and resumes the workflow run.
   app.route(
-    "/api/workflow/integrations/spotify",
-    createSpotifyRoutes({ workflowApp: app, getStateSecret }),
-  );
-  app.route(
-    "/api/workflow/integrations/notion",
-    createNotionRoutes({ workflowApp: app, getStateSecret }),
+    "/api/workflow/integrations",
+    createOAuthHandoffRoutes({
+      workflowApp: app,
+      workflowBasePath: "/api/workflow",
+      brokerBaseUrl: `${backendApi.replace(/\/+$/, "")}/oauth`,
+      getAppToken: () => process.env.HYLO_API_KEY,
+      providers: ["spotify", "notion"],
+    }),
   );
 
   workflowApps.set(backendApi, app);
