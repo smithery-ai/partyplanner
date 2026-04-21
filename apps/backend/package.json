@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "portless run --force --name api-worker.hylo sh -c 'wrangler dev --ip 127.0.0.1 --port \"${PORT:-8788}\"'",
+    "dev": "portless run --force --name api-worker.hylo node scripts/dev.mjs",
+    "dev:local": "node scripts/dev.mjs",
     "db:generate": "pnpm -C ../../packages/cloudflare db:generate",
     "db:migrate": "pnpm -C ../../packages/cloudflare db:migrate",
     "db:migrate:remote": "pnpm -C ../../packages/cloudflare db:migrate:remote",

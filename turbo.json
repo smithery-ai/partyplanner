@@ -2,6 +2,9 @@
   "$schema": "https://turbo.build/schema.json",
   "globalPassThroughEnv": [
     "HYLO_BACKEND_NODE_DATA_DIR",
+    "HYLO_API_KEY",
+    "HYLO_BACKEND_PUBLIC_URL",
+    "HYLO_BROKER_BASE_URL",
     "HYLO_BACKEND_URL",
     "PORTLESS",
     "PORTLESS_*",

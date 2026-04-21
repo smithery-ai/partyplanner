@@ -29,17 +29,15 @@ The health route is mounted at `/health`. The queue/state API is mounted at
 `/runtime`.
 
 The curated OAuth broker is mounted at `/oauth`. A provider is available only
-when its client ID and client secret are configured in the Worker environment:
+when its client ID and client secret are configured. `pnpm dev` writes
+`apps/backend/.dev.vars` for Wrangler from the current shell or Infisical env,
+so set `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` or
+`NOTION_CLIENT_ID`/`NOTION_CLIENT_SECRET` before starting dev. You can also
+edit `apps/backend/.dev.vars` directly for local-only values.
 
-```sh
-cp apps/backend/.dev.vars.example apps/backend/.dev.vars
-```
-
-Then fill in `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` or
-`NOTION_CLIENT_ID`/`NOTION_CLIENT_SECRET`. Set `HYLO_API_KEY` to require a
-matching bearer token from workflow runtimes. Set `HYLO_BROKER_BASE_URL`, or
-`HYLO_BACKEND_PUBLIC_URL`, in production so provider redirect URIs use the
-externally reachable backend URL.
+Set `HYLO_API_KEY` to require a matching bearer token from workflow runtimes.
+Set `HYLO_BROKER_BASE_URL`, or `HYLO_BACKEND_PUBLIC_URL`, in production so
+provider redirect URIs use the externally reachable backend URL.
 
 Local redirect URIs:
 

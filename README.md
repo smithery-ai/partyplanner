@@ -32,7 +32,7 @@ PORTLESS=0 pnpm dev
 
 Hylo is now shaped as a backend API plus workflow server routes:
 
-- `apps/backend` is the Cloudflare Durable Object backend API.
+- `apps/backend` is the Cloudflare Worker/D1 backend API.
 - `apps/backend-node` is the local Node/PGlite backend API.
 - Workflow code runs in user-owned server routes, such as `examples/nextjs`, or
   in Cloudflare Worker routes that import the workflow atoms directly.
@@ -64,9 +64,10 @@ The workflow server route owns:
 The Next.js example is the primary local integration:
 
 ```sh
-pnpm --filter backend-node dev
+pnpm --filter backend db:migrate
+pnpm --filter backend dev
 pnpm --filter workflow-nextjs-example dev
 ```
 
 `examples/nextjs` imports workflow atoms directly and points
-`createWorkflow` at `apps/backend-node` through `HYLO_BACKEND_URL`.
+`createWorkflow` at `apps/backend` through `HYLO_BACKEND_URL`.

@@ -47,11 +47,9 @@ HYLO_BACKEND_URL=http://127.0.0.1:8788
 HYLO_API_KEY=local-dev-hylo-api-key   # must match backend
 ```
 
-Backend Worker env (`apps/backend/.dev.vars`):
+Backend Worker env:
 
 ```sh
-cp apps/backend/.dev.vars.example apps/backend/.dev.vars
-
 HYLO_API_KEY=local-dev-hylo-api-key
 SPOTIFY_CLIENT_ID=...
 SPOTIFY_CLIENT_SECRET=...
@@ -60,9 +58,10 @@ NOTION_CLIENT_SECRET=...
 HYLO_BACKEND_PUBLIC_URL=https://api-worker.hylo.localhost
 ```
 
-The provider credentials must be visible to `pnpm --filter backend dev`, not
-only to the Next.js process. If they are missing from the backend Worker env,
-`/oauth/:provider/start` returns `unknown_provider`.
+The provider credentials must be visible to `pnpm dev` or
+`pnpm --filter backend dev`, not only to the Next.js process. The backend dev
+script writes `apps/backend/.dev.vars` for Wrangler from that environment. If
+credentials are missing, `/oauth/:provider/start` returns `unknown_provider`.
 
 Register these redirect URIs in the provider dashboards:
 
