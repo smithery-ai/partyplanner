@@ -15,8 +15,9 @@ export type OAuthHandoffRoutesOptions = {
   // Base URL of the broker server (e.g. `${HYLO_BACKEND_URL}/oauth`).
   // Per-provider exchange URL is `${brokerBaseUrl}/${providerId}/exchange`.
   brokerBaseUrl: string;
-  // Static API key the runtime presents to the broker.
-  getAppToken: () => string | undefined;
+  // Static API key the runtime presents to the broker. In non-production
+  // environments this falls back to the package dev default when omitted.
+  getAppToken?: () => string | undefined;
   // Provider IDs to mount handoff routes for. One GET `/${id}/handoff` per id.
   providers: string[];
   // Title used by per-provider success/error pages. Looked up by provider id.
@@ -94,7 +95,7 @@ export function createOAuthHandoffRoutes(
         return htmlResponse(errorTitle, "Missing handoff code.", 400);
       }
 
-      const appToken = opts.getAppToken();
+      const appToken = resolveAppToken(opts.getAppToken?.());
       if (!appToken) {
         return htmlResponse(
           errorTitle,
@@ -162,6 +163,25 @@ export function createOAuthHandoffRoutes(
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+const DEV_API_KEY = "local-dev-hylo-api-key";
+
+function resolveAppToken(explicit: string | undefined): string | undefined {
+  if (explicit?.trim()) return explicit;
+  const envValue = envVar("HYLO_API_KEY");
+  if (envValue) return envValue;
+  if (envVar("NODE_ENV") === "production") return undefined;
+  return DEV_API_KEY;
+}
+
+function envVar(name: string): string | undefined {
+  const env = (
+    globalThis as {
+      process?: { env?: Record<string, string | undefined> };
+    }
+  ).process?.env;
+  return env?.[name];
 }
 
 function buildInterventionUrl(

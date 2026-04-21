@@ -2,11 +2,15 @@ import { spawn } from "node:child_process";
 
 const backendUrl =
   process.env.HYLO_BACKEND_URL ??
-  derivePortlessServiceUrl(process.env.PORTLESS_URL, "nextjs.hylo", "api.hylo");
+  derivePortlessServiceUrl(
+    process.env.PORTLESS_URL,
+    "nextjs.hylo",
+    "api-worker.hylo",
+  );
 
 if (!backendUrl) {
   console.error(
-    "HYLO_BACKEND_URL is required. Start backend-node and set HYLO_BACKEND_URL, or run through portless.",
+    "HYLO_BACKEND_URL is required. Start backend and set HYLO_BACKEND_URL, or run through portless.",
   );
   process.exit(1);
 }

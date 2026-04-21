@@ -179,7 +179,7 @@ export function createConnection<Token>(
       });
       if (!startResp.ok) {
         throw new Error(
-          `Broker /${opts.providerId}/start failed (${startResp.status}): ${await startResp.text()}`,
+          `Broker /${opts.providerId}/start failed (${startResp.status}): ${await responseErrorMessage(startResp)}`,
         );
       }
       const { authorizeUrl } = (await startResp.json()) as {
@@ -223,6 +223,18 @@ export type { Input };
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
+}
+
+async function responseErrorMessage(response: Response): Promise<string> {
+  const text = await response.text();
+  try {
+    const body = JSON.parse(text) as { message?: unknown; error?: unknown };
+    if (typeof body.message === "string") return body.message;
+    if (typeof body.error === "string") return body.error;
+  } catch {
+    // Fall through to the raw response text.
+  }
+  return text;
 }
 
 function capitalize(value: string): string {

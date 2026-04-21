@@ -11,15 +11,15 @@ executed by the user's application instead of being uploaded to Hylo for
 execution. Run state, queue items, events, and run documents are stored by the
 backend configured with `HYLO_BACKEND_URL` while execution remains in Next.js.
 
-For local backend development without Wrangler or Cloudflare, run
-`apps/backend-node`; it uses PGlite under the hood and exposes the same runtime
-API that this example consumes.
+For local backend development, run `apps/backend`; it uses Wrangler with a local
+D1 database and exposes the runtime API that this example consumes.
 
 ## Run
 
 ```sh
 pnpm install
-pnpm --filter backend-node dev
+pnpm --filter backend db:migrate
+pnpm --filter backend dev
 pnpm --filter workflow-nextjs-example dev
 ```
 
@@ -38,8 +38,8 @@ https://nextjs.hylo.localhost/api/workflow/swagger
 
 When run through Portless, the example derives the sibling backend URL from its
 own `PORTLESS_URL`, so worktree-prefixed URLs point at the matching
-`api.hylo` service. Set `HYLO_BACKEND_URL` explicitly to point at another
-compatible backend.
+`api-worker.hylo` service. Set `HYLO_BACKEND_URL` explicitly to point at
+another compatible backend.
 
 ## OAuth (Spotify, Notion)
 
@@ -50,11 +50,11 @@ only sees the resolved access token.
 Worker env (`examples/nextjs/.env.local`):
 
 ```sh
-HYLO_BACKEND_URL=http://localhost:8787
-HYLO_API_KEY=local-dev-hylo-api-key   # must match backend-node
+HYLO_BACKEND_URL=http://127.0.0.1:8788
+HYLO_API_KEY=local-dev-hylo-api-key   # must match backend
 ```
 
-Backend env (`apps/backend-node`):
+Backend Worker env:
 
 ```sh
 HYLO_API_KEY=local-dev-hylo-api-key
@@ -62,19 +62,23 @@ SPOTIFY_CLIENT_ID=...
 SPOTIFY_CLIENT_SECRET=...
 NOTION_CLIENT_ID=...
 NOTION_CLIENT_SECRET=...
-# In production also set HYLO_BACKEND_PUBLIC_URL so the broker registers
-# a stable, externally-reachable redirect URI.
+HYLO_BACKEND_PUBLIC_URL=https://api-worker.hylo.localhost
 ```
+
+The provider credentials must be visible to `pnpm dev` or
+`pnpm --filter backend dev`, not only to the Next.js process. The backend dev
+script writes `apps/backend/.dev.vars` for Wrangler from that environment. If
+credentials are missing, `/oauth/:provider/start` returns `unknown_provider`.
 
 Register these redirect URIs in the provider dashboards:
 
 ```txt
-http://localhost:8787/oauth/spotify/callback
-http://localhost:8787/oauth/notion/callback   # Notion requires HTTPS — use Portless / a tunnel
+http://127.0.0.1:8788/oauth/spotify/callback
+http://127.0.0.1:8788/oauth/notion/callback   # Notion requires HTTPS - use Portless / a tunnel
 ```
 
 When `HYLO_API_KEY` is unset and `NODE_ENV !== "production"`, both worker and
-backend-node default to `local-dev-hylo-api-key` so the example just works
+backend default to `local-dev-hylo-api-key` so the example just works
 without coordinating env.
 
 Useful requests:
@@ -89,5 +93,4 @@ curl -X POST https://nextjs.hylo.localhost/api/workflow/runs \
   -d '{"inputId":"lead","payload":{"name":"Ada","plan":"enterprise"}}'
 ```
 
-The backend-node PGlite data directory defaults to `.hylo-backend-node` inside
-`apps/backend-node`. Set `HYLO_BACKEND_NODE_DATA_DIR` to override it.
+The local backend D1 database is stored under `apps/backend/.wrangler/state`.

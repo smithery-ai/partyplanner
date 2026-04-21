@@ -21,7 +21,7 @@ export function getWorkflowApp(): WorkflowApp {
   });
 
   // Handoff routes for Hylo-curated OAuth connections (spotify, notion).
-  // The broker (mounted on backend-node) redirects browsers to these paths
+  // The broker (mounted on the backend) redirects browsers to these paths
   // with a one-time `handoff` code; the route exchanges it for the token
   // and resumes the workflow run.
   app.route(
@@ -43,7 +43,7 @@ function backendApiUrl(): string {
   const raw = process.env.HYLO_BACKEND_URL?.trim();
   if (!raw) {
     throw new Error(
-      "HYLO_BACKEND_URL is required. Start backend-node locally and set HYLO_BACKEND_URL=http://localhost:8787.",
+      "HYLO_BACKEND_URL is required. Start backend locally and set HYLO_BACKEND_URL=http://127.0.0.1:8788.",
     );
   }
   return raw;

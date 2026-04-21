@@ -22,7 +22,10 @@ const workflow: WorkflowRef = {
   version: "v1",
 };
 
-function makeScheduler(secretValues: Record<string, string> = {}) {
+function makeScheduler(
+  secretValues: Record<string, string> = {},
+  queue: MemoryWorkQueue = new MemoryWorkQueue(),
+) {
   const loader = new StaticWorkflowLoader([
     {
       ref: workflow,
@@ -30,7 +33,6 @@ function makeScheduler(secretValues: Record<string, string> = {}) {
     },
   ]);
   const stateStore = new MemoryStateStore();
-  const queue = new MemoryWorkQueue();
   const events = new MemoryEventSink();
   const scheduler = new LocalScheduler({
     loader,
@@ -43,7 +45,7 @@ function makeScheduler(secretValues: Record<string, string> = {}) {
       },
     }),
   });
-  return { scheduler, queue, events };
+  return { scheduler, stateStore, queue, events };
 }
 
 function queueNodeId(event: QueueEvent): string {
@@ -82,6 +84,96 @@ describe("LocalScheduler", () => {
       "run_started",
       "node_queued",
     ]);
+  });
+
+  it("saves processed input state before enqueueing emitted follow-up work", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+
+    atom(
+      (get) => {
+        const initial = get(seed);
+        return `hello ${initial.name}`;
+      },
+      { name: "greet" },
+    );
+
+    class FailingFollowupQueue extends MemoryWorkQueue {
+      async enqueueMany(events: QueueEvent[]): Promise<void> {
+        if (events.some((event) => event.kind === "step")) {
+          throw new Error("queue write failed");
+        }
+        return super.enqueueMany(events);
+      }
+    }
+
+    const { scheduler, stateStore } = makeScheduler(
+      {},
+      new FailingFollowupQueue(),
+    );
+    await scheduler.startRun({
+      workflow,
+      runId: "run-queue-failure",
+      input: {
+        inputId: "seed",
+        payload: { name: "Ada" },
+        eventId: "evt-seed",
+      },
+    });
+
+    await expect(scheduler.processNext()).rejects.toThrow("queue write failed");
+
+    const stored = await stateStore.load("run-queue-failure");
+    expect(stored?.state.trigger).toBe("seed");
+    expect(stored?.state.inputs.seed).toEqual({ name: "Ada" });
+    expect(stored?.state.nodes.seed?.status).toBe("resolved");
+    expect(stored?.state.processedEventIds["evt-seed"]).toBe(true);
+  });
+
+  it("recovers a missing trigger from queue history before processing steps", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+
+    atom(
+      (get) => {
+        const initial = get(seed);
+        return `hello ${initial.name}`;
+      },
+      { name: "greet" },
+    );
+
+    const { scheduler, queue } = makeScheduler();
+    await scheduler.startRun({
+      workflow,
+      runId: "run-missing-trigger",
+    });
+    await queue.enqueue({
+      kind: "input",
+      eventId: "evt-seed",
+      runId: "run-missing-trigger",
+      inputId: "seed",
+      payload: { name: "Ada" },
+    });
+    await queue.fail("evt-seed", new Error("failed before state save"));
+    await queue.enqueue({
+      kind: "step",
+      eventId: "evt-greet",
+      runId: "run-missing-trigger",
+      stepId: "greet",
+    });
+
+    await scheduler.processNext();
+    let snapshot = await scheduler.snapshot("run-missing-trigger");
+
+    expect(snapshot.state.trigger).toBe("seed");
+    expect(snapshot.nodes.find((node) => node.id === "seed")?.status).toBe(
+      "resolved",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "greet")?.value).toBe(
+      "hello Ada",
+    );
+
+    await scheduler.drain();
+    snapshot = await scheduler.snapshot("run-missing-trigger");
+    expect(snapshot.status).toBe("completed");
   });
 
   it("injects bound secrets without storing plaintext in run state", async () => {

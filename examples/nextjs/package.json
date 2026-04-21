@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "portless run --force --name nextjs.hylo node scripts/dev.mjs",
-    "dev:local": "HYLO_BACKEND_URL=http://localhost:8787 NEXT_PUBLIC_APP_URL=http://localhost:3000 node scripts/dev.mjs",
+    "dev:local": "HYLO_BACKEND_URL=http://127.0.0.1:8788 NEXT_PUBLIC_APP_URL=http://localhost:3000 node scripts/dev.mjs",
     "build": "next build",
     "typecheck": "tsc --noEmit"
   },
