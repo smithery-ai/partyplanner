@@ -1,0 +1,43 @@
+{
+  "name": "@workflow/cloudflare",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./schema": {
+      "import": "./dist/schema.js",
+      "types": "./dist/schema.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "pnpm run build && tsx scripts/db-migrate.ts",
+    "db:studio": "pnpm run build && tsx scripts/db-studio.ts",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@workflow/core": "workspace:*",
+    "@workflow/oauth-broker": "workspace:*",
+    "@workflow/runtime": "workspace:*",
+    "@workflow/server": "workspace:*",
+    "drizzle-orm": "^0.45.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "@libsql/client": "^0.17.2",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  },
+  "peerDependencies": {
+    "drizzle-orm": "^0.45.1"
+  }
+}

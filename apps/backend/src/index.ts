@@ -1,3 +1,4 @@
+import type { BackendAppEnv } from "./app";
 import { BackendDurableObject } from "./worker";
 
 export { BackendDurableObject };
@@ -9,6 +10,6 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-export type Env = {
+export type Env = BackendAppEnv & {
   BACKEND: DurableObjectNamespace<BackendDurableObject>;
 };
