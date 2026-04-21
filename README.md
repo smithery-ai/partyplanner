@@ -1,77 +1,62 @@
 # Hylo
 
-## Local development
+Hylo runs workflow servers against a shared backend API. The workflow server
+owns user code and executes workflow atoms; the backend API stores run state,
+queue items, events, OAuth handoffs, and run documents.
 
-Install dependencies and start the Turbo dev graph:
+The `hylo` command is the entrypoint for running those servers. It launches your
+process with `HYLO_BACKEND_URL` set to the selected backend:
+
+```sh
+hylo dev -- <server command>
+```
+
+Everything after `--` is your server bootstrap command. Package `dev` scripts
+in this repo are thin wrappers around that shape.
+
+## Quickstart
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-The dev servers run through the repository-local `portless` dependency, so no
-global install is required. On first run, Portless may ask for `sudo` so it can
-bind the HTTPS proxy on port 443 and trust its local development certificate.
-Each app binds to the free port assigned by Portless, so parallel workspaces do
-not collide on fixed framework ports.
+The root `dev` script runs the client package's `hylo dev -- vite` command.
+Hylo starts the default local backend, launches Vite, and injects
+`HYLO_BACKEND_URL`.
 
-Expected local URLs:
+## Launcher Commands
 
-- Client: `https://hylo.localhost`
-- Backend Worker API: `https://api-worker.hylo.localhost`
-- Node/PGlite backend API: `https://api.hylo.localhost`
-- Next.js workflow server example: `https://nextjs.hylo.localhost`
-- Cloudflare Worker workflow server example:
-  `https://cloudflare-worker.hylo.localhost`
+- `hylo dev -- <dev command>` starts a local dev server and injects
+  `HYLO_BACKEND_URL`. If a package selects a named local backend, Hylo starts
+  that backend too.
+- `hylo run -- <server command>` launches a long-running server against an
+  already-running or deployed backend.
+- `hylo exec -- <one-off command>` runs migrations and other one-off tasks with
+  the same backend environment.
 
-To bypass Portless and use direct framework ports:
+Use `--backend node`, `--backend cloudflare`, or `--backend-url https://...`
+when you need to override the package default. `HYLO_BACKEND` and
+`HYLO_BACKEND_URL` provide the same override through environment variables.
 
-```sh
-PORTLESS=0 pnpm dev
-```
+## Backends
+
+- `node`: `apps/backend-node`, a Node/Hono backend backed by PGlite.
+- `cloudflare`: `apps/backend-cloudflare`, a Cloudflare Worker backed by D1.
+
+Backend apps declare their Hylo backend URL in `package.json` under
+`hylo.backend.url`. Apps and examples declare their local dev URL under
+`hylo.dev.url`.
 
 ## Architecture
 
-Hylo is now shaped as a backend API plus workflow server routes:
+Hylo is a backend API plus user-owned workflow server routes:
 
-- `apps/backend` is the Cloudflare Worker/D1 backend API.
-- `apps/backend-node` is the local Node/PGlite backend API.
-- Workflow code runs in user-owned server routes, such as `examples/nextjs`, or
-  in Cloudflare Worker routes that import the workflow atoms directly.
-- Workflow server routes pass a `backendApi` URL to `createWorkflow`.
-  That backend API owns run state, queue items, events, and run documents.
+- Workflow server routes import workflow code, execute atoms, validate inputs,
+  and resolve secrets.
+- The backend API persists run state, queue items, events, OAuth handoffs, and
+  run documents.
+- Workflow source is not uploaded to the backend API.
 
-Workflow source is not uploaded to the backend API. Browser clients and backend
-services should not evaluate arbitrary workflow code. The server route that owns
-the workflow code is responsible for importing atoms, executing queue events,
-and committing state back through the backend API protocol.
-
-## Runtime Protocol
-
-The shared backend API stores:
-
-- optimistic run state versions
-- queue items with claim, complete, and fail operations
-- run events
-- published run documents and summaries
-
-The workflow server route owns:
-
-- workflow registration/manifest for its route
-- atom execution
-- input validation
-- result publication
-- any secret resolution policy needed by that workflow
-
-The Next.js example is the primary local integration:
-
-```sh
-pnpm --filter backend db:migrate
-pnpm --filter backend dev
-pnpm --filter workflow-nextjs-example dev
-```
-
-`examples/nextjs` imports workflow atoms directly and points `createWorkflow` at
-`apps/backend` through `HYLO_BACKEND_URL`.
-`examples/cloudflare-worker` provides the same workflow-server shape inside a
-Cloudflare Worker.
+`examples/nextjs` and `examples/cloudflare-worker` are workflow servers. They
+run workflow code and talk to whichever backend Hylo selected.

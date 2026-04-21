@@ -2,15 +2,13 @@
   "$schema": "https://turbo.build/schema.json",
   "globalPassThroughEnv": [
     "HYLO_BACKEND_NODE_DATA_DIR",
+    "HYLO_BACKEND",
     "HYLO_API_KEY",
     "HYLO_BACKEND_PUBLIC_URL",
     "HYLO_BROKER_BASE_URL",
     "HYLO_BACKEND_URL",
     "PORTLESS",
     "PORTLESS_*",
-    "VITE_BACKEND_URL",
-    "VITE_BACKEND_NODE_URL",
-    "VITE_BACKEND_WORKER_URL",
     "VITE_CLOUDFLARE_WORKER_URL",
     "VITE_HYLO_BACKEND_URL",
     "VITE_NEXTJS_WORKER_URL",
@@ -34,11 +32,6 @@
       "dependsOn": ["^build"]
     },
     "dev": {
-      "dependsOn": ["^build"],
-      "cache": false,
-      "persistent": true
-    },
-    "dev:local": {
       "dependsOn": ["^build"],
       "cache": false,
       "persistent": true

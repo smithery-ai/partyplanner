@@ -7,7 +7,6 @@ import { defineConfig } from "vite";
 
 const nextjsTarget =
   process.env.VITE_NEXTJS_WORKER_URL ??
-  process.env.VITE_BACKEND_URL ??
   derivePortlessServiceUrl(process.env.PORTLESS_URL, "hylo", "nextjs.hylo") ??
   "http://localhost:3000";
 
@@ -25,27 +24,12 @@ const defaultWorkerTarget =
     ? cloudflareWorkerTarget
     : nextjsTarget;
 
-const backendNodeUrl =
-  process.env.VITE_BACKEND_NODE_URL ??
-  derivePortlessServiceUrl(process.env.PORTLESS_URL, "hylo", "api.hylo") ??
-  "http://localhost:8787";
-
-const backendWorkerUrl =
-  process.env.VITE_BACKEND_WORKER_URL ??
-  derivePortlessServiceUrl(
-    process.env.PORTLESS_URL,
-    "hylo",
-    "api-worker.hylo",
-  ) ??
-  "http://localhost:8788";
-
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
-    "import.meta.env.VITE_RESOLVED_BACKEND_NODE_URL":
-      JSON.stringify(backendNodeUrl),
-    "import.meta.env.VITE_RESOLVED_BACKEND_WORKER_URL":
-      JSON.stringify(backendWorkerUrl),
+    "import.meta.env.VITE_HYLO_BACKEND_URL": JSON.stringify(
+      process.env.VITE_HYLO_BACKEND_URL ?? process.env.HYLO_BACKEND_URL ?? "",
+    ),
   },
   resolve: {
     alias: {

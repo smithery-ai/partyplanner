@@ -1,8 +1,9 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
+import { localBackendPort } from "./config";
 
 const app = createApp();
-const port = Number(process.env.PORT ?? 8787);
+const port = Number(process.env.PORT ?? localBackendPort());
 
 serve(
   {

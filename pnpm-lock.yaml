@@ -24,7 +24,7 @@ importers:
         specifier: ^2.5.0
         version: 2.9.6
 
-  apps/backend:
+  apps/backend-cloudflare:
     dependencies:
       '@workflow/cloudflare':
         specifier: workspace:*
@@ -57,6 +57,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.0.0
         version: 4.20260418.1
+      hylo:
+        specifier: workspace:*
+        version: link:../..
       typescript:
         specifier: ~6.0.2
         version: 6.0.3
@@ -97,6 +100,9 @@ importers:
       '@types/node':
         specifier: ^24.12.2
         version: 24.12.2
+      hylo:
+        specifier: workspace:*
+        version: link:../..
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -188,6 +194,9 @@ importers:
       globals:
         specifier: ^17.4.0
         version: 17.5.0
+      hylo:
+        specifier: workspace:*
+        version: link:../..
       tailwindcss:
         specifier: ^4.2.2
         version: 4.2.2
@@ -222,6 +231,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.0.0
         version: 4.20260418.1
+      hylo:
+        specifier: workspace:*
+        version: link:../..
       typescript:
         specifier: ~6.0.2
         version: 6.0.3
@@ -277,6 +289,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
+      hylo:
+        specifier: workspace:*
+        version: link:../..
       postcss:
         specifier: ^8.5.6
         version: 8.5.10
@@ -386,7 +401,7 @@ importers:
         version: 19.2.5(react@19.2.5)
       shadcn:
         specifier: ^4.3.0
-        version: 4.3.0(@types/node@24.12.2)(typescript@6.0.3)
+        version: 4.3.0(typescript@6.0.3)
       tailwind-merge:
         specifier: ^3.5.0
         version: 3.5.0
@@ -7418,6 +7433,31 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
+  msw@2.13.4(typescript@6.0.3):
+    dependencies:
+      '@inquirer/confirm': 6.0.11(@types/node@24.12.2)
+      '@mswjs/interceptors': 0.41.3
+      '@open-draft/deferred-promise': 3.0.0
+      '@types/statuses': 2.0.6
+      cookie: 1.1.1
+      graphql: 16.13.2
+      headers-polyfill: 5.0.1
+      is-node-process: 1.2.0
+      outvariant: 1.4.3
+      path-to-regexp: 6.3.0
+      picocolors: 1.1.1
+      rettime: 0.11.7
+      statuses: 2.0.2
+      strict-event-emitter: 0.5.1
+      tough-cookie: 6.0.1
+      type-fest: 5.6.0
+      until-async: 3.0.2
+      yargs: 17.7.2
+    optionalDependencies:
+      typescript: 6.0.3
+    transitivePeerDependencies:
+      - '@types/node'
+
   mute-stream@3.0.0: {}
 
   nanoid@3.3.11: {}
@@ -7845,6 +7885,49 @@ snapshots:
       https-proxy-agent: 7.0.6
       kleur: 4.1.5
       msw: 2.13.4(@types/node@24.12.2)(typescript@6.0.3)
+      node-fetch: 3.3.2
+      open: 11.0.0
+      ora: 8.2.0
+      postcss: 8.5.10
+      postcss-selector-parser: 7.1.1
+      prompts: 2.4.2
+      recast: 0.23.11
+      stringify-object: 5.0.0
+      tailwind-merge: 3.5.0
+      ts-morph: 26.0.0
+      tsconfig-paths: 4.2.0
+      validate-npm-package-name: 7.0.2
+      zod: 3.25.76
+      zod-to-json-schema: 3.25.2(zod@3.25.76)
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - '@types/node'
+      - babel-plugin-macros
+      - supports-color
+      - typescript
+
+  shadcn@4.3.0(typescript@6.0.3):
+    dependencies:
+      '@babel/core': 7.29.0
+      '@babel/parser': 7.29.2
+      '@babel/plugin-transform-typescript': 7.28.6(@babel/core@7.29.0)
+      '@babel/preset-typescript': 7.28.5(@babel/core@7.29.0)
+      '@dotenvx/dotenvx': 1.61.1
+      '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
+      '@types/validate-npm-package-name': 4.0.2
+      browserslist: 4.28.2
+      commander: 14.0.3
+      cosmiconfig: 9.0.1(typescript@6.0.3)
+      dedent: 1.7.2
+      deepmerge: 4.3.1
+      diff: 8.0.4
+      execa: 9.6.1
+      fast-glob: 3.3.3
+      fs-extra: 11.3.4
+      fuzzysort: 3.1.0
+      https-proxy-agent: 7.0.6
+      kleur: 4.1.5
+      msw: 2.13.4(typescript@6.0.3)
       node-fetch: 3.3.2
       open: 11.0.0
       ora: 8.2.0

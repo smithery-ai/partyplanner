@@ -486,7 +486,7 @@ Nice to have:
 
 Do not add Cloudflare concepts to `packages/core`.
 
-## What Changes In `apps/backend`
+## What Changes In Backend Apps
 
 The backend should become optional.
 

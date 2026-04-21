@@ -1,11 +1,15 @@
 {
   "name": "hylo",
   "private": true,
+  "bin": {
+    "hylo": "./scripts/hylo.mjs"
+  },
   "packageManager": "pnpm@10.26.2",
   "scripts": {
     "build": "turbo run build",
     "check": "biome ci --error-on-warnings .",
-    "dev": "sh scripts/dev-with-portless.sh",
+    "hylo": "node scripts/hylo.mjs",
+    "dev": "pnpm --filter client dev",
     "fmt": "biome check --write --unsafe .",
     "prepare": "husky",
     "test": "turbo run test"

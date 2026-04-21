@@ -3,10 +3,15 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "hylo": {
+    "dev": {
+      "url": "https://cloudflare-worker.hylo.localhost",
+      "backend": "node"
+    }
+  },
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "portless run --force --name cloudflare-worker.hylo node scripts/dev.mjs",
-    "dev:local": "HYLO_BACKEND_URL=http://localhost:8787 node scripts/dev.mjs",
+    "dev": "hylo dev -- wrangler dev --ip 127.0.0.1 --port '$PORT'",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit"
   },
@@ -19,6 +24,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
+    "hylo": "workspace:*",
     "typescript": "~6.0.2",
     "wrangler": "^4.53.0"
   }
