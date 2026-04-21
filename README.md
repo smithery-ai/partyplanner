@@ -226,17 +226,18 @@ Local dev URLs:
 
 ### Hylo CLI
 
-Hylo separates three choices:
+Hylo wraps the command after `--` and gives it the backend environment it needs.
+There are three knobs:
 
-- Mode: `dev`, `run`, or `exec`
-- Backend: `node`, `cloudflare`, or a deployed backend URL
-- Workflow: `nextjs` or `cloudflare-worker` for local dev
+- Mode: `dev`, `run`, or `exec`.
+- Backend: which Hylo backend API to use.
+- Workflow: which workflow server this repo should launch with the client.
 
 Common usage:
 
 ```sh
 pnpm dev
-pnpm hylo dev --backend cloudflare --workflow nextjs -- <dev command>
+pnpm hylo dev --backend cloudflare --workflow <workflow> -- <dev command>
 pnpm hylo run --backend-url https://api.example.com -- <server command>
 pnpm hylo exec --backend cloudflare -- <one-off command>
 ```
