@@ -5,7 +5,10 @@ import {
   createPostgresWorkflowQueue,
   createPostgresWorkflowStateStore,
 } from "@workflow/postgres";
-import { createRemoteRuntimeServer } from "@workflow/remote";
+import {
+  createRemoteRuntimeServer,
+  mountRemoteRuntimeOpenApi,
+} from "@workflow/remote";
 import { drizzle } from "drizzle-orm/pglite";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -33,6 +36,10 @@ export function createApp(options: BackendNodeAppOptions = {}) {
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
+  mountRemoteRuntimeOpenApi(app, {
+    title: "Hylo Backend Node API",
+    runtimeBasePath: "/runtime",
+  });
   app.route(
     "/runtime",
     createRemoteRuntimeServer({
