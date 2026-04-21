@@ -24,6 +24,9 @@ export default defineConfig({
     },
   },
   server: {
+    host: process.env.HOST ?? "127.0.0.1",
+    port: process.env.PORT ? Number(process.env.PORT) : 5173,
+    strictPort: Boolean(process.env.PORT),
     proxy: {
       "/api/nextjs": workflowProxy(nextjsTarget, /^\/api\/nextjs(?=\/|$)/),
       "/api/cloudflare": workflowProxy(

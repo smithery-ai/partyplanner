@@ -99,12 +99,12 @@ function runDevCommand(args) {
     ...(workflow?.value ? { HYLO_WORKFLOW: workflow.value } : {}),
     ...(appUrl ? { HYLO_APP_URL: appUrl } : {}),
   };
-  const managedBackend = startManagedDevBackend(backend);
+  const isGraphDev = Boolean(app && workflow && !parsed.separator);
+  const managedBackend = startManagedDevBackend(backend, { quiet: isGraphDev });
   printDevSummary({
     app,
     appUrl,
     backend,
-    command: devCommand,
     workflow,
   });
   const command = name
@@ -313,6 +313,7 @@ function resolveDevCommand(parsed, { app, workflow }) {
       `--filter=${app.packageName}`,
       `--filter=${workflow.target.packageName}`,
       "--ui=stream",
+      "--output-logs=errors-only",
     ];
   }
 
@@ -324,6 +325,7 @@ function resolveDevCommand(parsed, { app, workflow }) {
       `--filter=${app.packageName}`,
       ...WORKFLOWS.map((target) => `--filter=${target.packageName}`),
       "--ui=stream",
+      "--output-logs=errors-only",
     ];
   }
 
@@ -430,11 +432,13 @@ function resolveDevBackend(parsed, packageConfig) {
   };
 }
 
-function startManagedDevBackend(backend) {
+function startManagedDevBackend(backend, options = {}) {
   if (!backend.packagePath || !backend.packageDir) return undefined;
   if (backend.packageDir === process.cwd()) return undefined;
 
-  return spawnChild("pnpm", ["--dir", backend.packageDir, "dev"], process.env);
+  return spawnChild("pnpm", ["--dir", backend.packageDir, "dev"], process.env, {
+    stdio: options.quiet ? "ignore" : "inherit",
+  });
 }
 
 function prepareCommand(command, env) {
@@ -641,15 +645,15 @@ function devServiceNameFromUrl(value) {
   }
 }
 
-function printDevSummary({ app, appUrl, backend, command, workflow }) {
+function printDevSummary({ app, appUrl, backend, workflow }) {
   if (!app || !workflow) return;
 
   const lines = [
     "hylo dev",
-    `  app:      ${appUrl || "(Vite will print its local URL)"}`,
+    `  open:     ${appUrl || "(app server will print its local URL)"}`,
     `  workflow: ${workflow.all ? "all" : (workflow.target?.devUrl ?? workflow.value)}`,
     `  backend:  ${backend.url}`,
-    `  command:  ${command.join(" ")}`,
+    "  stop:     Ctrl+C",
     "",
   ];
   process.stderr.write(`${lines.join("\n")}\n`);
@@ -673,10 +677,10 @@ function isHttpUrl(value) {
   return /^https?:\/\//i.test(value.trim());
 }
 
-function spawnChild(command, args, env) {
+function spawnChild(command, args, env, options = {}) {
   return spawn(command, args, {
     detached: process.platform !== "win32",
-    stdio: "inherit",
+    stdio: options.stdio ?? "inherit",
     env,
     shell: process.platform === "win32",
   });
