@@ -28,6 +28,20 @@ const schemaStatements = [
     published_at double precision not null,
     started_at double precision not null
   )`,
+  `create table if not exists workflow_atom_values (
+    cache_key text primary key,
+    workflow_id text not null,
+    workflow_version text not null,
+    workflow_code_hash text,
+    atom_id text not null,
+    scope text not null,
+    scope_id text not null,
+    value_json text not null,
+    deps_json text not null,
+    dependency_fingerprint text not null,
+    created_at double precision not null,
+    updated_at double precision not null
+  )`,
   `create table if not exists workflow_events (
     id text primary key,
     run_id text not null,
@@ -50,6 +64,8 @@ const schemaStatements = [
   )`,
   `create index if not exists workflow_run_documents_started_at_idx
     on workflow_run_documents (started_at desc)`,
+  `create index if not exists workflow_atom_values_lookup_idx
+    on workflow_atom_values (workflow_id, workflow_version, workflow_code_hash, atom_id, scope, scope_id)`,
   `create index if not exists workflow_events_run_id_created_at_idx
     on workflow_events (run_id, created_at)`,
   `create index if not exists workflow_queue_items_run_id_status_idx

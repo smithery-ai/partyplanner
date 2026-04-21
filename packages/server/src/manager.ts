@@ -34,6 +34,7 @@ export type WorkflowManagerOptions = {
   workflow?: {
     id?: string;
     organizationId?: string;
+    userId?: string;
     version?: string;
     codeHash?: string;
     name?: string;
@@ -49,13 +50,16 @@ export class WorkflowManager {
   constructor(options: WorkflowManagerOptions) {
     this.stateStore = options.stateStore;
     this.queue = options.queue;
-    this.executor = options.executor ?? new RuntimeExecutor();
+    this.executor =
+      options.executor ??
+      new RuntimeExecutor({ atomValueStore: options.stateStore });
 
     const registry = cloneRegistry(options.registry ?? globalRegistry);
     const codeHash = options.workflow?.codeHash ?? hashRegistry(registry);
     const workflow: WorkflowRef = {
       workflowId: options.workflow?.id ?? "workflow",
       organizationId: options.workflow?.organizationId,
+      userId: options.workflow?.userId,
       version: options.workflow?.version ?? codeHash,
       codeHash,
     };
@@ -64,6 +68,7 @@ export class WorkflowManager {
       manifest: buildWorkflowManifest({
         workflowId: workflow.workflowId,
         organizationId: workflow.organizationId,
+        userId: workflow.userId,
         version: workflow.version,
         codeHash,
         name: options.workflow?.name,
@@ -210,7 +215,10 @@ export class WorkflowManager {
   ): LocalScheduler {
     const executor =
       secretValues && Object.keys(secretValues).length > 0
-        ? new RuntimeExecutor(secretResolverFromValues(secretValues))
+        ? new RuntimeExecutor({
+            secretResolver: secretResolverFromValues(secretValues),
+            atomValueStore: this.stateStore,
+          })
         : this.executor;
     return new LocalScheduler({
       loader: this.loader,
@@ -298,6 +306,7 @@ function cloneRegistry(registry: Registry): Registry {
   const clone = new Registry();
   for (const input of registry.allInputs()) clone.registerInput(input);
   for (const atom of registry.allAtoms()) clone.registerAtom(atom);
+  for (const action of registry.allActions()) clone.registerAction(action);
   return clone;
 }
 
@@ -312,7 +321,13 @@ function hashRegistry(registry: Registry): string {
     atoms: registry.allAtoms().map((atom) => ({
       id: atom.id,
       description: atom.description,
+      persistence: atom.persistence,
       fn: atom.fn.toString(),
+    })),
+    actions: registry.allActions().map((action) => ({
+      id: action.id,
+      description: action.description,
+      fn: action.fn.toString(),
     })),
   });
   return hashString(source);

@@ -1,8 +1,11 @@
 import type {
+  AtomPersistenceKey,
+  AtomValueStore,
   DispatchResult,
   QueueEvent,
   Registry,
   RunState,
+  StoredAtomValue,
 } from "@workflow/core";
 
 export type WorkflowRef = {
@@ -10,6 +13,7 @@ export type WorkflowRef = {
   version: string;
   codeHash?: string;
   organizationId?: string;
+  userId?: string;
 };
 
 export type WorkflowDefinition = {
@@ -33,6 +37,14 @@ export interface StateStore {
     state: RunState,
     expectedVersion?: number,
   ): Promise<SaveResult>;
+}
+
+export interface RuntimeAtomValueStore extends AtomValueStore {
+  loadAtomValue(key: AtomPersistenceKey): Promise<StoredAtomValue | undefined>;
+  saveAtomValue(
+    key: AtomPersistenceKey,
+    value: Omit<StoredAtomValue, "createdAt" | "updatedAt">,
+  ): Promise<void>;
 }
 
 export type QueueItemStatus = "pending" | "running" | "completed" | "failed";

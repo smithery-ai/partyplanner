@@ -17,6 +17,21 @@ export const workflowRunDocuments = pgTable("workflow_run_documents", {
   startedAt: doublePrecision("started_at").notNull(),
 });
 
+export const workflowAtomValues = pgTable("workflow_atom_values", {
+  cacheKey: text("cache_key").primaryKey(),
+  workflowId: text("workflow_id").notNull(),
+  workflowVersion: text("workflow_version").notNull(),
+  workflowCodeHash: text("workflow_code_hash"),
+  atomId: text("atom_id").notNull(),
+  scope: text("scope").notNull(),
+  scopeId: text("scope_id").notNull(),
+  valueJson: text("value_json").notNull(),
+  depsJson: text("deps_json").notNull(),
+  dependencyFingerprint: text("dependency_fingerprint").notNull(),
+  createdAt: doublePrecision("created_at").notNull(),
+  updatedAt: doublePrecision("updated_at").notNull(),
+});
+
 export const workflowEvents = pgTable("workflow_events", {
   id: text("id").primaryKey(),
   runId: text("run_id").notNull(),

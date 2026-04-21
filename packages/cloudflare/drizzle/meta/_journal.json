@@ -8,6 +8,13 @@
       "when": 1776753264129,
       "tag": "0000_wide_warpath",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1776753264130,
+      "tag": "0001_atom_values",
+      "breakpoints": true
     }
   ]
 }

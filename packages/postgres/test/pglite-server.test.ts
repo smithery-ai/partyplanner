@@ -108,6 +108,56 @@ describe("PGlite Workflow server", () => {
       }),
     ]);
   });
+
+  it("persists user-scoped atom values through the remote backend", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+    let calls = 0;
+
+    atom(
+      (get) => {
+        const value = get(seed);
+        calls += 1;
+        return `${value.name}:${calls}`;
+      },
+      { name: "cached", persistence: "user" },
+    );
+
+    client = new PGlite();
+    const db = drizzle({ client });
+    const backend = createRemoteRuntimeServer({
+      stateStore: createPostgresWorkflowStateStore(db),
+      queue: createPostgresWorkflowQueue(db),
+    });
+    const app = createWorkflow({
+      backendApi: {
+        url: "http://backend.test",
+        fetch: localFetch(backend),
+      },
+      workflow: {
+        id: "example",
+        version: "v1",
+        organizationId: "org_1",
+        userId: "user_1",
+      },
+    });
+
+    const first = await post<WorkflowRunDocument>(app, "/runs", {
+      inputId: "seed",
+      payload: { name: "ada" },
+    });
+    const second = await post<WorkflowRunDocument>(app, "/runs", {
+      inputId: "seed",
+      payload: { name: "ada" },
+    });
+
+    expect(first.nodes.find((node) => node.id === "cached")?.value).toBe(
+      "ada:1",
+    );
+    expect(second.nodes.find((node) => node.id === "cached")?.value).toBe(
+      "ada:1",
+    );
+    expect(calls).toBe(1);
+  });
 });
 
 async function post<T>(

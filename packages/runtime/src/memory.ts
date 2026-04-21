@@ -1,10 +1,16 @@
-import type { QueueEvent, RunState } from "@workflow/core";
+import type {
+  AtomPersistenceKey,
+  QueueEvent,
+  RunState,
+  StoredAtomValue,
+} from "@workflow/core";
 import type {
   EventSink,
   InspectableWorkQueue,
   QueueItem,
   QueueSnapshot,
   RunEvent,
+  RuntimeAtomValueStore,
   SaveResult,
   StateStore,
   StoredRunState,
@@ -13,8 +19,9 @@ import type {
   WorkflowRef,
 } from "./types";
 
-export class MemoryStateStore implements StateStore {
+export class MemoryStateStore implements StateStore, RuntimeAtomValueStore {
   private readonly runs = new Map<string, StoredRunState>();
+  private readonly atomValues = new Map<string, StoredAtomValue>();
 
   async load(runId: string): Promise<StoredRunState | undefined> {
     const stored = this.runs.get(runId);
@@ -48,6 +55,27 @@ export class MemoryStateStore implements StateStore {
       state: structuredClone(state),
     });
     return { ok: true, version };
+  }
+
+  async loadAtomValue(
+    key: AtomPersistenceKey,
+  ): Promise<StoredAtomValue | undefined> {
+    const stored = this.atomValues.get(atomValueKey(key));
+    return stored ? structuredClone(stored) : undefined;
+  }
+
+  async saveAtomValue(
+    key: AtomPersistenceKey,
+    value: Omit<StoredAtomValue, "createdAt" | "updatedAt">,
+  ): Promise<void> {
+    const cacheKey = atomValueKey(key);
+    const current = this.atomValues.get(cacheKey);
+    const now = Date.now();
+    this.atomValues.set(cacheKey, {
+      ...structuredClone(value),
+      createdAt: current?.createdAt ?? now,
+      updatedAt: now,
+    });
   }
 }
 
@@ -148,4 +176,15 @@ export class StaticWorkflowLoader implements WorkflowLoader {
 
 function workflowKey(ref: WorkflowRef): string {
   return `${ref.workflowId}@${ref.version}${ref.codeHash ? `#${ref.codeHash}` : ""}`;
+}
+
+function atomValueKey(key: AtomPersistenceKey): string {
+  return JSON.stringify([
+    key.workflowId,
+    key.workflowVersion,
+    key.workflowCodeHash ?? "",
+    key.atomId,
+    key.scope,
+    key.scopeId,
+  ]);
 }

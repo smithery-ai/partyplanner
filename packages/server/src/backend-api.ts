@@ -1,4 +1,9 @@
-import type { QueueEvent, RunState } from "@workflow/core";
+import type {
+  AtomPersistenceKey,
+  QueueEvent,
+  RunState,
+  StoredAtomValue,
+} from "@workflow/core";
 import type {
   QueueItem,
   QueueSnapshot,
@@ -39,6 +44,22 @@ export function createBackendApiWorkflowStateStore(
         { state: RunState; expectedVersion?: number },
         SaveResult
       >(`/runs/${encodeURIComponent(runId)}/state`, { state, expectedVersion });
+    },
+    async loadAtomValue(key) {
+      const value = await client.post<
+        AtomPersistenceKey,
+        StoredAtomValue | null
+      >("/atom-values/load", key);
+      return value ?? undefined;
+    },
+    async saveAtomValue(key, value) {
+      await client.put<
+        {
+          key: AtomPersistenceKey;
+          value: Omit<StoredAtomValue, "createdAt" | "updatedAt">;
+        },
+        { ok: true }
+      >("/atom-values", { key, value });
     },
     async publishEvent(event) {
       await publishEvents([event]);

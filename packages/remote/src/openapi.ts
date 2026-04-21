@@ -38,6 +38,25 @@ const QueueEventSchema = z.unknown().openapi("QueueEvent", {
   description:
     "Serialized workflow queue event. Event variants are defined by @workflow/core.",
 });
+const AtomPersistenceKeySchema = z
+  .object({
+    workflowId: z.string(),
+    workflowVersion: z.string(),
+    workflowCodeHash: z.string().optional(),
+    atomId: z.string(),
+    scope: z.enum(["user", "organization"]),
+    scopeId: z.string(),
+  })
+  .openapi("AtomPersistenceKey");
+const StoredAtomValueSchema = z
+  .object({
+    value: z.unknown(),
+    deps: z.array(z.string()),
+    dependencyFingerprint: z.string(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .openapi("StoredAtomValue");
 
 const StoredRunStateSchema = z
   .object({
@@ -52,6 +71,16 @@ const SaveRunStateRequestSchema = z
     expectedVersion: z.number().optional(),
   })
   .openapi("SaveRunStateRequest");
+
+const SaveAtomValueRequestSchema = z
+  .object({
+    key: AtomPersistenceKeySchema,
+    value: StoredAtomValueSchema.omit({
+      createdAt: true,
+      updatedAt: true,
+    }),
+  })
+  .openapi("SaveAtomValueRequest");
 
 const SaveResultSchema = z
   .union([
@@ -218,6 +247,34 @@ export function createRemoteRuntimeRoutes(basePath = "/runtime") {
         400: jsonResponse("Invalid request", ErrorResponseSchema),
       },
     }),
+    getAtomValue: createRoute({
+      method: "post",
+      path: path(normalizedBasePath, "/atom-values/load"),
+      tags: ["Atom Values"],
+      summary: "Load a persisted atom value",
+      request: {
+        body: jsonRequest(AtomPersistenceKeySchema),
+      },
+      responses: {
+        200: jsonResponse(
+          "Persisted atom value",
+          StoredAtomValueSchema.nullable(),
+        ),
+      },
+    }),
+    saveAtomValue: createRoute({
+      method: "put",
+      path: path(normalizedBasePath, "/atom-values"),
+      tags: ["Atom Values"],
+      summary: "Save a persisted atom value",
+      request: {
+        body: jsonRequest(SaveAtomValueRequestSchema),
+      },
+      responses: {
+        200: jsonResponse("Persisted atom value was saved", OkResponseSchema),
+        400: jsonResponse("Invalid request", ErrorResponseSchema),
+      },
+    }),
     listRunEvents: createRoute({
       method: "get",
       path: path(normalizedBasePath, "/runs/{runId}/events"),
@@ -365,6 +422,7 @@ export function createRemoteRuntimeOpenApiDocument(
       { name: "Runtime" },
       { name: "Runs" },
       { name: "State" },
+      { name: "Atom Values" },
       { name: "Events" },
       { name: "Documents" },
       { name: "Queue" },

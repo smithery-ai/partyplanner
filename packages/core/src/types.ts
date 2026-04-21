@@ -54,6 +54,47 @@ export type AtomRuntimeContext = {
   interventionId: (key: string) => string;
 };
 
+export type AtomPersistenceScope = "run" | "user" | "organization";
+
+export type AtomPersistencePolicy =
+  | AtomPersistenceScope
+  | {
+      scope: AtomPersistenceScope;
+    };
+
+export type AtomPersistenceContext = {
+  workflowId: string;
+  workflowVersion: string;
+  workflowCodeHash?: string;
+  organizationId?: string;
+  userId?: string;
+};
+
+export type AtomPersistenceKey = {
+  workflowId: string;
+  workflowVersion: string;
+  workflowCodeHash?: string;
+  atomId: string;
+  scope: Exclude<AtomPersistenceScope, "run">;
+  scopeId: string;
+};
+
+export type StoredAtomValue = {
+  value: unknown;
+  deps: string[];
+  dependencyFingerprint: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export interface AtomValueStore {
+  loadAtomValue(key: AtomPersistenceKey): Promise<StoredAtomValue | undefined>;
+  saveAtomValue(
+    key: AtomPersistenceKey,
+    value: Omit<StoredAtomValue, "createdAt" | "updatedAt">,
+  ): Promise<void>;
+}
+
 export interface Get {
   /** Read a dependency synchronously. Throws SkipError / WaitError / NotReadyError. */
   <T>(source: Handle<T>): T;
@@ -139,6 +180,10 @@ export type StepBlockedEvent = { id: string; blockedOn: string };
 export type RuntimeOptions = {
   registry?: Registry;
   secretValues?: Record<string, string>;
+  atomPersistence?: {
+    context: AtomPersistenceContext;
+    store: AtomValueStore;
+  };
   onEventEmitted?: (ev: QueueEvent) => void;
   onStepResolved?: (ev: StepResolvedEvent) => void;
   onStepErrored?: (ev: StepErroredEvent) => void;

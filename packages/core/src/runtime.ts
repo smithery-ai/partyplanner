@@ -1,12 +1,21 @@
 import { type ZodSchema, z } from "zod";
 import { NotReadyError, SkipError, WaitError } from "./errors";
 import { type Handle, isHandle } from "./handles";
-import { globalRegistry, type Registry, type StepDef } from "./registry";
+import {
+  type AtomDef,
+  globalRegistry,
+  type Registry,
+  type StepDef,
+} from "./registry";
 import type {
+  AtomPersistenceKey,
+  AtomPersistencePolicy,
+  AtomPersistenceScope,
   DispatchResult,
   Get,
   InterventionOptions,
   InterventionRequest,
+  NodeRecord,
   QueueEvent,
   RequestIntervention,
   RunState,
@@ -133,6 +142,11 @@ class RunSession {
     const deps: string[] = [];
     const prev = this.state.nodes[def.id];
 
+    if (def.kind === "atom") {
+      const cached = await this.readPersistedAtomValue(def, prev);
+      if (cached.hit) return cached.value;
+    }
+
     const get: Get = Object.assign(
       <T>(source: Handle<T>) => {
         if (!isHandle(source)) {
@@ -173,6 +187,7 @@ class RunSession {
         interventionId: (key) => interventionId(def.id, key),
       });
       const duration_ms = Date.now() - start;
+      await this.savePersistedAtomValue(def, value, deps);
       this.state.nodes[def.id] = {
         status: "resolved",
         kind: def.kind,
@@ -238,6 +253,104 @@ class RunSession {
       this.opts.onStepErrored?.({ id: def.id, error: err });
       throw e;
     }
+  }
+
+  private async readPersistedAtomValue(
+    def: AtomDef,
+    prev: NodeRecord | undefined,
+  ): Promise<{ hit: true; value: unknown } | { hit: false }> {
+    const key = this.persistenceKey(def);
+    if (!key) return { hit: false };
+
+    const cached = await this.opts.atomPersistence?.store.loadAtomValue(key);
+    if (!cached) return { hit: false };
+
+    const dependencyFingerprint = this.fingerprintDependencies(cached.deps);
+    if (
+      dependencyFingerprint === undefined ||
+      dependencyFingerprint !== cached.dependencyFingerprint
+    ) {
+      return { hit: false };
+    }
+
+    this.state.nodes[def.id] = {
+      status: "resolved",
+      kind: def.kind,
+      value: cached.value,
+      deps: cached.deps,
+      duration_ms: 0,
+      attempts: (prev?.attempts ?? 0) + 1,
+    };
+    this.opts.onStepResolved?.({
+      id: def.id,
+      value: cached.value,
+      duration_ms: 0,
+    });
+    return { hit: true, value: cached.value };
+  }
+
+  private async savePersistedAtomValue(
+    def: StepDef,
+    value: unknown,
+    deps: string[],
+  ): Promise<void> {
+    if (def.kind !== "atom") return;
+    const key = this.persistenceKey(def);
+    if (!key) return;
+
+    const dependencyFingerprint = this.fingerprintDependencies(deps);
+    if (dependencyFingerprint === undefined) return;
+
+    await this.opts.atomPersistence?.store.saveAtomValue(key, {
+      value,
+      deps,
+      dependencyFingerprint,
+    });
+  }
+
+  private persistenceKey(def: AtomDef): AtomPersistenceKey | undefined {
+    const atomPersistence = this.opts.atomPersistence;
+    if (!atomPersistence) return undefined;
+
+    const scope = persistenceScope(def.persistence);
+    if (scope === "run") return undefined;
+
+    const scopeId =
+      scope === "user"
+        ? atomPersistence.context.userId
+        : atomPersistence.context.organizationId;
+    if (!scopeId) return undefined;
+
+    return {
+      workflowId: atomPersistence.context.workflowId,
+      workflowVersion: atomPersistence.context.workflowVersion,
+      workflowCodeHash: atomPersistence.context.workflowCodeHash,
+      atomId: def.id,
+      scope,
+      scopeId,
+    };
+  }
+
+  private fingerprintDependencies(depIds: string[]): string | undefined {
+    const values: Record<string, unknown> = {};
+    for (const depId of depIds) {
+      const value = this.readResolvedValue(depId);
+      if (value === unresolvedDependency) return undefined;
+      values[depId] = value;
+    }
+    return hashString(stableStringify(values));
+  }
+
+  private readResolvedValue(depId: string): unknown {
+    const inputDef = this.registry.getInput(depId);
+    if (inputDef?.secret) return unresolvedDependency;
+    if (inputDef && depId in this.state.inputs) {
+      return this.state.inputs[depId];
+    }
+
+    const existing = this.state.nodes[depId];
+    if (existing?.status === "resolved") return existing.value;
+    return unresolvedDependency;
   }
 
   private readValue(readerStepId: string, depId: string): unknown {
@@ -433,6 +546,39 @@ function makeEmptyRunState(runId: string): RunState {
 
 export function createRuntime(opts: RuntimeOptions = {}): Runtime {
   return new RuntimeImpl(opts);
+}
+
+function persistenceScope(
+  policy: AtomPersistencePolicy | undefined,
+): AtomPersistenceScope {
+  if (!policy) return "run";
+  return typeof policy === "string" ? policy : policy.scope;
+}
+
+const unresolvedDependency = Symbol("unresolvedDependency");
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortJson(value));
+}
+
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (!value || typeof value !== "object") return value;
+
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) {
+    sorted[key] = sortJson((value as Record<string, unknown>)[key]);
+  }
+  return sorted;
+}
+
+function hashString(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function redactedSecretValue(): string {

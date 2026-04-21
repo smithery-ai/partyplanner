@@ -1,4 +1,4 @@
-import type { Registry } from "@workflow/core";
+import type { AtomPersistencePolicy, Registry } from "@workflow/core";
 import { z } from "zod";
 
 export type JsonSchema = Record<string, unknown>;
@@ -18,11 +18,13 @@ export type WorkflowStepManifest = {
   id: string;
   kind: "atom" | "action";
   description?: string;
+  persistence?: AtomPersistencePolicy;
 };
 
 export type WorkflowManifest = {
   workflowId: string;
   organizationId?: string;
+  userId?: string;
   version: string;
   codeHash?: string;
   name?: string;
@@ -35,6 +37,7 @@ export type WorkflowManifest = {
 export function buildWorkflowManifest(args: {
   workflowId: string;
   organizationId?: string;
+  userId?: string;
   version: string;
   codeHash?: string;
   name?: string;
@@ -44,6 +47,7 @@ export function buildWorkflowManifest(args: {
   return {
     workflowId: args.workflowId,
     organizationId: args.organizationId,
+    userId: args.userId,
     version: args.version,
     codeHash: args.codeHash,
     name: args.name,
@@ -68,6 +72,7 @@ export function buildWorkflowManifest(args: {
       id: a.id,
       kind: "atom",
       description: a.description,
+      persistence: a.persistence,
     })),
     actions: args.registry.allActions().map((a) => ({
       id: a.id,

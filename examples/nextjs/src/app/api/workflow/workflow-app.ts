@@ -16,6 +16,8 @@ export function getWorkflowApp(): WorkflowApp {
     workflow: {
       id: "nextjs-example",
       version: "v1",
+      organizationId: workflowOrganizationId(),
+      userId: workflowUserId(),
       name: "Next.js Example",
     },
   });
@@ -47,4 +49,12 @@ function backendApiUrl(): string {
     );
   }
   return raw;
+}
+
+function workflowOrganizationId(): string {
+  return process.env.HYLO_ORGANIZATION_ID?.trim() || "local-dev-org";
+}
+
+function workflowUserId(): string {
+  return process.env.HYLO_USER_ID?.trim() || "local-dev-user";
 }

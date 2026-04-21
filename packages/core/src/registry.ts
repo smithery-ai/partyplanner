@@ -1,5 +1,10 @@
 import type { ZodSchema } from "zod";
-import type { AtomRuntimeContext, Get, RequestIntervention } from "./types";
+import type {
+  AtomPersistencePolicy,
+  AtomRuntimeContext,
+  Get,
+  RequestIntervention,
+} from "./types";
 
 export type InputDef = {
   kind: "input" | "deferred_input";
@@ -23,6 +28,7 @@ export type AtomDef = {
   id: string;
   fn: StepFn;
   description?: string;
+  persistence?: AtomPersistencePolicy;
 };
 
 export type ActionDef = {

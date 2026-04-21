@@ -57,6 +57,12 @@ const WorkflowStepManifestSchema = z
     id: z.string(),
     kind: z.enum(["atom", "action"]),
     description: z.string().optional(),
+    persistence: z
+      .union([
+        z.enum(["run", "user", "organization"]),
+        z.object({ scope: z.enum(["run", "user", "organization"]) }),
+      ])
+      .optional(),
   })
   .openapi("WorkflowStepManifest");
 
@@ -64,6 +70,7 @@ const WorkflowManifestSchema = z
   .object({
     workflowId: z.string(),
     organizationId: z.string().optional(),
+    userId: z.string().optional(),
     version: z.string(),
     codeHash: z.string().optional(),
     name: z.string().optional(),
@@ -80,6 +87,7 @@ const WorkflowRefSchema = z
     version: z.string(),
     codeHash: z.string().optional(),
     organizationId: z.string().optional(),
+    userId: z.string().optional(),
   })
   .openapi("WorkflowRef");
 

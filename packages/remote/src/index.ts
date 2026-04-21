@@ -1,5 +1,10 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import type { QueueEvent, RunState } from "@workflow/core";
+import type {
+  AtomPersistenceKey,
+  QueueEvent,
+  RunState,
+  StoredAtomValue,
+} from "@workflow/core";
 import type {
   QueueItem,
   QueueSnapshot,
@@ -81,6 +86,24 @@ export function createRemoteRuntimeServer(options: RemoteRuntimeServerOptions) {
         await options.stateStore.save(runId, body.state, body.expectedVersion),
         200,
       );
+    } catch (e) {
+      return c.json({ message: errorMessage(e) }, 400);
+    }
+  });
+
+  app.openapi(routes.getAtomValue, async (c) => {
+    const key = c.req.valid("json") as AtomPersistenceKey;
+    return c.json((await options.stateStore.loadAtomValue(key)) ?? null, 200);
+  });
+
+  app.openapi(routes.saveAtomValue, async (c) => {
+    try {
+      const body = c.req.valid("json") as {
+        key: AtomPersistenceKey;
+        value: Omit<StoredAtomValue, "createdAt" | "updatedAt">;
+      };
+      await options.stateStore.saveAtomValue(body.key, body.value);
+      return c.json({ ok: true as const }, 200);
     } catch (e) {
       return c.json({ message: errorMessage(e) }, 400);
     }
@@ -205,6 +228,22 @@ export function createRemoteWorkflowStateStore(
         { state: RunState; expectedVersion?: number },
         SaveResult
       >(`/runs/${encodeURIComponent(runId)}/state`, { state, expectedVersion });
+    },
+    async loadAtomValue(key) {
+      const value = await client.post<
+        AtomPersistenceKey,
+        StoredAtomValue | null
+      >("/atom-values/load", key);
+      return value ?? undefined;
+    },
+    async saveAtomValue(key, value) {
+      await client.put<
+        {
+          key: AtomPersistenceKey;
+          value: Omit<StoredAtomValue, "createdAt" | "updatedAt">;
+        },
+        { ok: true }
+      >("/atom-values", { key, value });
     },
     async publishEvent(event) {
       await publishEvents([event]);

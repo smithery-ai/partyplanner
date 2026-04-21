@@ -217,6 +217,128 @@ describe("LocalScheduler", () => {
     );
   });
 
+  it("reuses user-persisted atom values across runs when dependencies match", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+    let calls = 0;
+
+    atom(
+      (get) => {
+        const value = get(seed);
+        calls += 1;
+        return `${value.name}:${calls}`;
+      },
+      { name: "userCached", persistence: "user" },
+    );
+
+    const stateStore = new MemoryStateStore();
+    const scheduler = new LocalScheduler({
+      loader: new StaticWorkflowLoader([
+        {
+          ref: { ...workflow, userId: "user_1" },
+          registry: globalRegistry,
+        },
+      ]),
+      stateStore,
+      queue: new MemoryWorkQueue(),
+      events: new MemoryEventSink(),
+      executor: new RuntimeExecutor({ atomValueStore: stateStore }),
+    });
+
+    await scheduler.startRun({
+      workflow: { ...workflow, userId: "user_1" },
+      runId: "run-user-cache-1",
+      input: {
+        inputId: "seed",
+        payload: { name: "Ada" },
+        eventId: "evt-seed-1",
+      },
+    });
+    await scheduler.drain();
+    const first = await scheduler.snapshot("run-user-cache-1");
+    expect(first.nodes.find((node) => node.id === "userCached")?.value).toBe(
+      "Ada:1",
+    );
+
+    await scheduler.startRun({
+      workflow: { ...workflow, userId: "user_1" },
+      runId: "run-user-cache-2",
+      input: {
+        inputId: "seed",
+        payload: { name: "Ada" },
+        eventId: "evt-seed-2",
+      },
+    });
+    await scheduler.drain();
+    const second = await scheduler.snapshot("run-user-cache-2");
+
+    expect(second.nodes.find((node) => node.id === "userCached")?.value).toBe(
+      "Ada:1",
+    );
+    expect(calls).toBe(1);
+  });
+
+  it("scopes organization-persisted atom values by organization", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+    let calls = 0;
+
+    atom(
+      (get) => {
+        const value = get(seed);
+        calls += 1;
+        return `${value.name}:${calls}`;
+      },
+      { name: "orgCached", persistence: "organization" },
+    );
+
+    const stateStore = new MemoryStateStore();
+    const scheduler = new LocalScheduler({
+      loader: new StaticWorkflowLoader([
+        {
+          ref: { ...workflow, organizationId: "org_1", userId: "user_1" },
+          registry: globalRegistry,
+        },
+      ]),
+      stateStore,
+      queue: new MemoryWorkQueue(),
+      events: new MemoryEventSink(),
+      executor: new RuntimeExecutor({ atomValueStore: stateStore }),
+    });
+
+    for (const [runId, organizationId, userId] of [
+      ["run-org-cache-1", "org_1", "user_1"],
+      ["run-org-cache-2", "org_1", "user_2"],
+      ["run-org-cache-3", "org_2", "user_1"],
+    ] as const) {
+      await scheduler.startRun({
+        workflow: { ...workflow, organizationId, userId },
+        runId,
+        input: {
+          inputId: "seed",
+          payload: { name: "Ada" },
+          eventId: `evt-${runId}`,
+        },
+      });
+      await scheduler.drain();
+    }
+
+    expect(
+      (await scheduler.snapshot("run-org-cache-1")).nodes.find(
+        (node) => node.id === "orgCached",
+      )?.value,
+    ).toBe("Ada:1");
+    expect(
+      (await scheduler.snapshot("run-org-cache-2")).nodes.find(
+        (node) => node.id === "orgCached",
+      )?.value,
+    ).toBe("Ada:1");
+    expect(
+      (await scheduler.snapshot("run-org-cache-3")).nodes.find(
+        (node) => node.id === "orgCached",
+      )?.value,
+    ).toBe("Ada:2");
+    expect(calls).toBe(2);
+  });
+
   it("keeps secret dependency edges when a downstream step waits", async () => {
     const seed = input("seed", z.object({ name: z.string() }));
     const apiKey = secret("API_KEY", undefined);
