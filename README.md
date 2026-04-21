@@ -77,17 +77,19 @@ React does this in memory, in one process, for a single render. Hylo does it acr
 ```mermaid
 sequenceDiagram
   participant U as Outside world
-  participant B as Backend
   participant W as Worker
+  participant B as Backend
 
-  U->>B: submit input (mutation)
+  U->>W: submit input (webhook, form, API call)
+  W->>B: record mutation
   B->>B: mark dependents dirty, enqueue atom jobs
   B->>W: dispatch atom computation
   W->>W: run atom fn, call get() to read state
   W->>B: submit result (mutation)
   B->>B: apply, propagate, enqueue next wave
   Note over B: run can pause here for days
-  U->>B: answer intervention (mutation)
+  U->>W: answer intervention
+  W->>B: record mutation
   B->>W: dispatch next atom
 ```
 
