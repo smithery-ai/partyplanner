@@ -1,13 +1,19 @@
-# Hylo Backend Worker
+# Backend (Cloudflare)
 
-Cloudflare Worker host for the Hylo backend API. The Worker persists run state,
-queue items, events, run documents, and OAuth broker records in D1.
+Cloud flavor of the Hylo backend. A Cloudflare Worker that persists run state, queue items, events, run documents, and OAuth broker records in **D1**. Also hosts the OAuth broker at `/oauth`.
+
+See the root README for the worker/backend architecture. This app is the managed half — it holds state, the mutation queue, and provider OAuth secrets. Your worker passes its URL as `backendApi` to `createWorkflow`.
 
 ```sh
 pnpm --filter backend dev
 ```
 
-Database workflow:
+Local URLs:
+
+- Portless: `https://api-worker.hylo.localhost`
+- Direct Wrangler: `http://127.0.0.1:8788`
+
+## Database
 
 ```sh
 pnpm --filter backend db:generate
@@ -15,35 +21,23 @@ pnpm --filter backend db:migrate
 pnpm --filter backend db:studio
 ```
 
-The D1 schema and adapters live in `packages/cloudflare`. `db:generate` creates
-Drizzle SQL migrations in `packages/cloudflare/drizzle`. `db:migrate` applies
-those migrations to the local D1 database through Wrangler. `db:studio` opens
-Drizzle Studio against the local Wrangler D1 SQLite file under `.wrangler/state`.
+D1 schema and adapters live in `packages/cloudflare`. `db:generate` creates Drizzle SQL migrations in `packages/cloudflare/drizzle`. `db:migrate` applies them to the local D1 database through Wrangler. `db:studio` opens Drizzle Studio against the local Wrangler D1 SQLite file under `.wrangler/state`.
 
-Local URLs:
+## Routes
 
-- Portless: `https://api-worker.hylo.localhost`
-- Direct Wrangler: `http://127.0.0.1:8788`
+- `/health` — health check
+- `/runtime` — queue + state API (OpenAPI at `/runtime/openapi.json`)
+- `/oauth` — curated OAuth broker
 
-The health route is mounted at `/health`. The queue/state API is mounted at
-`/runtime`.
+## OAuth broker
 
-The curated OAuth broker is mounted at `/oauth`. A provider is available only
-when its client ID and client secret are configured. `pnpm dev` writes
-`apps/backend/.dev.vars` for Wrangler from the current shell or Infisical env,
-so set `SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET` or
-`NOTION_CLIENT_ID`/`NOTION_CLIENT_SECRET` before starting dev. You can also
-edit `apps/backend/.dev.vars` directly for local-only values.
+A provider (`spotify`, `notion`, …) is available only when its client ID and client secret are configured on the backend. `pnpm dev` writes `apps/backend/.dev.vars` for Wrangler from the current shell or Infisical env. Set e.g. `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` or `NOTION_CLIENT_ID` / `NOTION_CLIENT_SECRET` before starting dev, or edit `.dev.vars` directly.
 
-Set `HYLO_API_KEY` to require a matching bearer token from workflow runtimes.
-Set `HYLO_BROKER_BASE_URL`, or `HYLO_BACKEND_PUBLIC_URL`, in production so
-provider redirect URIs use the externally reachable backend URL.
+Set `HYLO_API_KEY` to require a matching bearer token from workers. Set `HYLO_BROKER_BASE_URL` (or `HYLO_BACKEND_PUBLIC_URL`) in production so provider redirect URIs use the externally reachable backend URL.
 
 Local redirect URIs:
 
 - `https://api-worker.hylo.localhost/oauth/spotify/callback`
 - `https://api-worker.hylo.localhost/oauth/notion/callback`
 
-Workflow code does not upload to this backend. Next.js routes, Cloudflare Worker
-routes, or other user-owned workflow runtimes execute atoms and interact with
-this service by passing its URL to `createWorkflow`.
+Workflow code never runs here; the backend is stateless with respect to workflow source.
