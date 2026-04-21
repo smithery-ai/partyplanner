@@ -21,7 +21,6 @@ import {
   type WorkflowStateStore,
 } from "@workflow/server";
 import { and, asc, eq, sql } from "drizzle-orm";
-import { migrateWorkflowCloudflareSchema } from "./migrate";
 import {
   oauthHandoffs,
   oauthPending,
@@ -232,8 +231,8 @@ class CloudflareWorkflowStateStore implements WorkflowStateStore {
   }
 
   private ensureReady(): Promise<void> {
-    if (this.options.autoMigrate === false) return Promise.resolve();
-    this.ready ??= migrateWorkflowCloudflareSchema(this.db as never);
+    void this.options;
+    this.ready ??= Promise.resolve();
     return this.ready;
   }
 }
@@ -265,20 +264,23 @@ class CloudflareWorkflowQueue implements WorkflowQueue {
   async enqueueMany(events: QueueEvent[]): Promise<void> {
     if (events.length === 0) return;
     await this.ensureReady();
-    await asDb(this.db)
-      .insert(workflowQueueItems)
-      .values(
-        events.map((event) => ({
-          eventId: event.eventId,
-          runId: event.runId,
-          kind: event.kind,
-          status: "pending",
-          eventJson: JSON.stringify(event),
-          enqueuedAt: Date.now(),
-          attempts: 0,
-        })),
-      )
-      .onConflictDoNothing();
+    for (let index = 0; index < events.length; index += maxInsertRows) {
+      const batch = events.slice(index, index + maxInsertRows);
+      await asDb(this.db)
+        .insert(workflowQueueItems)
+        .values(
+          batch.map((event) => ({
+            eventId: event.eventId,
+            runId: event.runId,
+            kind: event.kind,
+            status: "pending",
+            eventJson: JSON.stringify(event),
+            enqueuedAt: Date.now(),
+            attempts: 0,
+          })),
+        )
+        .onConflictDoNothing();
+    }
   }
 
   async claimNext(runId: string): Promise<QueueItem | undefined> {
@@ -374,8 +376,8 @@ class CloudflareWorkflowQueue implements WorkflowQueue {
   }
 
   private ensureReady(): Promise<void> {
-    if (this.options.autoMigrate === false) return Promise.resolve();
-    this.ready ??= migrateWorkflowCloudflareSchema(this.db as never);
+    void this.options;
+    this.ready ??= Promise.resolve();
     return this.ready;
   }
 }
@@ -505,8 +507,8 @@ class CloudflareBrokerStore implements BrokerStore {
   }
 
   private ensureReady(): Promise<void> {
-    if (this.options.autoMigrate === false) return Promise.resolve();
-    this.ready ??= migrateWorkflowCloudflareSchema(this.db as never);
+    void this.options;
+    this.ready ??= Promise.resolve();
     return this.ready;
   }
 }
@@ -560,6 +562,10 @@ type QueueRow = {
 type ValueJsonRow = {
   valueJson: string;
 };
+
+// D1 has a lower SQL variable limit than Postgres; each queue row binds seven
+// values, so keep bulk inserts comfortably below that ceiling.
+const maxInsertRows = 10;
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;

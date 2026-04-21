@@ -59,19 +59,17 @@ export function createApp(
   );
 
   const curatedProviders = collectCuratedProviders(env);
-  if (curatedProviders.length > 0) {
-    const apiKey = resolveApiKey(env);
-    app.route(
-      "/oauth",
-      createOAuthBrokerServer({
-        brokerBaseUrl: resolveBrokerBaseUrl(env),
-        store: createCloudflareBrokerStore(db, adapterOptions),
-        authenticateAppToken: (token) =>
-          token === apiKey ? { appId: "shared" } : undefined,
-        providers: curatedProviders,
-      }),
-    );
-  }
+  const apiKey = resolveApiKey(env);
+  app.route(
+    "/oauth",
+    createOAuthBrokerServer({
+      brokerBaseUrl: resolveBrokerBaseUrl(env),
+      store: createCloudflareBrokerStore(db, adapterOptions),
+      authenticateAppToken: (token) =>
+        token === apiKey ? { appId: "shared" } : undefined,
+      providers: curatedProviders,
+    }),
+  );
 
   return app;
 }

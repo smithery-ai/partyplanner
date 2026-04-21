@@ -58,20 +58,18 @@ export function createApp(options: BackendNodeAppOptions = {}) {
   );
 
   const curatedProviders = collectCuratedProviders();
-  if (curatedProviders.length > 0) {
-    const apiKey = resolveApiKey();
-    const brokerBaseUrl = resolveBrokerBaseUrl();
-    app.route(
-      "/oauth",
-      createOAuthBrokerServer({
-        brokerBaseUrl,
-        store: createInMemoryBrokerStore(),
-        authenticateAppToken: (token) =>
-          token === apiKey ? { appId: "shared" } : undefined,
-        providers: curatedProviders,
-      }),
-    );
-  }
+  const apiKey = resolveApiKey();
+  const brokerBaseUrl = resolveBrokerBaseUrl();
+  app.route(
+    "/oauth",
+    createOAuthBrokerServer({
+      brokerBaseUrl,
+      store: createInMemoryBrokerStore(),
+      authenticateAppToken: (token) =>
+        token === apiKey ? { appId: "shared" } : undefined,
+      providers: curatedProviders,
+    }),
+  );
 
   return app;
 }
@@ -83,8 +81,8 @@ export function createApp(options: BackendNodeAppOptions = {}) {
 // client credentials instead.
 //
 // A provider is registered only when both env vars are present, so a
-// missing credential pair quietly disables that provider — the broker's
-// /start route will return 404 for unregistered providers.
+// missing credential pair leaves that provider unavailable; the broker's
+// /start route returns a structured 404 for unregistered providers.
 function collectCuratedProviders(): BrokerProviderRegistration[] {
   const registrations: BrokerProviderRegistration[] = [];
   const catalog = [

@@ -17,7 +17,8 @@
   "scripts": {
     "build": "tsc",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
-    "db:migrate": "pnpm run build && tsx scripts/db-migrate.ts",
+    "db:migrate": "pnpm run build && pnpm --filter backend exec wrangler d1 migrations apply hylo-backend --local",
+    "db:migrate:remote": "pnpm run build && pnpm --filter backend exec wrangler d1 migrations apply hylo-backend --remote",
     "db:studio": "pnpm run build && tsx scripts/db-studio.ts",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"

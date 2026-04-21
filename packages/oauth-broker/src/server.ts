@@ -66,7 +66,7 @@ export function createOAuthBrokerServer(
     if (!ident) return c.json({ error: "unauthorized" }, 401);
     const providerId = c.req.param("providerId");
     const registration = providers.get(providerId);
-    if (!registration) return c.json({ error: "unknown_provider" }, 404);
+    if (!registration) return unknownProvider(providerId, c);
 
     let body: z.infer<typeof startBodySchema>;
     try {
@@ -107,7 +107,7 @@ export function createOAuthBrokerServer(
   app.get("/:providerId/callback", async (c) => {
     const providerId = c.req.param("providerId");
     const registration = providers.get(providerId);
-    if (!registration) return c.text("Unknown provider", 404);
+    if (!registration) return c.text(unknownProviderMessage(providerId), 404);
 
     const url = new URL(c.req.url);
     const error = url.searchParams.get("error");
@@ -200,7 +200,7 @@ export function createOAuthBrokerServer(
     if (!ident) return c.json({ error: "unauthorized" }, 401);
     const providerId = c.req.param("providerId");
     if (!providers.has(providerId)) {
-      return c.json({ error: "unknown_provider" }, 404);
+      return unknownProvider(providerId, c);
     }
 
     let body: z.infer<typeof exchangeBodySchema>;
@@ -232,7 +232,7 @@ export function createOAuthBrokerServer(
     if (!ident) return c.json({ error: "unauthorized" }, 401);
     const providerId = c.req.param("providerId");
     const registration = providers.get(providerId);
-    if (!registration) return c.json({ error: "unknown_provider" }, 404);
+    if (!registration) return unknownProvider(providerId, c);
 
     let body: z.infer<typeof refreshBodySchema>;
     try {
@@ -299,6 +299,23 @@ function providerCallbackUrl(
   providerId: string,
 ): string {
   return `${brokerBaseUrl}/${providerId}/callback`;
+}
+
+function unknownProvider(
+  providerId: string,
+  c: { json(body: { error: string; message: string }, status: 404): Response },
+): Response {
+  return c.json(
+    {
+      error: "unknown_provider",
+      message: unknownProviderMessage(providerId),
+    },
+    404,
+  );
+}
+
+function unknownProviderMessage(providerId: string): string {
+  return `OAuth provider "${providerId}" is not configured on this broker. Set the provider client ID and secret in the backend environment.`;
 }
 
 function appendQuery(baseUrl: string, params: Record<string, string>): string {

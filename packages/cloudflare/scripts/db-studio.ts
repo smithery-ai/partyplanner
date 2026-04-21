@@ -1,25 +1,12 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import {
-  backendForCommand,
-  findCloudflareSqliteFile,
-  packageDir,
-} from "./db-common";
+import { findLocalD1SqliteFile, packageDir } from "./db-common";
 
-let sqliteFile = await findCloudflareSqliteFile();
-
-if (!sqliteFile) {
-  const backend = await backendForCommand(process.argv.slice(2));
-  try {
-    sqliteFile = await findCloudflareSqliteFile();
-  } finally {
-    await backend.stop();
-  }
-}
+const sqliteFile = findLocalD1SqliteFile();
 
 if (!sqliteFile) {
   throw new Error(
-    "No local Cloudflare Durable Object SQLite file was found under apps/backend/.wrangler/state. Run pnpm --filter backend dev once, then try db:studio again.",
+    "No local D1 SQLite file was found under apps/backend/.wrangler/state. Run pnpm --filter backend db:migrate once, then try db:studio again.",
   );
 }
 

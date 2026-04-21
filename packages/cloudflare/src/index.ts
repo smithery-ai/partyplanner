@@ -11,7 +11,6 @@ export {
   createWorkflowCloudflareDb,
   type WorkflowCloudflareDb,
 } from "./db";
-export { migrateWorkflowCloudflareSchema } from "./migrate";
 export {
   oauthHandoffs,
   oauthPending,
