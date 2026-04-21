@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "portless run --force --name api-worker.hylo sh -c 'wrangler dev --ip 127.0.0.1 --port \"${PORT:-8788}\"'",
+    "db:migrate": "HYLO_DB_APP=backend pnpm -C ../../packages/postgres db:migrate",
+    "db:studio": "HYLO_DB_APP=backend pnpm -C ../../packages/postgres db:studio",
     "build": "tsc --noEmit"
   },
   "dependencies": {
