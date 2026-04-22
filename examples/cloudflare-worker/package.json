@@ -3,14 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "hylo": {
-    "workflow": {},
-    "devUrl": "https://cloudflare-worker.hylo.localhost"
-  },
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "hylo dev --backend ../../apps/backend-node -- wrangler dev --ip 127.0.0.1 --port '$PORT'",
-    "deploy": "wrangler deploy ${HYLO_BACKEND_URL:+--var HYLO_BACKEND_URL:$HYLO_BACKEND_URL}",
+    "dev": "hylo dev workflow.cloudflareWorker",
+    "deploy": "hylo deploy remote workflow.cloudflareWorker",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

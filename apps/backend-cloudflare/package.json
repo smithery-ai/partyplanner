@@ -3,19 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "hylo": {
-    "backend": {
-      "listenUrl": "http://127.0.0.1:8788"
-    },
-    "devUrl": "https://api-worker.hylo.localhost"
-  },
   "scripts": {
-    "dev": "hylo dev --backend . -- wrangler dev --ip 127.0.0.1 --port '$PORT'",
-    "deploy": "wrangler deploy",
+    "dev": "hylo dev backend.cloudflare",
+    "deploy": "hylo deploy remote backend.cloudflare",
     "db:generate": "pnpm -C ../../packages/cloudflare db:generate",
-    "db:migrate": "pnpm -C ../../packages/cloudflare build && hylo exec --backend . -- wrangler d1 migrations apply hylo-backend --local",
-    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && hylo exec --backend . -- wrangler d1 migrations apply hylo-backend --remote",
-    "db:studio": "pnpm -C ../../packages/cloudflare build && hylo exec --backend . -- pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
+    "db:migrate": "pnpm -C ../../packages/cloudflare build && hylo exec -- wrangler d1 migrations apply hylo-backend --local",
+    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && hylo exec remote -- wrangler d1 migrations apply hylo-backend --remote",
+    "db:studio": "pnpm -C ../../packages/cloudflare build && hylo exec -- pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
     "build": "tsc --noEmit"
   },
   "dependencies": {

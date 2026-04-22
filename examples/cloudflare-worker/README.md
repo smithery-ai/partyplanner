@@ -10,14 +10,16 @@ From this directory:
 pnpm dev
 ```
 
-To launch this workflow service with the client from the repo root:
+To launch the full local profile from the repo root:
 
 ```sh
-pnpm hylo dev --backend ./apps/backend-node --workflow ./examples/cloudflare-worker ./apps/client
+pnpm dev
 ```
 
 Deploy this workflow target with:
 
 ```sh
-pnpm hylo deploy workflow ./examples/cloudflare-worker
+pnpm hylo deploy remote workflow.cloudflareWorker
 ```
+
+Hylo wires the deployed backend URL into the workflow deploy.

@@ -19,7 +19,6 @@ import {
 import { drizzle } from "drizzle-orm/pglite";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { localBackendUrl } from "./config";
 
 export type BackendNodeAppOptions = {
   dataDir?: string;
@@ -126,5 +125,5 @@ function resolveBrokerBaseUrl(): string {
   if (backendUrl) return `${backendUrl.replace(/\/+$/, "")}/oauth`;
   // Local dev default. In production this must be set to a URL that matches
   // each provider's whitelisted redirect_uri.
-  return `${localBackendUrl()}/oauth`;
+  return `http://localhost:${process.env.PORT ?? 8787}/oauth`;
 }

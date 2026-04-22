@@ -1,0 +1,56 @@
+{
+  "defaultProfile": "local",
+  "profiles": {
+    "local": {
+      "targets": ["backend.node", "workflow.nextjs", "app.client"],
+      "urls": {}
+    },
+    "remote": {
+      "targets": [
+        "backend.cloudflare",
+        "workflow.cloudflareWorker",
+        "app.client"
+      ],
+      "urls": {
+        "backend.cloudflare": "https://hylo-backend.smithery.workers.dev",
+        "workflow.cloudflareWorker": "https://hylo-cloudflare-worker-example.smithery.workers.dev"
+      }
+    }
+  },
+  "targets": {
+    "backend.node": {
+      "path": "./apps/backend-node",
+      "provider": "node",
+      "dev": "pnpm exec tsx src/index.ts",
+      "url": "https://api.hylo.localhost"
+    },
+    "backend.cloudflare": {
+      "path": "./apps/backend-cloudflare",
+      "provider": "cloudflare-worker",
+      "dev": "pnpm exec wrangler dev --ip 127.0.0.1 --port $PORT",
+      "deploy": "pnpm build && pnpm exec wrangler deploy",
+      "url": "https://api-worker.hylo.localhost"
+    },
+    "workflow.nextjs": {
+      "path": "./examples/nextjs",
+      "provider": "nextjs",
+      "dev": "pnpm exec next dev",
+      "url": "https://nextjs.hylo.localhost"
+    },
+    "workflow.cloudflareWorker": {
+      "path": "./examples/cloudflare-worker",
+      "provider": "cloudflare-worker",
+      "dev": "pnpm exec wrangler dev --ip 127.0.0.1 --port $PORT",
+      "deploy": "pnpm build && pnpm exec wrangler deploy",
+      "url": "https://cloudflare-worker.hylo.localhost"
+    },
+    "app.client": {
+      "path": "./apps/client",
+      "provider": "vite",
+      "dev": "pnpm exec vite",
+      "build": "vite build",
+      "deploy": "pnpm exec vercel link --yes --project hylo && pnpm exec vercel build --yes && pnpm exec vercel deploy --prebuilt --yes",
+      "url": "https://hylo.localhost"
+    }
+  }
+}

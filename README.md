@@ -217,38 +217,33 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` starts the default local stack: Node backend, Next.js workflow
-service, and the client.
+Open `https://hylo.localhost`.
 
-- Client: `https://hylo.localhost`
-- Backend: `https://api.hylo.localhost`
-- Workflow service: `https://nextjs.hylo.localhost`
+`pnpm dev` starts the `local` profile from `hylo.json`: the Node backend, the
+Next.js workflow server, and the client.
 
 ### Hylo CLI
 
-Use the CLI when you need to launch or deploy a process that talks to Hylo.
+The Hylo CLI reads `hylo.json` and launches or deploys a profile. A profile is
+a set of targets: one backend, one app, and one or more workflow servers. Hylo
+uses that graph to inject the backend URL into workflows and the workflow
+registry into the app.
 
-Local launcher:
+This repo ships two profiles:
 
-```sh
-pnpm hylo dev --backend ./apps/backend-node --workflow ./examples/nextjs ./apps/client
-```
+- `local` — Node backend, Next.js workflow, Vite client
+- `remote` — Cloudflare backend, Cloudflare workflow, Vercel client
 
-Deploy targets are explicit:
-
-```sh
-pnpm hylo deploy workflow ./examples/nextjs
-pnpm hylo deploy backend ./apps/backend-cloudflare
-```
-
-`workflow` means your workflow service. `backend` means the Hylo state/API
-backend. This repo does not deploy the browser client through `hylo deploy`.
-
-For one-off commands, use `exec`:
+Common commands:
 
 ```sh
-pnpm hylo exec --backend ./apps/backend-cloudflare -- <one-off command>
+pnpm hylo dev
+pnpm hylo env remote
+pnpm hylo deploy remote
+pnpm hylo exec remote -- env
 ```
+
+Run `pnpm hylo --help` for target registration and profile editing commands.
 
 ### Backend DB
 
@@ -270,7 +265,7 @@ pnpm db:studio
 
 | Command      | What it does                                    |
 | ------------ | ----------------------------------------------- |
-| `pnpm dev`   | Run backend + client + example worker via turbo |
+| `pnpm dev`   | Run the default local Hylo profile              |
 | `pnpm build` | Typecheck + build all packages                  |
 | `pnpm test`  | Run test suites                                 |
 | `pnpm fmt`   | Biome format + autofix                          |

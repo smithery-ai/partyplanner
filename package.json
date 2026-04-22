@@ -9,7 +9,9 @@
     "build": "turbo run build",
     "check": "biome ci --error-on-warnings .",
     "hylo": "node scripts/hylo.mjs",
-    "dev": "pnpm hylo dev --backend ./apps/backend-node --workflow ./examples/nextjs ./apps/client",
+    "dev": "node scripts/hylo.mjs dev",
+    "deploy": "node scripts/hylo.mjs deploy remote",
+    "env": "node scripts/hylo.mjs env",
     "fmt": "biome check --write --unsafe .",
     "prepare": "husky",
     "test": "turbo run test"
@@ -19,6 +21,7 @@
     "husky": "^9.1.7",
     "portless": "^0.10.3",
     "tsx": "^4.21.0",
-    "turbo": "^2.5.0"
+    "turbo": "^2.5.0",
+    "zod": "^4.3.6"
   }
 }

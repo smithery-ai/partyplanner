@@ -8,4 +8,8 @@ export function POST(request: Request): Response | Promise<Response> {
   return getWorkflowApp(request).fetch(request);
 }
 
+export function OPTIONS(request: Request): Response | Promise<Response> {
+  return getWorkflowApp(request).fetch(request);
+}
+
 export const runtime = "nodejs";

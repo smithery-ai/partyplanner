@@ -3,13 +3,8 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "hylo": {
-    "workflow": {},
-    "devUrl": "https://nextjs.hylo.localhost"
-  },
   "scripts": {
-    "dev": "hylo dev --backend ../../apps/backend-node -- next dev",
-    "deploy": "vercel deploy --yes ${HYLO_BACKEND_URL:+--env HYLO_BACKEND_URL=$HYLO_BACKEND_URL}",
+    "dev": "hylo dev workflow.nextjs",
     "build": "next build",
     "typecheck": "tsc --noEmit"
   },
@@ -33,7 +28,6 @@
     "@types/react-dom": "^19.2.3",
     "hylo": "workspace:*",
     "postcss": "^8.5.6",
-    "typescript": "~6.0.2",
-    "vercel": "^51.8.0"
+    "typescript": "~6.0.2"
   }
 }

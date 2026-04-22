@@ -8,12 +8,22 @@ Use the root quickstart for the full local experience:
 pnpm dev
 ```
 
-To launch the client with an explicit workflow service from the repo root:
+To inspect the local profile environment:
 
 ```sh
-pnpm hylo dev --backend ./apps/backend-node --workflow ./examples/nextjs ./apps/client
+pnpm hylo env
 ```
 
-From this directory, `pnpm dev` runs only the Vite client and expects workflow
-services to be running separately. The client talks to a worker; the worker
-reads and writes durable state through the selected backend.
+From this directory, `pnpm dev` starts the client with the local profile
+dependencies it needs. The client talks to a worker; the worker reads and
+writes durable state through the selected backend.
+
+From the repo root, deploy the browser app after the workflow service:
+
+```sh
+pnpm hylo deploy remote workflow.cloudflareWorker
+pnpm hylo deploy remote app.client
+```
+
+Hylo injects the workflow URL during the Vite build. This app deploys to
+Vercel using the package-owned deploy script.

@@ -10,16 +10,10 @@ From this directory:
 pnpm dev
 ```
 
-To launch this workflow service with the client from the repo root:
+To launch the full local profile from the repo root:
 
 ```sh
-pnpm hylo dev --backend ./apps/backend-node --workflow ./examples/nextjs ./apps/client
-```
-
-Deploy this workflow target with:
-
-```sh
-pnpm hylo deploy workflow ./examples/nextjs
+pnpm dev
 ```
 
 Worker API routes are mounted at `/api/workflow`, including `/health`,

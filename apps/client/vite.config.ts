@@ -6,17 +6,17 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const nextjsTarget = packageHyloDevUrl("../../examples/nextjs/package.json");
-const cloudflareWorkerTarget = packageHyloDevUrl(
-  "../../examples/cloudflare-worker/package.json",
-);
+const hyloConfig = readHyloConfig();
+const nextjsTarget = targetUrl("workflow.nextjs");
+const cloudflareWorkerTarget = targetUrl("workflow.cloudflareWorker");
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
     "import.meta.env.VITE_HYLO_WORKFLOW": JSON.stringify(
-      process.env.HYLO_WORKFLOW ?? "",
+      process.env.VITE_HYLO_WORKFLOW ?? process.env.HYLO_WORKFLOW ?? "",
     ),
+    __HYLO_WORKFLOWS__: JSON.stringify(workflowRegistry()),
   },
   resolve: {
     alias: {
@@ -90,12 +90,85 @@ function hyloLocalAgent(target: string): https.Agent | undefined {
   }
 }
 
-function packageHyloDevUrl(packageJsonPath: string): string {
-  const absolutePath = path.resolve(__dirname, packageJsonPath);
-  const packageJson = JSON.parse(readFileSync(absolutePath, "utf8"));
-  const devUrl = packageJson.hylo?.devUrl;
+function readHyloConfig() {
+  return JSON.parse(
+    readFileSync(path.resolve(__dirname, "../../hylo.json"), "utf8"),
+  );
+}
+
+function targetUrl(target: string): string {
+  const devUrl = hyloConfig.targets?.[target]?.url;
   if (typeof devUrl === "string" && devUrl.trim()) {
     return devUrl.trim().replace(/\/$/, "");
   }
-  throw new Error(`${absolutePath} must define hylo.devUrl`);
+  throw new Error(`hylo.json must define targets.${target}.url`);
+}
+
+function workflowRegistry() {
+  const raw =
+    process.env.VITE_HYLO_WORKFLOWS ?? process.env.HYLO_WORKFLOWS ?? "";
+  if (raw.trim()) {
+    try {
+      return normalizeWorkflowRegistry(JSON.parse(raw));
+    } catch {
+      throw new Error("HYLO_WORKFLOWS must be valid JSON");
+    }
+  }
+
+  return {
+    defaultWorkflow: "workflow.nextjs",
+    workflows: {
+      "workflow.nextjs": {
+        label: "Next.js",
+        url: "/api/nextjs",
+      },
+      "workflow.cloudflareWorker": {
+        label: "Cloudflare Worker",
+        url: "/api/cloudflare",
+      },
+    },
+  };
+}
+
+function normalizeWorkflowRegistry(value: unknown) {
+  if (!value || typeof value !== "object" || !("workflows" in value)) {
+    throw new Error("HYLO_WORKFLOWS must define workflows");
+  }
+
+  const workflows = (value as { workflows?: unknown }).workflows;
+  if (!workflows || typeof workflows !== "object") {
+    throw new Error("HYLO_WORKFLOWS workflows must be an object");
+  }
+
+  const entries = Object.entries(workflows).map(([id, config]) => {
+    if (!config || typeof config !== "object" || !("url" in config)) {
+      throw new Error(`HYLO_WORKFLOWS ${id} must define url`);
+    }
+    const url = (config as { url?: unknown }).url;
+    if (typeof url !== "string" || !url.trim()) {
+      throw new Error(`HYLO_WORKFLOWS ${id}.url must be a string`);
+    }
+    const label = (config as { label?: unknown }).label;
+    return [
+      id,
+      {
+        ...(typeof label === "string" && label.trim() ? { label } : {}),
+        url: url.trim(),
+      },
+    ];
+  });
+  if (entries.length === 0) {
+    throw new Error("HYLO_WORKFLOWS must include at least one workflow");
+  }
+
+  const defaultWorkflow = (value as { defaultWorkflow?: unknown })
+    .defaultWorkflow;
+  return {
+    defaultWorkflow:
+      typeof defaultWorkflow === "string" &&
+      entries.some(([id]) => id === defaultWorkflow)
+        ? defaultWorkflow
+        : entries[0][0],
+    workflows: Object.fromEntries(entries),
+  };
 }

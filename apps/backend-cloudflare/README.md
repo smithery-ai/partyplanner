@@ -16,5 +16,5 @@ generated migration files.
 From the repo root, deploy this backend target with:
 
 ```sh
-pnpm hylo deploy backend ./apps/backend-cloudflare
+pnpm hylo deploy remote backend.cloudflare
 ```

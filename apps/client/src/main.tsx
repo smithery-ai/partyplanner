@@ -4,8 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-type WorkflowWorker = "nextjs" | "cloudflare";
-type WorkerChoice = WorkflowWorker | "custom";
+type WorkflowChoice = string | "custom";
+type WorkflowRegistry = {
+  defaultWorkflow?: string;
+  workflows: Record<
+    string,
+    {
+      label?: string;
+      url: string;
+    }
+  >;
+};
 
 const root = document.getElementById("root");
 
@@ -16,14 +25,19 @@ if (!root) {
 createRoot(root).render(<ClientApp />);
 
 function ClientApp() {
-  const initialConfig = useMemo(() => initialWorkflowConfig(), []);
-  const [worker, setWorker] = useState<WorkerChoice>(initialConfig.worker);
+  const registry = useMemo(() => workflowRegistry(), []);
+  const initialConfig = useMemo(
+    () => initialWorkflowConfig(registry),
+    [registry],
+  );
+  const [worker, setWorker] = useState<WorkflowChoice>(initialConfig.worker);
   const [customWorkflowApiUrl, setCustomWorkflowApiUrl] = useState(
     initialConfig.customWorkflowApiUrl,
   );
   const apiBaseUrl = workflowApiBaseUrl({
     worker,
     customWorkflowApiUrl,
+    registry,
   });
 
   useEffect(() => {
@@ -42,11 +56,14 @@ function ClientApp() {
           <select
             value={worker}
             onChange={(event) =>
-              setWorker(event.currentTarget.value as WorkerChoice)
+              setWorker(event.currentTarget.value as WorkflowChoice)
             }
           >
-            <option value="nextjs">Next.js</option>
-            <option value="cloudflare">Cloudflare Worker</option>
+            {Object.entries(registry.workflows).map(([id, workflow]) => (
+              <option key={id} value={id}>
+                {workflow.label ?? labelFromId(id)}
+              </option>
+            ))}
             <option value="custom">Custom URL</option>
           </select>
         </label>
@@ -69,8 +86,8 @@ function ClientApp() {
   );
 }
 
-function initialWorkflowConfig(): {
-  worker: WorkerChoice;
+function initialWorkflowConfig(registry: WorkflowRegistry): {
+  worker: WorkflowChoice;
   customWorkflowApiUrl: string;
 } {
   const params = new URLSearchParams(window.location.search);
@@ -79,29 +96,38 @@ function initialWorkflowConfig(): {
   return {
     worker: explicitApiUrl
       ? "custom"
-      : (parseWorkflowWorker(
+      : (parseWorkflowChoice(
           firstNonEmpty(
             params.get("worker"),
             import.meta.env.VITE_HYLO_WORKFLOW,
           ),
-        ) ?? "nextjs"),
+          registry,
+        ) ??
+        registry.defaultWorkflow ??
+        Object.keys(registry.workflows)[0] ??
+        "custom"),
     customWorkflowApiUrl: explicitApiUrl ?? "",
   };
 }
 
 function workflowApiBaseUrl(config: {
-  worker: WorkerChoice;
+  worker: WorkflowChoice;
   customWorkflowApiUrl: string;
+  registry: WorkflowRegistry;
 }): string {
-  const baseUrl =
-    config.worker === "custom"
-      ? config.customWorkflowApiUrl.trim() || "/api/nextjs"
-      : workflowWorkerApiBaseUrl(config.worker);
-  return baseUrl;
+  if (config.worker === "custom") {
+    return (
+      config.customWorkflowApiUrl.trim() || defaultWorkflowUrl(config.registry)
+    );
+  }
+  return (
+    config.registry.workflows[config.worker]?.url ??
+    defaultWorkflowUrl(config.registry)
+  );
 }
 
 function writeWorkflowConfigToUrl(config: {
-  worker: WorkerChoice;
+  worker: WorkflowChoice;
   customWorkflowApiUrl: string;
 }) {
   const url = new URL(window.location.href);
@@ -121,20 +147,54 @@ function writeWorkflowConfigToUrl(config: {
   window.history.replaceState(null, "", url);
 }
 
-function workflowWorkerApiBaseUrl(worker: WorkflowWorker): string {
-  return worker === "cloudflare" ? "/api/cloudflare" : "/api/nextjs";
+function workflowRegistry(): WorkflowRegistry {
+  return __HYLO_WORKFLOWS__;
 }
 
-function parseWorkflowWorker(
+function parseWorkflowChoice(
   value: string | undefined,
-): WorkflowWorker | undefined {
-  if (value === "cloudflare" || value === "nextjs") return value;
-  if (value === "cloudflare-worker") return "cloudflare";
-  if (value === "examples/cloudflare-worker") return "cloudflare";
-  if (value === "./examples/cloudflare-worker") return "cloudflare";
-  if (value === "examples/nextjs") return "nextjs";
-  if (value === "./examples/nextjs") return "nextjs";
+  registry: WorkflowRegistry,
+): string | undefined {
+  if (!value) return undefined;
+  if (value in registry.workflows) return value;
+  if (value === "nextjs" && "workflow.nextjs" in registry.workflows) {
+    return "workflow.nextjs";
+  }
+  if (
+    value === "cloudflare" &&
+    "workflow.cloudflareWorker" in registry.workflows
+  ) {
+    return "workflow.cloudflareWorker";
+  }
+  const pathId = value.replace(/^\.\//, "").split("/").at(-1);
+  if (pathId && pathId in registry.workflows) return pathId;
+  if (pathId === "nextjs" && "workflow.nextjs" in registry.workflows) {
+    return "workflow.nextjs";
+  }
+  if (
+    pathId === "cloudflare-worker" &&
+    "workflow.cloudflareWorker" in registry.workflows
+  ) {
+    return "workflow.cloudflareWorker";
+  }
   return undefined;
+}
+
+function defaultWorkflowUrl(registry: WorkflowRegistry): string {
+  const workflow =
+    registry.workflows[registry.defaultWorkflow ?? ""] ??
+    Object.values(registry.workflows)[0];
+  return workflow?.url ?? "/api/nextjs";
+}
+
+function labelFromId(id: string): string {
+  return id
+    .replace(/^[^.]+\./, "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function firstNonEmpty(
