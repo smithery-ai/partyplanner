@@ -12,17 +12,15 @@ import {
   defaultPgliteDataDir,
   findFreePort,
   packageDir,
-  packageManagerCommand,
-  parseCliOptions,
 } from "./db-common";
 
-const options = parseCliOptions(process.argv.slice(2));
+const passthroughArgs = process.argv.slice(2).filter((arg) => arg !== "--");
 let url = connectionUrl();
 let pglite: PGlite | undefined;
 let socketServer: PGLiteSocketServer | undefined;
 
 if (!url) {
-  const dataDir = defaultPgliteDataDir(options.app);
+  const dataDir = defaultPgliteDataDir();
   const port = await findFreePort();
   pglite = new PGlite(dataDir);
   await ensureWorkflowPostgresSchema(
@@ -38,16 +36,15 @@ if (!url) {
   console.log(`Started PGlite socket for Drizzle Studio at ${dataDir}.`);
 }
 
-const { command, args } = packageManagerCommand();
 const child = spawn(
-  command,
+  "pnpm",
   [
-    ...args,
+    "exec",
     "drizzle-kit",
     "studio",
     "--config",
     join(packageDir, "drizzle.config.ts"),
-    ...options.passthroughArgs,
+    ...passthroughArgs,
   ],
   {
     cwd: packageDir,

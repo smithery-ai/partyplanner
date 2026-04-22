@@ -5,5 +5,5 @@ compatibility_date = "2026-04-19"
 [[d1_databases]]
 binding = "DB"
 database_name = "hylo-backend"
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "3bafe290-ce7b-4195-9548-d2cf7772da1d"
 migrations_dir = "../../packages/cloudflare/drizzle"

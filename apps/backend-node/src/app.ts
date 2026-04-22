@@ -125,6 +125,5 @@ function resolveBrokerBaseUrl(): string {
   if (backendUrl) return `${backendUrl.replace(/\/+$/, "")}/oauth`;
   // Local dev default. In production this must be set to a URL that matches
   // each provider's whitelisted redirect_uri.
-  const port = process.env.PORT ?? "8787";
-  return `http://localhost:${port}/oauth`;
+  return `http://localhost:${process.env.PORT ?? 8787}/oauth`;
 }

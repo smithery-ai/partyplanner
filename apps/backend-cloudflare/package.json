@@ -1,15 +1,15 @@
 {
-  "name": "backend",
+  "name": "backend-cloudflare",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "portless run --force --name api-worker.hylo node scripts/dev.mjs",
-    "dev:local": "node scripts/dev.mjs",
+    "dev": "hylo dev backend.cloudflare",
+    "deploy": "hylo deploy remote backend.cloudflare",
     "db:generate": "pnpm -C ../../packages/cloudflare db:generate",
-    "db:migrate": "pnpm -C ../../packages/cloudflare db:migrate",
-    "db:migrate:remote": "pnpm -C ../../packages/cloudflare db:migrate:remote",
-    "db:studio": "pnpm -C ../../packages/cloudflare db:studio",
+    "db:migrate": "pnpm -C ../../packages/cloudflare build && hylo exec -- wrangler d1 migrations apply hylo-backend --local",
+    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && hylo exec remote -- wrangler d1 migrations apply hylo-backend --remote",
+    "db:studio": "pnpm -C ../../packages/cloudflare build && hylo exec -- pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
     "build": "tsc --noEmit"
   },
   "dependencies": {
@@ -25,7 +25,8 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
-    "wrangler": "^4.0.0",
-    "typescript": "~6.0.2"
+    "hylo": "workspace:*",
+    "typescript": "~6.0.2",
+    "wrangler": "^4.0.0"
   }
 }

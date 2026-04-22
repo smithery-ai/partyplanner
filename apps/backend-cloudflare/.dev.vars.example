@@ -1,6 +1,6 @@
 HYLO_API_KEY=local-dev-hylo-api-key
 
-# Used to build OAuth redirect_uri values. The default is the Portless backend
+# Used to build OAuth redirect_uri values. The default is the Hylo dev backend
 # URL, which is useful for providers like Notion that require HTTPS callbacks.
 HYLO_BACKEND_PUBLIC_URL=https://api-worker.hylo.localhost
 

@@ -1,4 +1,5 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { cors } from "hono/cors";
 import {
   type BackendApiClientOptions,
   createBackendApiWorkflowQueue,
@@ -44,6 +45,15 @@ export function createWorkflow(options: CreateWorkflowOptions) {
   });
   const basePath = normalizeBasePath(options.basePath);
   const routes = createWorkflowRoutes(basePath);
+
+  app.use(
+    "/*",
+    cors({
+      origin: "*",
+      allowHeaders: ["Content-Type", "x-hylo-backend-url"],
+      allowMethods: ["GET", "PUT", "POST", "OPTIONS"],
+    }),
+  );
 
   app.openapi(routes.health, (c) => c.json({ ok: true as const }, 200));
   app.openapi(routes.manifest, (c) => c.json(manager.manifest(), 200));

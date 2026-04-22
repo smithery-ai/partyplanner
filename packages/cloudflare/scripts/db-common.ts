@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 export const packageDir = resolve(scriptDir, "..");
 export const repoRoot = resolve(packageDir, "../..");
-export const backendDir = join(repoRoot, "apps", "backend");
+export const backendDir = join(repoRoot, "apps", "backend-cloudflare");
 
 export function findLocalD1SqliteFile(): string | undefined {
   const stateDir = join(backendDir, ".wrangler", "state");
