@@ -137,7 +137,7 @@ function handleRedirectCallback({
   const fallback = "/";
   const returnTo =
     state && typeof state.returnTo === "string" ? state.returnTo : fallback;
-  window.history.replaceState({}, "", sameOriginPath(returnTo) ?? fallback);
+  replaceAfterAuthKitCleanup(sameOriginPath(returnTo) ?? fallback);
 }
 
 function currentReturnTo() {
@@ -153,6 +153,12 @@ function sameOriginPath(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+function replaceAfterAuthKitCleanup(path: string) {
+  queueMicrotask(() => {
+    window.history.replaceState({}, "", path);
+  });
 }
 
 function optionalEnv(value: string | undefined) {
