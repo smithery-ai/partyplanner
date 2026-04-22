@@ -6,13 +6,8 @@ import {
   ensureWorkflowPostgresSchema,
   type WorkflowPostgresMigrationDb,
 } from "../src/migrate";
-import {
-  connectionUrl,
-  defaultPgliteDataDir,
-  parseCliOptions,
-} from "./db-common";
+import { connectionUrl, defaultPgliteDataDir } from "./db-common";
 
-const options = parseCliOptions(process.argv.slice(2));
 const url = connectionUrl();
 
 if (url) {
@@ -26,7 +21,7 @@ if (url) {
     await client.end();
   }
 } else {
-  const dataDir = defaultPgliteDataDir(options.app);
+  const dataDir = defaultPgliteDataDir();
   const client = new PGlite(dataDir);
   try {
     await ensureWorkflowPostgresSchema(

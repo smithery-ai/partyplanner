@@ -6,7 +6,7 @@ const sqliteFile = findLocalD1SqliteFile();
 
 if (!sqliteFile) {
   throw new Error(
-    "No local D1 SQLite file was found under apps/backend/.wrangler/state. Run pnpm --filter backend db:migrate once, then try db:studio again.",
+    "No local D1 SQLite file was found under apps/backend-cloudflare/.wrangler/state. From apps/backend-cloudflare, run pnpm db:migrate once, then try pnpm db:studio again.",
   );
 }
 

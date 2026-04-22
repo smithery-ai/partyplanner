@@ -1,34 +1,39 @@
 import dns from "node:dns";
+import { readFileSync } from "node:fs";
 import https from "node:https";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const backendTarget =
-  process.env.VITE_BACKEND_URL ??
-  derivePortlessServiceUrl(process.env.PORTLESS_URL, "hylo", "nextjs.hylo") ??
-  "http://localhost:3000";
-
-const backendProxy = {
-  target: backendTarget,
-  changeOrigin: true,
-  secure: false,
-  agent: portlessLocalAgent(backendTarget),
-  rewrite: (proxyPath: string) =>
-    proxyPath.replace(/^\/api(?=\/|$)/, "/api/workflow") || "/api/workflow",
-};
+const hyloConfig = readHyloConfig();
+const nextjsTarget = targetUrl("workflow.nextjs");
+const cloudflareWorkerTarget = targetUrl("workflow.cloudflareWorker");
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    "import.meta.env.VITE_HYLO_WORKFLOW": JSON.stringify(
+      process.env.VITE_HYLO_WORKFLOW ?? process.env.HYLO_WORKFLOW ?? "",
+    ),
+    __HYLO_WORKFLOWS__: JSON.stringify(workflowRegistry()),
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
   },
   server: {
+    host: process.env.HOST ?? "127.0.0.1",
+    port: process.env.PORT ? Number(process.env.PORT) : 5173,
+    strictPort: Boolean(process.env.PORT),
     proxy: {
-      "/api": backendProxy,
+      "/api/nextjs": workflowProxy(nextjsTarget, /^\/api\/nextjs(?=\/|$)/),
+      "/api/cloudflare": workflowProxy(
+        cloudflareWorkerTarget,
+        /^\/api\/cloudflare(?=\/|$)/,
+      ),
+      "/api": workflowProxy(nextjsTarget, /^\/api(?=\/|$)/),
       "/user_management": {
         target: "https://api.workos.com",
         changeOrigin: true,
@@ -37,39 +42,24 @@ export default defineConfig({
   },
 });
 
-function derivePortlessServiceUrl(
-  sourceUrl: string | undefined,
-  sourceName: string,
-  targetName: string,
-): string | undefined {
-  if (!sourceUrl) return undefined;
-
-  try {
-    const url = new URL(sourceUrl);
-    const sourcePrefix = `${sourceName}.`;
-    const sourceMarker = `.${sourceName}.`;
-
-    if (url.hostname.startsWith(sourcePrefix)) {
-      url.hostname = `${targetName}.${url.hostname.slice(sourcePrefix.length)}`;
-      return url.origin;
-    }
-
-    const markerIndex = url.hostname.indexOf(sourceMarker);
-    if (markerIndex === -1) return undefined;
-
-    const prefix = url.hostname.slice(0, markerIndex);
-    const suffix = url.hostname.slice(markerIndex + sourceMarker.length);
-    url.hostname = `${prefix}.${targetName}.${suffix}`;
-    return url.origin;
-  } catch {
-    return undefined;
-  }
+function workflowProxy(target: string, prefix: RegExp) {
+  return {
+    target,
+    changeOrigin: true,
+    secure: false,
+    agent: hyloLocalAgent(target),
+    rewrite: (proxyPath: string) =>
+      proxyPath.replace(prefix, "/api/workflow") || "/api/workflow",
+  };
 }
 
-function portlessLocalAgent(target: string): https.Agent | undefined {
+function hyloLocalAgent(target: string): https.Agent | undefined {
   try {
     const url = new URL(target);
-    if (url.protocol !== "https:" || !url.hostname.endsWith(".local")) {
+    if (
+      url.protocol !== "https:" ||
+      (!url.hostname.endsWith(".local") && !url.hostname.endsWith(".localhost"))
+    ) {
       return undefined;
     }
     return new https.Agent({
@@ -102,4 +92,87 @@ function portlessLocalAgent(target: string): https.Agent | undefined {
   } catch {
     return undefined;
   }
+}
+
+function readHyloConfig() {
+  return JSON.parse(
+    readFileSync(path.resolve(__dirname, "../../hylo.json"), "utf8"),
+  );
+}
+
+function targetUrl(target: string): string {
+  const devUrl = hyloConfig.targets?.[target]?.url;
+  if (typeof devUrl === "string" && devUrl.trim()) {
+    return devUrl.trim().replace(/\/$/, "");
+  }
+  throw new Error(`hylo.json must define targets.${target}.url`);
+}
+
+function workflowRegistry() {
+  const raw =
+    process.env.VITE_HYLO_WORKFLOWS ?? process.env.HYLO_WORKFLOWS ?? "";
+  if (raw.trim()) {
+    try {
+      return normalizeWorkflowRegistry(JSON.parse(raw));
+    } catch {
+      throw new Error("HYLO_WORKFLOWS must be valid JSON");
+    }
+  }
+
+  return {
+    defaultWorkflow: "workflow.nextjs",
+    workflows: {
+      "workflow.nextjs": {
+        label: "Next.js",
+        url: "/api/nextjs",
+      },
+      "workflow.cloudflareWorker": {
+        label: "Cloudflare Worker",
+        url: "/api/cloudflare",
+      },
+    },
+  };
+}
+
+function normalizeWorkflowRegistry(value: unknown) {
+  if (!value || typeof value !== "object" || !("workflows" in value)) {
+    throw new Error("HYLO_WORKFLOWS must define workflows");
+  }
+
+  const workflows = (value as { workflows?: unknown }).workflows;
+  if (!workflows || typeof workflows !== "object") {
+    throw new Error("HYLO_WORKFLOWS workflows must be an object");
+  }
+
+  const entries = Object.entries(workflows).map(([id, config]) => {
+    if (!config || typeof config !== "object" || !("url" in config)) {
+      throw new Error(`HYLO_WORKFLOWS ${id} must define url`);
+    }
+    const url = (config as { url?: unknown }).url;
+    if (typeof url !== "string" || !url.trim()) {
+      throw new Error(`HYLO_WORKFLOWS ${id}.url must be a string`);
+    }
+    const label = (config as { label?: unknown }).label;
+    return [
+      id,
+      {
+        ...(typeof label === "string" && label.trim() ? { label } : {}),
+        url: url.trim(),
+      },
+    ];
+  });
+  if (entries.length === 0) {
+    throw new Error("HYLO_WORKFLOWS must include at least one workflow");
+  }
+
+  const defaultWorkflow = (value as { defaultWorkflow?: unknown })
+    .defaultWorkflow;
+  return {
+    defaultWorkflow:
+      typeof defaultWorkflow === "string" &&
+      entries.some(([id]) => id === defaultWorkflow)
+        ? defaultWorkflow
+        : entries[0][0],
+    workflows: Object.fromEntries(entries),
+  };
 }

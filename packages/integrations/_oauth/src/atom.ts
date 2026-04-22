@@ -65,10 +65,9 @@ export const defaultBroker: Atom<BrokerCredentials> = atom(
   },
 );
 
-// Default app base URL for building handoff URLs. Reads conventional env
-// vars (Next.js, Vercel, Portless) with a localhost fallback. Override per
-// connection via the `appBaseUrl` option if your deployment uses something
-// different.
+// Default app base URL for building handoff URLs. Hylo sets HYLO_APP_URL for
+// local dev. Override per connection via the `appBaseUrl` option if your
+// deployment uses something different.
 export const defaultAppBaseUrl: Atom<string> = atom(
   () => resolveDefaultAppBaseUrl(),
   {
@@ -79,10 +78,10 @@ export const defaultAppBaseUrl: Atom<string> = atom(
 );
 
 function resolveDefaultAppBaseUrl(): string {
+  const hylo = envVar("HYLO_APP_URL");
+  if (hylo) return hylo;
   const next = envVar("NEXT_PUBLIC_APP_URL");
   if (next) return next;
-  const portless = envVar("PORTLESS_URL");
-  if (portless) return portless;
   const vercel = envVar("VERCEL_URL");
   if (vercel) return `https://${vercel}`;
   return "http://localhost:3000";

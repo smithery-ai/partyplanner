@@ -4,10 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "portless run --force --name api.hylo tsx src/index.ts",
-    "dev:local": "tsx src/index.ts",
-    "db:migrate": "HYLO_DB_APP=backend-node pnpm -C ../../packages/postgres db:migrate",
-    "db:studio": "HYLO_DB_APP=backend-node pnpm -C ../../packages/postgres db:studio",
+    "dev": "hylo dev backend.node",
+    "db:migrate": "hylo exec -- pnpm -C ../../packages/postgres db:migrate",
+    "db:studio": "hylo exec -- pnpm -C ../../packages/postgres db:studio",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
@@ -24,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
+    "hylo": "workspace:*",
     "tsx": "^4.21.0",
     "typescript": "~6.0.2"
   }

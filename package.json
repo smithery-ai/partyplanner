@@ -1,11 +1,17 @@
 {
   "name": "hylo",
   "private": true,
+  "bin": {
+    "hylo": "./scripts/hylo.mjs"
+  },
   "packageManager": "pnpm@10.26.2",
   "scripts": {
     "build": "turbo run build",
     "check": "biome ci --error-on-warnings .",
-    "dev": "sh scripts/dev-with-portless.sh",
+    "hylo": "node scripts/hylo.mjs",
+    "dev": "node scripts/hylo.mjs dev",
+    "deploy": "node scripts/hylo.mjs deploy remote",
+    "env": "node scripts/hylo.mjs env",
     "fmt": "biome check --write --unsafe .",
     "prepare": "husky",
     "test": "turbo run test"
@@ -15,6 +21,7 @@
     "husky": "^9.1.7",
     "portless": "^0.10.3",
     "tsx": "^4.21.0",
-    "turbo": "^2.5.0"
+    "turbo": "^2.5.0",
+    "zod": "^4.3.6"
   }
 }

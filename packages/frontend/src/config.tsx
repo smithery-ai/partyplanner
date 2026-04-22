@@ -71,5 +71,9 @@ export function useWorkflowFrontendConfig(): ResolvedWorkflowFrontendConfig {
 function normalizeApiBaseUrl(apiBaseUrl: string): string {
   const trimmed = apiBaseUrl.trim();
   if (!trimmed || trimmed === "/") return "";
+  const suffixIndex = trimmed.search(/[?#]/);
+  if (suffixIndex !== -1) {
+    return `${trimmed.slice(0, suffixIndex).replace(/\/+$/, "")}${trimmed.slice(suffixIndex)}`;
+  }
   return trimmed.replace(/\/+$/, "");
 }

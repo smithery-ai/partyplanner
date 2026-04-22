@@ -127,7 +127,7 @@ A managed REST API. Owns the durable state manager (run state, events, run docum
 Two deployable flavors of the **same** backend:
 
 - `apps/backend-node` — Node + PGlite (alternate local dev)
-- `apps/backend` — Cloudflare Worker + D1 (the cloud backend; also runs locally via Wrangler)
+- `apps/backend-cloudflare` — Cloudflare Worker + D1 (the cloud backend; also runs locally via Wrangler)
 
 The Cloudflare backend also hosts an **OAuth broker** at `/oauth`. Provider client secrets (Spotify, Notion, …) live on the backend, not on workers — workers only ever see resolved access tokens.
 
@@ -136,7 +136,7 @@ The Cloudflare backend also hosts an **OAuth broker** at `/oauth`. Provider clie
 Backend and worker talk HTTP both directions, so both must be reachable by the other:
 
 - **Local**: `backend-node` + a locally-running worker (e.g. `examples/nextjs`)
-- **Cloud**: `backend` + a cloud-deployed worker
+- **Cloud**: `backend-cloudflare` + a cloud-deployed worker
 
 Mixing a local worker with a cloud backend won't work without tunneling.
 
@@ -148,16 +148,16 @@ Mixing a local worker with a cloud backend won't work without tunneling.
 
 ```
 apps/
-  backend/        Cloud backend (Cloudflare Worker + D1)
-  backend-node/   Alternate local backend (Node + PGlite)
-  client/         React UI (Vite)
+  backend-cloudflare/ Cloud backend (Cloudflare Worker + D1)
+  backend-node/       Alternate local backend (Node + PGlite)
+  client/             React UI (Vite)
 
 packages/
   core/           Primitives: atom, action, input, secret
   runtime/        Scheduler + registry + executor
   server/         Worker SDK — createWorkflow() mounts HTTP routes
   remote/         REST transport between worker and backend
-  cloudflare/     D1 adapters for apps/backend
+  cloudflare/     D1 adapters for apps/backend-cloudflare
   postgres/       Drizzle schema + adapters for apps/backend-node
   oauth-broker/   Backend-hosted OAuth broker (mounted at /oauth)
   frontend/       React components (WorkflowSinglePage)
@@ -165,7 +165,8 @@ packages/
   demo-workflow/  Reference workflow used by the client
 
 examples/
-  nextjs/         Worker example (Next.js app with workflows)
+  nextjs/              Worker example (Next.js app with workflows)
+  cloudflare-worker/   Worker example (Cloudflare Worker with workflows)
 ```
 
 ## Worker SDK
@@ -209,53 +210,83 @@ Mounted under `/runtime` on both flavors. OpenAPI docs at `/runtime/openapi.json
 
 ## Quickstart
 
-Requires Node 22+, pnpm 10.26, and (for the default dev flow) [portless](https://portless.dev) for local HTTPS.
+Requires Node 22+ and pnpm 10.26.
 
 ```sh
 pnpm install
-pnpm dev       # starts portless + turbo (backend-node, client, nextjs example)
+pnpm dev
 ```
 
-Or skip portless:
+Open `https://hylo.localhost`.
+
+`pnpm dev` starts the `local` profile from `hylo.json`: the Node backend, the
+Next.js workflow server, and the client.
+
+### Hylo CLI
+
+The Hylo CLI reads `hylo.json` and launches or deploys a profile. A profile is
+a set of targets: one backend, one app, and one or more workflow servers. Hylo
+uses that graph to inject the backend URL into workflows and the workflow
+registry into the app.
+
+This repo ships two profiles:
+
+- `local` — Node backend, Next.js workflow, Vite client
+- `remote` — Cloudflare backend, Cloudflare workflow, Vercel client
+
+Common commands:
 
 ```sh
-PORTLESS=0 pnpm dev
+# default local profile
+npx hylo dev
+
+# run the Cloudflare Worker locally in dev mode
+npx hylo dev remote workflow.cloudflareWorker
+
+# inspect or deploy the remote profile
+npx hylo env remote
+npx hylo deploy remote
+npx hylo deploy remote app.client
 ```
 
-URLs (portless mode):
-
-- Client: `https://hylo.localhost`
-- Backend (node): `https://api.hylo.localhost`
-- Backend (cloudflare dev): `https://api-worker.hylo.localhost`
-- Worker example (nextjs): `https://nextjs.hylo.localhost`
-
-### Required env for the worker
+To demo the Cloudflare Worker workflow locally inside the deployed app, uplink
+it through a temporary Cloudflare tunnel:
 
 ```sh
-HYLO_BACKEND_URL=http://127.0.0.1:8788      # where the backend is reachable
-HYLO_API_KEY=local-dev-hylo-api-key         # must match backend; defaults to
-                                            # this value in non-prod
+npx hylo uplink remote workflow.cloudflareWorker
 ```
+
+`uplink` starts the local workflow, prints the deployed app URL with the
+tunneled workflow selected, and keeps both running until Ctrl+C.
+
+Run `npx hylo --help` for target registration and profile editing commands.
 
 ### Backend DB
 
-```sh
-pnpm --filter backend db:migrate    # apply D1 migrations for apps/backend
-pnpm --filter backend db:studio     # Drizzle Studio against local D1
-```
-
-For the alternate Node backend:
+For the default local Node backend:
 
 ```sh
-pnpm --filter backend-node db:migrate
-pnpm --filter backend-node db:studio
+cd apps/backend-node
+pnpm db:migrate
+pnpm db:studio
 ```
+
+For the local Cloudflare backend:
+
+```sh
+cd apps/backend-cloudflare
+pnpm db:migrate
+pnpm db:studio
+```
+
+For the deployed Cloudflare backend, run `pnpm db:migrate:remote` from
+`apps/backend-cloudflare`.
 
 ## Scripts
 
 | Command      | What it does                                    |
 | ------------ | ----------------------------------------------- |
-| `pnpm dev`   | Run backend + client + example worker via turbo |
+| `pnpm dev`   | Run the default local Hylo profile              |
 | `pnpm build` | Typecheck + build all packages                  |
 | `pnpm test`  | Run test suites                                 |
 | `pnpm fmt`   | Biome format + autofix                          |

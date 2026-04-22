@@ -1,10 +1,9 @@
-import { WorkflowSinglePage } from "@workflow/frontend";
 import { AuthKitProvider, type User, useAuth } from "@workos-inc/authkit-react";
 import { LogOut } from "lucide-react";
-import { useEffect } from "react";
+import { type ReactNode, useEffect } from "react";
 
 type AppProps = {
-  apiBaseUrl: string;
+  children: (props: { sidebarFooter: ReactNode }) => ReactNode;
 };
 
 type WorkOSConfig = {
@@ -14,7 +13,7 @@ type WorkOSConfig = {
   devMode?: boolean;
 };
 
-export function App({ apiBaseUrl }: AppProps) {
+export function App({ children }: AppProps) {
   const workos = getWorkOSConfig();
 
   if (!workos) {
@@ -36,12 +35,12 @@ export function App({ apiBaseUrl }: AppProps) {
         void signIn({ state: { returnTo: currentReturnTo() } });
       }}
     >
-      <AuthenticatedApp apiBaseUrl={apiBaseUrl} />
+      <AuthenticatedApp>{children}</AuthenticatedApp>
     </AuthKitProvider>
   );
 }
 
-function AuthenticatedApp({ apiBaseUrl }: AppProps) {
+function AuthenticatedApp({ children }: AppProps) {
   const { isLoading, user, signIn, signOut } = useAuth();
   const isLoginRoute = window.location.pathname === "/login";
 
@@ -60,17 +59,14 @@ function AuthenticatedApp({ apiBaseUrl }: AppProps) {
 
   if (!user) return null;
 
-  return (
-    <WorkflowSinglePage
-      apiBaseUrl={apiBaseUrl}
-      sidebarFooter={
-        <UserFooter
-          user={user}
-          onSignOut={() => signOut({ returnTo: window.location.origin })}
-        />
-      }
-    />
-  );
+  return children({
+    sidebarFooter: (
+      <UserFooter
+        user={user}
+        onSignOut={() => signOut({ returnTo: window.location.origin })}
+      />
+    ),
+  });
 }
 
 function UserFooter({

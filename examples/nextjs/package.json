@@ -4,8 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "portless run --force --name nextjs.hylo node scripts/dev.mjs",
-    "dev:local": "HYLO_BACKEND_URL=http://127.0.0.1:8788 NEXT_PUBLIC_APP_URL=http://localhost:3000 node scripts/dev.mjs",
+    "dev": "hylo dev workflow.nextjs",
     "build": "next build",
     "typecheck": "tsc --noEmit"
   },
@@ -27,6 +26,7 @@
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "hylo": "workspace:*",
     "postcss": "^8.5.6",
     "typescript": "~6.0.2"
   }
