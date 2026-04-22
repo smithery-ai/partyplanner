@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm build",
+  "buildCommand": "pnpm --filter @workflow/core --filter @workflow/runtime --filter @workflow/server build && pnpm build",
   "framework": "vite",
   "outputDirectory": "dist"
 }
