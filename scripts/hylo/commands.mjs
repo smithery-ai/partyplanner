@@ -133,6 +133,72 @@ export function runDeployCommand(args) {
   }
 }
 
+export function runUplinkCommand(args) {
+  const parsed = parseUplinkArgs(args);
+  if (parsed.help) {
+    printUplinkHelp();
+    process.exit(0);
+  }
+
+  const profile = resolveProfile(parsed.profileName);
+  const workflow = resolveTarget(parsed.targetName, "workflow");
+  const backend = profileBackend(profile);
+  if (backend.provider !== "cloudflare-worker") {
+    die(
+      `hylo uplink uses Wrangler from the profile backend; ${backend.id} is not a Cloudflare backend.`,
+    );
+  }
+  const app = profileApp(profile);
+  const localUrl = parsed.localUrl ?? workflow.url;
+  if (!localUrl) {
+    die(`${workflow.id} must define url in hylo.json or pass --url.`);
+  }
+
+  const localWorkflowUrl = validateHttpUrl(
+    localUrl,
+    `${workflow.id} local url`,
+  );
+  const tunnelCommand = shellCommand(
+    `pnpm exec wrangler tunnel quick-start ${shellQuote(localWorkflowUrl)} --log-level info`,
+  );
+
+  process.stderr.write(
+    [
+      `hylo uplink ${profile.id} ${workflow.id}`,
+      `  local:   ${localWorkflowUrl}`,
+      `  app:     ${uplinkConfiguredAppUrl(profile, app, parsed.appUrl) ?? "(not configured)"}`,
+      "  tunnel:  waiting for Cloudflare URL...",
+      "  stop:    Ctrl+C",
+      "",
+    ].join("\n"),
+  );
+
+  const env = devOutputEnv({ ...process.env, ...profileEnv(profile) });
+  const child = spawnChild(tunnelCommand[0], tunnelCommand.slice(1), env, {
+    cwd: backend.packageDir,
+    stdio: ["inherit", "pipe", "pipe"],
+  });
+
+  let announced = false;
+  const announce = (url) => {
+    if (announced) return;
+    announced = true;
+    const workflowUrl = workflowApiUrl(url);
+    process.stderr.write(
+      [
+        "",
+        `hylo: ${workflow.id} exposed at ${workflowUrl}`,
+        `hylo: open ${uplinkAppUrl(profile, app, workflowUrl, parsed.appUrl)}`,
+        "",
+      ].join("\n"),
+    );
+  };
+  child.stdout?.on("data", (chunk) => pipeUplinkOutput(chunk, announce));
+  child.stderr?.on("data", (chunk) => pipeUplinkOutput(chunk, announce));
+
+  waitForChildAndExit(child, { exitZeroOnSigint: true });
+}
+
 export function runProfileCommand(args) {
   const [action, profileName, targetName, ...rest] = args;
 
@@ -221,7 +287,7 @@ function runSingleDevCommand(command, profile, currentTarget) {
   };
   const devUrl = currentTarget?.url;
   const wrappedCommand = wrapPortlessCommand(command, devUrl);
-  spawnAndExit(wrappedCommand.command, env, [], {
+  spawnAndExit(wrappedCommand.command, devOutputEnv(env), [], {
     cwd: currentTarget?.packageDir,
     exitZeroOnSigint: true,
     filterPortlessOutput: wrappedCommand.filterPortlessOutput,
@@ -244,7 +310,7 @@ function runDevTargets(profile, targets) {
     return {
       ...wrapped,
       cwd: target.packageDir,
-      env,
+      env: devOutputEnv(env),
       target,
     };
   });
@@ -274,6 +340,16 @@ function selectedProfile(profileName) {
     die("no profile selected. Set hylo.json defaultProfile or pass a profile.");
   }
   return profile;
+}
+
+function devOutputEnv(env) {
+  if (env.NO_COLOR || env.FORCE_COLOR) return env;
+  return {
+    ...env,
+    CLICOLOR_FORCE: "1",
+    FORCE_COLOR: "1",
+    npm_config_color: "always",
+  };
 }
 
 function parseProfileCommandArgs(args, options) {
@@ -625,6 +701,20 @@ Profiles: ${profileChoices()}
 `);
 }
 
+function printUplinkHelp() {
+  console.log(`hylo uplink
+
+Usage:
+  hylo uplink <profile> <workflow-target> [--url <local-url>] [--app-url <url>]
+
+Starts a temporary Cloudflare tunnel to a local workflow URL and prints a remote
+app link that points at the tunneled workflow API.
+
+Example:
+  hylo uplink remote workflow.nextjs
+`);
+}
+
 function printProfileHelp() {
   console.log(`hylo profile
 
@@ -651,6 +741,57 @@ Options:
 Example:
   hylo target add workflow.someWorker --path ./examples/some-worker --url https://some-worker.hylo.localhost
 `);
+}
+
+function parseUplinkArgs(args) {
+  const parsed = {
+    appUrl: undefined,
+    help: false,
+    localUrl: undefined,
+    profileName: undefined,
+    targetName: undefined,
+  };
+
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === "--help" || arg === "-h") {
+      parsed.help = true;
+      continue;
+    }
+    if (arg === "--url") {
+      parsed.localUrl = requiredOptionValue(args, ++index, "--url");
+      continue;
+    }
+    if (arg.startsWith("--url=")) {
+      parsed.localUrl = arg.slice("--url=".length);
+      continue;
+    }
+    if (arg === "--app-url") {
+      parsed.appUrl = requiredOptionValue(args, ++index, "--app-url");
+      continue;
+    }
+    if (arg.startsWith("--app-url=")) {
+      parsed.appUrl = arg.slice("--app-url=".length);
+      continue;
+    }
+    if (!parsed.profileName) {
+      parsed.profileName = arg;
+      continue;
+    }
+    if (!parsed.targetName) {
+      parsed.targetName = arg;
+      continue;
+    }
+    die(`unknown uplink argument "${arg}".`);
+  }
+
+  if (parsed.help) return parsed;
+  if (!parsed.profileName || !parsed.targetName) {
+    die(
+      "Usage: hylo uplink <profile> <workflow-target> [--url <local-url>] [--app-url <url>]",
+    );
+  }
+  return parsed;
 }
 
 function parseTargetAddOptions(args) {
@@ -703,6 +844,74 @@ function parseTargetAddOptions(args) {
   if (!options.path) die("--path is required.");
   if (!options.url) die("--url is required.");
   return options;
+}
+
+function pipeUplinkOutput(chunk, announce) {
+  const text = chunk.toString();
+  process.stderr.write(text);
+  const match = text.match(/https:\/\/[a-zA-Z0-9.-]+\.trycloudflare\.com\b/);
+  if (match) announce(match[0]);
+}
+
+function uplinkConfiguredAppUrl(profile, app, appUrl) {
+  const value = appUrl ?? optionalTargetRuntimeUrl(app, profile);
+  return value ? validateHttpUrl(value, `${app.id} app url`) : undefined;
+}
+
+function uplinkAppUrl(profile, app, workflowUrl, appUrlOverride) {
+  const appUrl = uplinkConfiguredAppUrl(profile, app, appUrlOverride);
+  if (!appUrl)
+    return `(app URL is not configured; use workflowApiUrl=${workflowUrl})`;
+  const url = new URL(appUrl);
+  url.searchParams.set("workflowApiUrl", workflowUrl);
+  return url.toString();
+}
+
+function waitForChildAndExit(child, options = {}) {
+  const signalHandlers = new Map();
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    const handler = () => {
+      terminateUplinkChild(child, signal);
+    };
+    signalHandlers.set(signal, handler);
+    process.on(signal, handler);
+  }
+
+  child.on("error", (error) => {
+    die(`failed to start tunnel: ${error.message}`);
+  });
+  child.on("exit", (code, signal) => {
+    for (const [currentSignal, handler] of signalHandlers) {
+      process.off(currentSignal, handler);
+    }
+    if (signal) {
+      process.exit(
+        options.exitZeroOnSigint && signal === "SIGINT"
+          ? 0
+          : signalExitCode(signal),
+      );
+      return;
+    }
+    process.exit(code ?? 0);
+  });
+}
+
+function terminateUplinkChild(child, signal) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  try {
+    if (process.platform === "win32") {
+      child.kill(signal);
+      return;
+    }
+    process.kill(-child.pid, signal);
+  } catch (error) {
+    if (error?.code !== "ESRCH") throw error;
+  }
+}
+
+function signalExitCode(signal) {
+  const codes = { SIGINT: 130, SIGTERM: 143 };
+  return codes[signal] ?? 1;
 }
 
 function requiredOptionValue(args, index, option) {

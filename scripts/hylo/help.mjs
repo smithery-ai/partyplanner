@@ -5,6 +5,7 @@ export function printHelp() {
 
 Usage:
   hylo dev [profile]
+  hylo uplink <profile> <workflow-target>
   hylo deploy [profile] [target...]
   hylo env [profile]
   hylo run [profile] -- <command...>
@@ -18,6 +19,7 @@ workflow.nextjs, or app.client.
 
 Commands:
   dev       Start the configured local targets for a profile.
+  uplink    Expose a local workflow to a remote app with a temporary tunnel.
   deploy    Deploy the deployable targets in a profile.
   env       Print the Hylo environment resolved for a profile.
   run       Launch a long-running command with profile env injected.
@@ -33,6 +35,7 @@ Deployable targets:
 
 Common:
   hylo dev
+  hylo uplink remote workflow.nextjs
   hylo env remote
   hylo deploy remote
   hylo exec remote -- env

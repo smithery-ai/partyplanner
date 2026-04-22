@@ -5,6 +5,7 @@ import {
   runDevCommand,
   runProfileCommand,
   runTargetCommand,
+  runUplinkCommand,
 } from "./commands.mjs";
 import { printHelp } from "./help.mjs";
 import { die } from "./shared.mjs";
@@ -32,6 +33,11 @@ export function main(args) {
     return;
   }
 
+  if (commandName === "uplink") {
+    runUplinkCommand(rest);
+    return;
+  }
+
   if (commandName === "env") {
     printEnv(rest);
     return;
@@ -48,6 +54,6 @@ export function main(args) {
   }
 
   die(
-    `unknown command "${commandName}". Use run, dev, deploy, exec, env, profile, or target.`,
+    `unknown command "${commandName}". Use run, dev, uplink, deploy, exec, env, profile, or target.`,
   );
 }
