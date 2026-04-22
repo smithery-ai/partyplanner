@@ -46,6 +46,7 @@ function ClientApp({ sidebarFooter }: { sidebarFooter: ReactNode }) {
   const apiBaseUrl = workflowApiBaseUrl({
     worker,
     customWorkflowApiUrl,
+    workflowApiOverride: initialConfig.workflowApiOverride,
     registry,
   });
 
@@ -131,12 +132,16 @@ function initialWorkflowConfig(registry: WorkflowRegistry): {
 function workflowApiBaseUrl(config: {
   worker: WorkflowChoice;
   customWorkflowApiUrl: string;
+  workflowApiOverride?: WorkflowApiOverride;
   registry: WorkflowRegistry;
 }): string {
   if (config.worker === "custom") {
     return (
       config.customWorkflowApiUrl.trim() || defaultWorkflowUrl(config.registry)
     );
+  }
+  if (config.workflowApiOverride?.worker === config.worker) {
+    return config.workflowApiOverride.url;
   }
   return (
     config.registry.workflows[config.worker]?.url ??
