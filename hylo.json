@@ -14,7 +14,7 @@
       "urls": {
         "backend.cloudflare": "https://hylo-backend.smithery.workers.dev",
         "workflow.cloudflareWorker": "https://hylo-cloudflare-worker-example.smithery.workers.dev",
-        "app.client": "https://hylo-eight.vercel.app"
+        "app.client": "https://hylo-client.vercel.app"
       }
     }
   },
@@ -50,7 +50,7 @@
       "provider": "vite",
       "dev": "pnpm exec vite",
       "build": "vite build",
-      "deploy": "cd ../.. && pnpm exec vercel link --yes --project hylo && pnpm exec vercel deploy --prod --yes --force --build-env VITE_HYLO_WORKFLOW=\"$VITE_HYLO_WORKFLOW\" --build-env VITE_HYLO_WORKFLOW_URL=\"$VITE_HYLO_WORKFLOW_URL\" --build-env VITE_HYLO_WORKFLOWS=\"$VITE_HYLO_WORKFLOWS\"",
+      "deploy": "cd ../.. && pnpm exec vercel link --yes --project hylo-client && pnpm exec vercel deploy --prod --yes --force --build-env VITE_HYLO_WORKFLOW=\"$VITE_HYLO_WORKFLOW\" --build-env VITE_HYLO_WORKFLOW_URL=\"$VITE_HYLO_WORKFLOW_URL\" --build-env VITE_HYLO_WORKFLOWS=\"$VITE_HYLO_WORKFLOWS\"",
       "url": "https://hylo.localhost"
     }
   }
