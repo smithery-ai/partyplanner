@@ -16,7 +16,7 @@ import {
   SkipForward,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { ZodError } from "zod";
 import {
   defaultForJsonSchema,
@@ -524,10 +524,12 @@ export function WorkflowRunnerApp({
   workflowId,
   runId,
   navigation = noopNavigation,
+  sidebarFooter,
 }: {
   workflowId: string;
   runId?: string;
   navigation?: WorkflowNavigation;
+  sidebarFooter?: ReactNode;
 }) {
   const workflow = useWorkflow(workflowId);
   const workflowRun = useWorkflowRun(runId);
@@ -1037,6 +1039,11 @@ export function WorkflowRunnerApp({
               </div>
             )}
           </div>
+          {sidebarFooter ? (
+            <div className="shrink-0 border-t border-sidebar-border p-2">
+              {sidebarFooter}
+            </div>
+          ) : null}
         </aside>
         <div className="relative min-w-0 flex-1">
           <QueueVisualizer
@@ -1112,7 +1119,11 @@ export function WorkflowRunnerApp({
   );
 }
 
-export function WorkflowSingleApp() {
+export function WorkflowSingleApp({
+  sidebarFooter,
+}: {
+  sidebarFooter?: ReactNode;
+} = {}) {
   const workflow = useWorkflow(undefined);
   const [runId, setRunId] = useState<string | undefined>();
   const manifest = workflow.manifest;
@@ -1151,18 +1162,21 @@ export function WorkflowSingleApp() {
       workflowId={manifest.workflowId}
       runId={runId}
       navigation={navigation}
+      sidebarFooter={sidebarFooter}
     />
   );
 }
 
 export function WorkflowSinglePage({
   apiBaseUrl = "/api/workflow",
+  sidebarFooter,
 }: {
   apiBaseUrl?: string;
+  sidebarFooter?: ReactNode;
 }) {
   return (
     <WorkflowFrontendRoot config={{ apiBaseUrl }}>
-      <WorkflowSingleApp />
+      <WorkflowSingleApp sidebarFooter={sidebarFooter} />
     </WorkflowFrontendRoot>
   );
 }

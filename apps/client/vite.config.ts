@@ -29,6 +29,10 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": backendProxy,
+      "/user_management": {
+        target: "https://api.workos.com",
+        changeOrigin: true,
+      },
     },
   },
 });
