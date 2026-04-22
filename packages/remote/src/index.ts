@@ -13,6 +13,7 @@ import type {
   StoredRunState,
 } from "@workflow/runtime";
 import type {
+  WorkflowIdentity,
   WorkflowQueue,
   WorkflowRunDocument,
   WorkflowRunSummary,
@@ -33,15 +34,23 @@ export type RemoteRuntimeServerOptions = {
   queue: WorkflowQueue;
   basePath?: string;
   cors?: boolean;
+  authenticateAppToken?: (token: string) => RemoteRuntimeIdentity | undefined;
 };
 
 export type RemoteRuntimeClientOptions = {
   baseUrl: string;
   fetch?: typeof fetch;
+  getAuthToken?: () => string | undefined;
+};
+
+export type RemoteRuntimeIdentity = WorkflowIdentity & {
+  appId?: string;
 };
 
 export function createRemoteRuntimeServer(options: RemoteRuntimeServerOptions) {
-  const app = new OpenAPIHono({
+  const app = new OpenAPIHono<{
+    Variables: { identity?: RemoteRuntimeIdentity };
+  }>({
     defaultHook: (result, c) => {
       if (!result.success)
         return c.json({ message: result.error.message }, 400);
@@ -55,13 +64,28 @@ export function createRemoteRuntimeServer(options: RemoteRuntimeServerOptions) {
       "/*",
       cors({
         origin: "*",
-        allowHeaders: ["Content-Type"],
+        allowHeaders: ["Content-Type", "Authorization"],
         allowMethods: ["GET", "PUT", "POST", "OPTIONS"],
       }),
     );
   }
 
+  if (options.authenticateAppToken) {
+    app.use("/*", async (c, next) => {
+      if (c.req.path.endsWith("/health")) {
+        await next();
+        return;
+      }
+      const identity = authenticate(c.req.header("Authorization"), options);
+      if (!identity) return c.json({ message: "unauthorized" }, 401);
+      c.set("identity", identity);
+      await next();
+    });
+  }
+
   app.openapi(routes.health, (c) => c.json({ ok: true as const }, 200));
+
+  app.openapi(routes.identity, (c) => c.json(c.get("identity") ?? {}, 200));
 
   app.openapi(routes.listRuns, async (c) => {
     const { workflowId } = c.req.valid("query");
@@ -92,7 +116,10 @@ export function createRemoteRuntimeServer(options: RemoteRuntimeServerOptions) {
   });
 
   app.openapi(routes.getAtomValue, async (c) => {
-    const key = c.req.valid("json") as AtomPersistenceKey;
+    const key = atomValueKeyForIdentity(
+      c.req.valid("json") as AtomPersistenceKey,
+      c.get("identity"),
+    );
     return c.json((await options.stateStore.loadAtomValue(key)) ?? null, 200);
   });
 
@@ -102,7 +129,10 @@ export function createRemoteRuntimeServer(options: RemoteRuntimeServerOptions) {
         key: AtomPersistenceKey;
         value: Omit<StoredAtomValue, "createdAt" | "updatedAt">;
       };
-      await options.stateStore.saveAtomValue(body.key, body.value);
+      await options.stateStore.saveAtomValue(
+        atomValueKeyForIdentity(body.key, c.get("identity")),
+        body.value,
+      );
       return c.json({ ok: true as const }, 200);
     } catch (e) {
       return c.json({ message: errorMessage(e) }, 400);
@@ -141,7 +171,9 @@ export function createRemoteRuntimeServer(options: RemoteRuntimeServerOptions) {
       if (body.document.runId !== runId) {
         throw new Error("Document runId does not match route");
       }
-      await options.stateStore.saveRunDocument(body.document);
+      await options.stateStore.saveRunDocument(
+        documentForIdentity(body.document, c.get("identity")),
+      );
       return c.json({ ok: true as const }, 200);
     } catch (e) {
       return c.json({ message: errorMessage(e) }, 400);
@@ -333,10 +365,15 @@ function remoteClient(options: string | RemoteRuntimeClientOptions) {
 
   return {
     async get<T>(path: string): Promise<T> {
-      return readJsonResponse<T>(await fetchImpl(url(baseUrl, path)));
+      return readJsonResponse<T>(
+        await fetchImpl(url(baseUrl, path), request("GET", config)),
+      );
     },
     async getOptional<T>(path: string): Promise<T | undefined> {
-      const response = await fetchImpl(url(baseUrl, path));
+      const response = await fetchImpl(
+        url(baseUrl, path),
+        request("GET", config),
+      );
       if (response.status === 404) return undefined;
       return readJsonResponse<T>(response);
     },
@@ -345,22 +382,83 @@ function remoteClient(options: string | RemoteRuntimeClientOptions) {
       body: TBody,
     ): Promise<TResponse> {
       return readJsonResponse<TResponse>(
-        await fetchImpl(url(baseUrl, path), jsonRequest("POST", body)),
+        await fetchImpl(url(baseUrl, path), jsonRequest("POST", body, config)),
       );
     },
     async put<TBody, TResponse>(path: string, body: TBody): Promise<TResponse> {
       return readJsonResponse<TResponse>(
-        await fetchImpl(url(baseUrl, path), jsonRequest("PUT", body)),
+        await fetchImpl(url(baseUrl, path), jsonRequest("PUT", body, config)),
       );
     },
   };
 }
 
-function jsonRequest(method: string, body: unknown): RequestInit {
+function request(
+  method: string,
+  config: { getAuthToken?: () => string | undefined },
+): RequestInit {
   return {
     method,
-    headers: { "content-type": "application/json" },
+    headers: headers(config),
+  };
+}
+
+function jsonRequest(
+  method: string,
+  body: unknown,
+  config: { getAuthToken?: () => string | undefined },
+): RequestInit {
+  return {
+    method,
+    headers: headers(config, { "content-type": "application/json" }),
     body: JSON.stringify(body),
+  };
+}
+
+function headers(
+  config: { getAuthToken?: () => string | undefined },
+  base: Record<string, string> = {},
+): Record<string, string> {
+  const token = config.getAuthToken?.()?.trim();
+  return token ? { ...base, Authorization: `Bearer ${token}` } : base;
+}
+
+function authenticate(
+  header: string | undefined,
+  options: RemoteRuntimeServerOptions,
+): RemoteRuntimeIdentity | undefined {
+  if (!options.authenticateAppToken) return undefined;
+  const match = header?.match(/^Bearer\s+(.+)$/i);
+  if (!match) return undefined;
+  return options.authenticateAppToken(match[1].trim());
+}
+
+function atomValueKeyForIdentity(
+  key: AtomPersistenceKey,
+  identity: RemoteRuntimeIdentity | undefined,
+): AtomPersistenceKey {
+  if (!identity) return key;
+  const scopeId =
+    key.scope === "user" ? identity.userId : identity.organizationId;
+  if (!scopeId) {
+    throw new Error(`Missing ${key.scope} identity for atom persistence`);
+  }
+  return { ...key, scopeId };
+}
+
+function documentForIdentity(
+  document: WorkflowRunDocument,
+  identity: RemoteRuntimeIdentity | undefined,
+): WorkflowRunDocument {
+  if (!identity) return document;
+  return {
+    ...document,
+    workflow: {
+      ...document.workflow,
+      organizationId:
+        identity.organizationId ?? document.workflow.organizationId,
+      userId: identity.userId ?? document.workflow.userId,
+    },
   };
 }
 

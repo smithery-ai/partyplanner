@@ -1,6 +1,8 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import {
   type BackendApiClientOptions,
+  backendApiHasAuth,
+  createBackendApiWorkflowIdentityResolver,
   createBackendApiWorkflowQueue,
   createBackendApiWorkflowStateStore,
 } from "./backend-api";
@@ -34,6 +36,11 @@ export function createWorkflow(options: CreateWorkflowOptions) {
     registry: options.registry,
     executor: options.executor,
     workflow: options.workflow,
+    workflowIdentity:
+      options.workflowIdentity ??
+      (backendApiHasAuth(options.backendApi)
+        ? createBackendApiWorkflowIdentityResolver(options.backendApi)
+        : undefined),
   });
   const app = new OpenAPIHono({
     defaultHook: (result, c) => {

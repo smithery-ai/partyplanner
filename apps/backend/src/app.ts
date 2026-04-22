@@ -11,6 +11,7 @@ import { createOAuthBrokerServer } from "@workflow/oauth-broker";
 import {
   createRemoteRuntimeServer,
   mountRemoteRuntimeOpenApi,
+  type RemoteRuntimeIdentity,
 } from "@workflow/remote";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -24,6 +25,10 @@ export type BackendAppEnv = {
   NOTION_CLIENT_SECRET?: string;
   SPOTIFY_CLIENT_ID?: string;
   SPOTIFY_CLIENT_SECRET?: string;
+};
+
+type BackendApiKeyIdentity = RemoteRuntimeIdentity & {
+  appId: string;
 };
 
 export function createApp(
@@ -55,6 +60,7 @@ export function createApp(
       stateStore,
       queue,
       cors: false,
+      authenticateAppToken: (token) => authenticateApiKey(token, apiKey),
     }),
   );
 
@@ -65,8 +71,7 @@ export function createApp(
     createOAuthBrokerServer({
       brokerBaseUrl: resolveBrokerBaseUrl(env),
       store: createCloudflareBrokerStore(db, adapterOptions),
-      authenticateAppToken: (token) =>
-        token === apiKey ? { appId: "shared" } : undefined,
+      authenticateAppToken: (token) => authenticateApiKey(token, apiKey),
       providers: curatedProviders,
     }),
   );
@@ -107,6 +112,32 @@ function resolveApiKey(env: BackendAppEnv): string {
     `[oauth-broker] HYLO_API_KEY is not set; using dev default "${DEV_API_KEY}". Set HYLO_API_KEY in both backend and worker env to override.`,
   );
   return DEV_API_KEY;
+}
+
+function authenticateApiKey(
+  token: string,
+  apiKey: string,
+): BackendApiKeyIdentity | undefined {
+  if (token !== apiKey) return undefined;
+  return identityForApiKey(apiKey);
+}
+
+function identityForApiKey(apiKey: string): BackendApiKeyIdentity {
+  const id = stableId(apiKey);
+  return {
+    appId: `app_${id}`,
+    organizationId: `org_${id}`,
+    userId: `user_${id}`,
+  };
+}
+
+function stableId(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 function resolveBrokerBaseUrl(env: BackendAppEnv): string {

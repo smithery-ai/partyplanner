@@ -12,6 +12,7 @@ import type {
   StoredRunState,
 } from "@workflow/runtime";
 import type {
+  WorkflowIdentity,
   WorkflowQueue,
   WorkflowRunDocument,
   WorkflowRunSummary,
@@ -21,6 +22,7 @@ import type {
 export type BackendApiClientOptions = {
   url: string;
   fetch?: typeof fetch;
+  getAuthToken?: () => string | undefined;
 };
 
 export function createBackendApiWorkflowStateStore(
@@ -141,6 +143,21 @@ export function createBackendApiWorkflowQueue(
   };
 }
 
+export function createBackendApiWorkflowIdentityResolver(
+  options: BackendApiClientOptions,
+): () => Promise<WorkflowIdentity> {
+  const client = backendApiClient(options);
+  return () => client.get<WorkflowIdentity>("/identity");
+}
+
+export function backendApiHasAuth(
+  options: string | BackendApiClientOptions,
+): options is BackendApiClientOptions {
+  return (
+    typeof options !== "string" && typeof options.getAuthToken === "function"
+  );
+}
+
 function backendApiClient(options: string | BackendApiClientOptions) {
   const config =
     typeof options === "string" ? { url: options } : { ...options };
@@ -149,10 +166,15 @@ function backendApiClient(options: string | BackendApiClientOptions) {
 
   return {
     async get<T>(path: string): Promise<T> {
-      return readJsonResponse<T>(await fetchImpl(url(baseUrl, path)));
+      return readJsonResponse<T>(
+        await fetchImpl(url(baseUrl, path), request("GET", config)),
+      );
     },
     async getOptional<T>(path: string): Promise<T | undefined> {
-      const response = await fetchImpl(url(baseUrl, path));
+      const response = await fetchImpl(
+        url(baseUrl, path),
+        request("GET", config),
+      );
       if (response.status === 404) return undefined;
       return readJsonResponse<T>(response);
     },
@@ -161,23 +183,45 @@ function backendApiClient(options: string | BackendApiClientOptions) {
       body: TBody,
     ): Promise<TResponse> {
       return readJsonResponse<TResponse>(
-        await fetchImpl(url(baseUrl, path), jsonRequest("POST", body)),
+        await fetchImpl(url(baseUrl, path), jsonRequest("POST", body, config)),
       );
     },
     async put<TBody, TResponse>(path: string, body: TBody): Promise<TResponse> {
       return readJsonResponse<TResponse>(
-        await fetchImpl(url(baseUrl, path), jsonRequest("PUT", body)),
+        await fetchImpl(url(baseUrl, path), jsonRequest("PUT", body, config)),
       );
     },
   };
 }
 
-function jsonRequest(method: string, body: unknown): RequestInit {
+function request(
+  method: string,
+  config: { getAuthToken?: () => string | undefined },
+): RequestInit {
   return {
     method,
-    headers: { "content-type": "application/json" },
+    headers: headers(config),
+  };
+}
+
+function jsonRequest(
+  method: string,
+  body: unknown,
+  config: { getAuthToken?: () => string | undefined },
+): RequestInit {
+  return {
+    method,
+    headers: headers(config, { "content-type": "application/json" }),
     body: JSON.stringify(body),
   };
+}
+
+function headers(
+  config: { getAuthToken?: () => string | undefined },
+  base: Record<string, string> = {},
+): Record<string, string> {
+  const token = config.getAuthToken?.()?.trim();
+  return token ? { ...base, Authorization: `Bearer ${token}` } : base;
 }
 
 function normalizeBackendApiUrl(rawUrl: string): string {

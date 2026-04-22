@@ -10,14 +10,16 @@ export function getWorkflowApp(): WorkflowApp {
   if (workflowApp) return workflowApp;
 
   const backendApi = backendApiUrl();
+  const apiKey = workflowApiKey();
   const app = createWorkflow({
     basePath: "/api/workflow",
-    backendApi,
+    backendApi: {
+      url: backendApi,
+      getAuthToken: () => apiKey,
+    },
     workflow: {
       id: "nextjs-example",
       version: "v1",
-      organizationId: workflowOrganizationId(),
-      userId: workflowUserId(),
       name: "Next.js Example",
     },
   });
@@ -32,7 +34,7 @@ export function getWorkflowApp(): WorkflowApp {
       workflowApp: app,
       workflowBasePath: "/api/workflow",
       brokerBaseUrl: `${backendApi.replace(/\/+$/, "")}/oauth`,
-      getAppToken: () => process.env.HYLO_API_KEY,
+      getAppToken: () => apiKey,
       providers: ["spotify", "notion"],
     }),
   );
@@ -51,10 +53,11 @@ function backendApiUrl(): string {
   return raw;
 }
 
-function workflowOrganizationId(): string {
-  return process.env.HYLO_ORGANIZATION_ID?.trim() || "local-dev-org";
-}
+const DEV_API_KEY = "local-dev-hylo-api-key";
 
-function workflowUserId(): string {
-  return process.env.HYLO_USER_ID?.trim() || "local-dev-user";
+function workflowApiKey(): string | undefined {
+  const explicit = process.env.HYLO_API_KEY?.trim();
+  if (explicit) return explicit;
+  if (process.env.NODE_ENV === "production") return undefined;
+  return DEV_API_KEY;
 }

@@ -17,8 +17,7 @@ export type PendingValue = {
   interventionId: string;
   scopes: string[];
   extra: Record<string, string>;
-  // Identity of the runtime that started this flow (today: opaque "anonymous"
-  // since auth is a single shared HYLO_API_KEY; will become orgId later).
+  // Identity of the runtime that started this flow.
   appId: string;
   createdAt: number;
 };

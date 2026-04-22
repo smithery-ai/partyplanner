@@ -23,8 +23,7 @@ export type CreateOAuthBrokerServerOptions = {
   // E.g. "https://api.example.com/oauth".
   brokerBaseUrl: string;
   store: BrokerStore;
-  // Bearer-token check for /start, /exchange, /refresh. Today this is the
-  // shared HYLO_API_KEY; later it will return per-org identity.
+  // Bearer-token check for /start, /exchange, /refresh.
   authenticateAppToken: (token: string) => AuthenticatedAppIdentity | undefined;
   providers: BrokerProviderRegistration[];
 };

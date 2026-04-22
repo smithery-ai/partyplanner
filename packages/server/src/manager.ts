@@ -19,6 +19,7 @@ import type {
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
   WorkflowEventSink,
+  WorkflowIdentity,
   WorkflowQueue,
   WorkflowRunDocument,
   WorkflowRunSummary,
@@ -39,6 +40,7 @@ export type WorkflowManagerOptions = {
     codeHash?: string;
     name?: string;
   };
+  workflowIdentity?: () => Promise<WorkflowIdentity | undefined>;
 };
 
 export class WorkflowManager {
@@ -46,6 +48,10 @@ export class WorkflowManager {
   private readonly stateStore: WorkflowStateStore;
   private readonly queue: WorkflowQueue;
   private readonly executor: Executor;
+  private readonly workflow: WorkflowRef;
+  private readonly workflowIdentity?: () => Promise<
+    WorkflowIdentity | undefined
+  >;
 
   constructor(options: WorkflowManagerOptions) {
     this.stateStore = options.stateStore;
@@ -63,6 +69,8 @@ export class WorkflowManager {
       version: options.workflow?.version ?? codeHash,
       codeHash,
     };
+    this.workflow = workflow;
+    this.workflowIdentity = options.workflowIdentity;
     this.definition = {
       ref: workflow,
       manifest: buildWorkflowManifest({
@@ -104,9 +112,10 @@ export class WorkflowManager {
   ): Promise<WorkflowRunDocument> {
     const runId = request.runId ?? `run_${randomId()}`;
     const autoAdvance = request.autoAdvance ?? true;
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     let snapshot = await scheduler.startRun({
-      workflow: this.definition.ref,
+      workflow,
       runId,
       input: {
         inputId: request.inputId,
@@ -129,10 +138,11 @@ export class WorkflowManager {
   ): Promise<WorkflowRunDocument> {
     const current = await this.requireRun(runId);
     const autoAdvance = request.autoAdvance ?? current.autoAdvance;
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     let snapshot = await scheduler.submitInput({
       runId,
-      workflow: this.definition.ref,
+      workflow,
       inputId: request.inputId,
       payload: request.payload,
     });
@@ -152,10 +162,11 @@ export class WorkflowManager {
   ): Promise<WorkflowRunDocument> {
     const current = await this.requireRun(runId);
     const autoAdvance = request.autoAdvance ?? current.autoAdvance;
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     let snapshot = await scheduler.submitIntervention({
       runId,
-      workflow: this.definition.ref,
+      workflow,
       interventionId,
       payload: request.payload,
     });
@@ -173,9 +184,10 @@ export class WorkflowManager {
     request: { secretValues?: Record<string, string> } = {},
   ): Promise<WorkflowRunDocument> {
     await this.requireRun(runId);
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     await scheduler.startRun({
-      workflow: this.definition.ref,
+      workflow,
       runId,
     });
     await scheduler.processNext();
@@ -187,9 +199,10 @@ export class WorkflowManager {
     request: SetWorkflowAutoAdvanceRequest,
   ): Promise<WorkflowRunDocument> {
     await this.requireRun(runId);
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     await scheduler.startRun({
-      workflow: this.definition.ref,
+      workflow,
       runId,
     });
 
@@ -201,6 +214,16 @@ export class WorkflowManager {
       await scheduler.snapshot(runId),
       request.autoAdvance,
     );
+  }
+
+  private async workflowRef(): Promise<WorkflowRef> {
+    const identity = await this.workflowIdentity?.();
+    if (!identity) return this.workflow;
+    return {
+      ...this.workflow,
+      organizationId: identity.organizationId ?? this.workflow.organizationId,
+      userId: identity.userId ?? this.workflow.userId,
+    };
   }
 
   private async requireRun(runId: string): Promise<WorkflowRunDocument> {

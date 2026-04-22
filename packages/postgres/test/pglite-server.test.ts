@@ -158,6 +158,62 @@ describe("PGlite Workflow server", () => {
     );
     expect(calls).toBe(1);
   });
+
+  it("derives workflow identity from the backend API key", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+    let calls = 0;
+
+    atom(
+      (get) => {
+        const value = get(seed);
+        calls += 1;
+        return `${value.name}:${calls}`;
+      },
+      { name: "cached", persistence: "user" },
+    );
+
+    client = new PGlite();
+    const db = drizzle({ client });
+    const backend = createRemoteRuntimeServer({
+      stateStore: createPostgresWorkflowStateStore(db),
+      queue: createPostgresWorkflowQueue(db),
+      authenticateAppToken: (token) =>
+        token === "test-key"
+          ? {
+              appId: "app_1",
+              organizationId: "org_1",
+              userId: "user_1",
+            }
+          : undefined,
+    });
+    const app = createWorkflow({
+      backendApi: {
+        url: "http://backend.test",
+        fetch: localFetch(backend),
+        getAuthToken: () => "test-key",
+      },
+      workflow: {
+        id: "example",
+        version: "v1",
+      },
+    });
+
+    const first = await post<WorkflowRunDocument>(app, "/runs", {
+      inputId: "seed",
+      payload: { name: "ada" },
+    });
+    const second = await post<WorkflowRunDocument>(app, "/runs", {
+      inputId: "seed",
+      payload: { name: "ada" },
+    });
+
+    expect(first.workflow.organizationId).toBe("org_1");
+    expect(first.workflow.userId).toBe("user_1");
+    expect(second.nodes.find((node) => node.id === "cached")?.value).toBe(
+      "ada:1",
+    );
+    expect(calls).toBe(1);
+  });
 });
 
 async function post<T>(

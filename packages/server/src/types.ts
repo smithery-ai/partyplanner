@@ -98,3 +98,8 @@ export type WorkflowServerDefinition = {
   ref: WorkflowRef;
   manifest: WorkflowManifest;
 };
+
+export type WorkflowIdentity = {
+  organizationId?: string;
+  userId?: string;
+};

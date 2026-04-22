@@ -25,6 +25,13 @@ const OkResponseSchema = z
 const ErrorResponseSchema = z
   .object({ message: z.string() })
   .openapi("ErrorResponse");
+const WorkflowIdentitySchema = z
+  .object({
+    appId: z.string().optional(),
+    organizationId: z.string().optional(),
+    userId: z.string().optional(),
+  })
+  .openapi("WorkflowIdentity");
 
 const RunStateSchema = z.unknown().openapi("RunState", {
   description:
@@ -206,6 +213,16 @@ export function createRemoteRuntimeRoutes(basePath = "/runtime") {
       summary: "Check runtime health",
       responses: {
         200: jsonResponse("Runtime is healthy", HealthResponseSchema),
+      },
+    }),
+    identity: createRoute({
+      method: "get",
+      path: path(normalizedBasePath, "/identity"),
+      tags: ["Runtime"],
+      summary: "Resolve workflow identity for the caller",
+      responses: {
+        200: jsonResponse("Workflow identity", WorkflowIdentitySchema),
+        401: jsonResponse("Unauthorized", ErrorResponseSchema),
       },
     }),
     listRuns: createRoute({
