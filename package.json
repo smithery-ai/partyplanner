@@ -10,6 +10,7 @@
     "check": "biome ci --error-on-warnings .",
     "hylo": "node scripts/hylo.mjs",
     "dev": "node scripts/hylo.mjs dev",
+    "dev:worker": "node scripts/dev-worker.mjs",
     "deploy": "node scripts/hylo.mjs deploy remote",
     "env": "node scripts/hylo.mjs env",
     "fmt": "biome check --write --unsafe .",

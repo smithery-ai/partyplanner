@@ -1,0 +1,23 @@
+{
+  "name": "__APP_NAME__",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "workflow dev",
+    "deploy": "workflow deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workflow/core": "workspace:*",
+    "@workflow/runtime": "workspace:*",
+    "@workflow/server": "workspace:*",
+    "hono": "^4.12.14",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "@workflow/cli": "workspace:*",
+    "typescript": "~6.0.2"
+  }
+}

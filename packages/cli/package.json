@@ -1,0 +1,32 @@
+{
+  "name": "@workflow/cli",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "workflow": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc && node -e \"require('node:fs').chmodSync('./dist/cli.js', 0o755)\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "jiti": "^2.4.2",
+    "wrangler": "^4.53.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "~6.0.2"
+  }
+}
