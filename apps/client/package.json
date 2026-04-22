@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "hylo dev app.client",
-    "build": "tsc -b && vite build",
+    "build": "pnpm --filter @workflow/core --filter @workflow/runtime --filter @workflow/server build && tsc -b && vite build",
     "deploy": "hylo deploy remote app.client",
     "lint": "eslint .",
     "preview": "vite preview"
