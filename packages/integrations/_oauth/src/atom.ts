@@ -1,5 +1,6 @@
 import {
   type Atom,
+  type AtomPersistencePolicy,
   atom,
   type Handle,
   type Input,
@@ -15,8 +16,8 @@ const errorSchema = z.object({ error: z.string() });
 export type BrokerCredentials = {
   // Base URL of the broker server, e.g. `${HYLO_BACKEND_URL}/oauth`.
   url: string;
-  // Static API key the runtime presents to the broker. Today this is a
-  // single shared `HYLO_API_KEY`. Will become user/org-derived later.
+  // API key the runtime presents to the backend. The backend derives the
+  // workflow user/org identity from this token.
   appToken: string;
 };
 
@@ -124,6 +125,7 @@ export type CreateConnectionOptions<Token> = {
   waitFor?: Handle<unknown>;
   name?: string;
   description?: string;
+  persistence?: AtomPersistencePolicy;
   interventionTitle?: string;
   interventionDescription?: string;
   interventionLabel?: string;
@@ -213,6 +215,7 @@ export function createConnection<Token>(
       description:
         opts.description ??
         `Authorize ${capitalize(opts.providerId)} via the OAuth broker and return the access token.`,
+      persistence: opts.persistence ?? "user",
     },
   );
 }

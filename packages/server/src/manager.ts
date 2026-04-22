@@ -19,6 +19,7 @@ import type {
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
   WorkflowEventSink,
+  WorkflowIdentity,
   WorkflowQueue,
   WorkflowRunDocument,
   WorkflowRunSummary,
@@ -34,10 +35,12 @@ export type WorkflowManagerOptions = {
   workflow?: {
     id?: string;
     organizationId?: string;
+    userId?: string;
     version?: string;
     codeHash?: string;
     name?: string;
   };
+  workflowIdentity?: () => Promise<WorkflowIdentity | undefined>;
 };
 
 export class WorkflowManager {
@@ -45,25 +48,35 @@ export class WorkflowManager {
   private readonly stateStore: WorkflowStateStore;
   private readonly queue: WorkflowQueue;
   private readonly executor: Executor;
+  private readonly workflow: WorkflowRef;
+  private readonly workflowIdentity?: () => Promise<
+    WorkflowIdentity | undefined
+  >;
 
   constructor(options: WorkflowManagerOptions) {
     this.stateStore = options.stateStore;
     this.queue = options.queue;
-    this.executor = options.executor ?? new RuntimeExecutor();
+    this.executor =
+      options.executor ??
+      new RuntimeExecutor({ atomValueStore: options.stateStore });
 
     const registry = cloneRegistry(options.registry ?? globalRegistry);
     const codeHash = options.workflow?.codeHash ?? hashRegistry(registry);
     const workflow: WorkflowRef = {
       workflowId: options.workflow?.id ?? "workflow",
       organizationId: options.workflow?.organizationId,
+      userId: options.workflow?.userId,
       version: options.workflow?.version ?? codeHash,
       codeHash,
     };
+    this.workflow = workflow;
+    this.workflowIdentity = options.workflowIdentity;
     this.definition = {
       ref: workflow,
       manifest: buildWorkflowManifest({
         workflowId: workflow.workflowId,
         organizationId: workflow.organizationId,
+        userId: workflow.userId,
         version: workflow.version,
         codeHash,
         name: options.workflow?.name,
@@ -99,9 +112,10 @@ export class WorkflowManager {
   ): Promise<WorkflowRunDocument> {
     const runId = request.runId ?? `run_${randomId()}`;
     const autoAdvance = request.autoAdvance ?? true;
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     let snapshot = await scheduler.startRun({
-      workflow: this.definition.ref,
+      workflow,
       runId,
       input: {
         inputId: request.inputId,
@@ -124,10 +138,11 @@ export class WorkflowManager {
   ): Promise<WorkflowRunDocument> {
     const current = await this.requireRun(runId);
     const autoAdvance = request.autoAdvance ?? current.autoAdvance;
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     let snapshot = await scheduler.submitInput({
       runId,
-      workflow: this.definition.ref,
+      workflow,
       inputId: request.inputId,
       payload: request.payload,
     });
@@ -147,10 +162,11 @@ export class WorkflowManager {
   ): Promise<WorkflowRunDocument> {
     const current = await this.requireRun(runId);
     const autoAdvance = request.autoAdvance ?? current.autoAdvance;
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     let snapshot = await scheduler.submitIntervention({
       runId,
-      workflow: this.definition.ref,
+      workflow,
       interventionId,
       payload: request.payload,
     });
@@ -168,9 +184,10 @@ export class WorkflowManager {
     request: { secretValues?: Record<string, string> } = {},
   ): Promise<WorkflowRunDocument> {
     await this.requireRun(runId);
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     await scheduler.startRun({
-      workflow: this.definition.ref,
+      workflow,
       runId,
     });
     await scheduler.processNext();
@@ -182,9 +199,10 @@ export class WorkflowManager {
     request: SetWorkflowAutoAdvanceRequest,
   ): Promise<WorkflowRunDocument> {
     await this.requireRun(runId);
+    const workflow = await this.workflowRef();
     const scheduler = this.createScheduler(runId, request.secretValues);
     await scheduler.startRun({
-      workflow: this.definition.ref,
+      workflow,
       runId,
     });
 
@@ -196,6 +214,16 @@ export class WorkflowManager {
       await scheduler.snapshot(runId),
       request.autoAdvance,
     );
+  }
+
+  private async workflowRef(): Promise<WorkflowRef> {
+    const identity = await this.workflowIdentity?.();
+    if (!identity) return this.workflow;
+    return {
+      ...this.workflow,
+      organizationId: identity.organizationId ?? this.workflow.organizationId,
+      userId: identity.userId ?? this.workflow.userId,
+    };
   }
 
   private async requireRun(runId: string): Promise<WorkflowRunDocument> {
@@ -210,7 +238,10 @@ export class WorkflowManager {
   ): LocalScheduler {
     const executor =
       secretValues && Object.keys(secretValues).length > 0
-        ? new RuntimeExecutor(secretResolverFromValues(secretValues))
+        ? new RuntimeExecutor({
+            secretResolver: secretResolverFromValues(secretValues),
+            atomValueStore: this.stateStore,
+          })
         : this.executor;
     return new LocalScheduler({
       loader: this.loader,
@@ -298,6 +329,7 @@ function cloneRegistry(registry: Registry): Registry {
   const clone = new Registry();
   for (const input of registry.allInputs()) clone.registerInput(input);
   for (const atom of registry.allAtoms()) clone.registerAtom(atom);
+  for (const action of registry.allActions()) clone.registerAction(action);
   return clone;
 }
 
@@ -312,7 +344,13 @@ function hashRegistry(registry: Registry): string {
     atoms: registry.allAtoms().map((atom) => ({
       id: atom.id,
       description: atom.description,
+      persistence: atom.persistence,
       fn: atom.fn.toString(),
+    })),
+    actions: registry.allActions().map((action) => ({
+      id: action.id,
+      description: action.description,
+      fn: action.fn.toString(),
     })),
   });
   return hashString(source);

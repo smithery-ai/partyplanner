@@ -39,6 +39,7 @@ export type {
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
   WorkflowEventSink,
+  WorkflowIdentity,
   WorkflowQueue,
   WorkflowRunDocument,
   WorkflowRunSummary,

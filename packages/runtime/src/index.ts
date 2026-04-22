@@ -1,4 +1,4 @@
-export { RuntimeExecutor } from "./executor";
+export { RuntimeExecutor, type RuntimeExecutorOptions } from "./executor";
 export {
   MemoryEventSink,
   MemoryStateStore,
@@ -20,6 +20,7 @@ export type {
   QueueSnapshot,
   RunEvent,
   RunSnapshot,
+  RuntimeAtomValueStore,
   SaveResult,
   Scheduler,
   SecretResolutionRequest,

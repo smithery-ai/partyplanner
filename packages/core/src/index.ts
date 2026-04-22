@@ -22,7 +22,12 @@ export type { ActionDef, AtomDef, InputDef, StepDef } from "./registry";
 export { globalRegistry, Registry } from "./registry";
 export { createRuntime } from "./runtime";
 export type {
+  AtomPersistenceContext,
+  AtomPersistenceKey,
+  AtomPersistencePolicy,
+  AtomPersistenceScope,
   AtomRuntimeContext,
+  AtomValueStore,
   DispatchResult,
   Get,
   InterventionAction,
@@ -43,4 +48,5 @@ export type {
   StepResolvedEvent,
   StepSkippedEvent,
   StepWaitingEvent,
+  StoredAtomValue,
 } from "./types";

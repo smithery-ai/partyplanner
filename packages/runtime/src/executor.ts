@@ -3,16 +3,46 @@ import type {
   ExecuteRequest,
   ExecuteResult,
   Executor,
+  RuntimeAtomValueStore,
   SecretResolver,
 } from "./types";
 
+export type RuntimeExecutorOptions = {
+  secretResolver?: SecretResolver;
+  atomValueStore?: RuntimeAtomValueStore;
+};
+
 export class RuntimeExecutor implements Executor {
-  constructor(private readonly secretResolver?: SecretResolver) {}
+  private readonly secretResolver?: SecretResolver;
+  private readonly atomValueStore?: RuntimeAtomValueStore;
+
+  constructor(options?: SecretResolver | RuntimeExecutorOptions) {
+    if (options && "resolve" in options) {
+      this.secretResolver = options;
+    } else {
+      this.secretResolver = options?.secretResolver;
+      this.atomValueStore = options?.atomValueStore;
+    }
+  }
 
   async execute(request: ExecuteRequest): Promise<ExecuteResult> {
     const runtime = createRuntime({
       registry: request.registry,
       secretValues: await this.resolveSecrets(request),
+      ...(this.atomValueStore
+        ? {
+            atomPersistence: {
+              context: {
+                workflowId: request.workflow.workflowId,
+                workflowVersion: request.workflow.version,
+                workflowCodeHash: request.workflow.codeHash,
+                organizationId: request.workflow.organizationId,
+                userId: request.workflow.userId,
+              },
+              store: this.atomValueStore,
+            },
+          }
+        : {}),
     });
     return runtime.process(request.event, structuredClone(request.state));
   }

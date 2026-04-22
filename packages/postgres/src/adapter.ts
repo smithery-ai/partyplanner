@@ -1,4 +1,9 @@
-import type { QueueEvent, RunState } from "@workflow/core";
+import type {
+  AtomPersistenceKey,
+  QueueEvent,
+  RunState,
+  StoredAtomValue,
+} from "@workflow/core";
 import type {
   QueueItem,
   QueueItemStatus,
@@ -17,6 +22,7 @@ import {
 import { and, asc, eq, sql } from "drizzle-orm";
 import { ensureWorkflowPostgresSchema } from "./migrate";
 import {
+  workflowAtomValues,
   workflowEvents,
   workflowQueueItems,
   workflowRunDocuments,
@@ -215,6 +221,61 @@ class PostgresWorkflowStateStore implements WorkflowStateStore {
     );
   }
 
+  async loadAtomValue(
+    key: AtomPersistenceKey,
+  ): Promise<StoredAtomValue | undefined> {
+    await this.ensureReady();
+    const rows = await asDb(this.db)
+      .select()
+      .from(workflowAtomValues)
+      .where(eq(workflowAtomValues.cacheKey, atomValueKey(key)))
+      .limit(1);
+    const row = (rows as AtomValueRow[])[0];
+    if (!row) return undefined;
+    return {
+      value: parseJson<unknown>(row.valueJson),
+      deps: parseJson<string[]>(row.depsJson),
+      dependencyFingerprint: row.dependencyFingerprint,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  async saveAtomValue(
+    key: AtomPersistenceKey,
+    value: Omit<StoredAtomValue, "createdAt" | "updatedAt">,
+  ): Promise<void> {
+    await this.ensureReady();
+    const cacheKey = atomValueKey(key);
+    const now = Date.now();
+    const current = await this.loadAtomValue(key);
+    await asDb(this.db)
+      .insert(workflowAtomValues)
+      .values({
+        cacheKey,
+        workflowId: key.workflowId,
+        workflowVersion: key.workflowVersion,
+        workflowCodeHash: key.workflowCodeHash,
+        atomId: key.atomId,
+        scope: key.scope,
+        scopeId: key.scopeId,
+        valueJson: JSON.stringify(value.value),
+        depsJson: JSON.stringify(value.deps),
+        dependencyFingerprint: value.dependencyFingerprint,
+        createdAt: current?.createdAt ?? now,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: workflowAtomValues.cacheKey,
+        set: {
+          valueJson: JSON.stringify(value.value),
+          depsJson: JSON.stringify(value.deps),
+          dependencyFingerprint: value.dependencyFingerprint,
+          updatedAt: now,
+        },
+      });
+  }
+
   private ensureReady(): Promise<void> {
     if (this.options.autoMigrate === false) return Promise.resolve();
     this.ready ??= ensureWorkflowPostgresSchema(this.db);
@@ -392,6 +453,14 @@ type RunDocumentRow = {
   summaryJson: string;
 };
 
+type AtomValueRow = {
+  valueJson: string;
+  depsJson: string;
+  dependencyFingerprint: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
 type EventRow = {
   eventJson: string;
 };
@@ -408,6 +477,17 @@ type QueueRow = {
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
+}
+
+function atomValueKey(key: AtomPersistenceKey): string {
+  return JSON.stringify([
+    key.workflowId,
+    key.workflowVersion,
+    key.workflowCodeHash ?? "",
+    key.atomId,
+    key.scope,
+    key.scopeId,
+  ]);
 }
 
 function randomId(): string {

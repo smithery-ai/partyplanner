@@ -9,6 +9,7 @@ export {
 export { ensureWorkflowPostgresSchema } from "./migrate";
 
 export {
+  workflowAtomValues,
   workflowEvents,
   workflowQueueItems,
   workflowRunDocuments,

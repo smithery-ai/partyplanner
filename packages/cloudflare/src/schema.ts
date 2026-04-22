@@ -32,6 +32,34 @@ export const workflowRunDocuments = sqliteTable(
   ],
 );
 
+export const workflowAtomValues = sqliteTable(
+  "workflow_atom_values",
+  {
+    cacheKey: text("cache_key").primaryKey(),
+    workflowId: text("workflow_id").notNull(),
+    workflowVersion: text("workflow_version").notNull(),
+    workflowCodeHash: text("workflow_code_hash"),
+    atomId: text("atom_id").notNull(),
+    scope: text("scope").notNull(),
+    scopeId: text("scope_id").notNull(),
+    valueJson: text("value_json").notNull(),
+    depsJson: text("deps_json").notNull(),
+    dependencyFingerprint: text("dependency_fingerprint").notNull(),
+    createdAt: real("created_at").notNull(),
+    updatedAt: real("updated_at").notNull(),
+  },
+  (table) => [
+    index("workflow_atom_values_lookup_idx").on(
+      table.workflowId,
+      table.workflowVersion,
+      table.workflowCodeHash,
+      table.atomId,
+      table.scope,
+      table.scopeId,
+    ),
+  ],
+);
+
 export const workflowEvents = sqliteTable(
   "workflow_events",
   {

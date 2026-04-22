@@ -67,6 +67,7 @@ const spotifyPlaylistAnalysisAuth = createConnection({
   ],
   extra: spotifyPlaylistAnalysisAuthorizeExtras,
   name: "spotifyPlaylistAnalysisAuth",
+  persistence: "user",
 });
 
 const spotifyPlaylistAnalysisPlaylists = getCurrentUserPlaylists({
@@ -244,6 +245,7 @@ const notionPlaylistAnalysisAuth = createConnection({
   tokenSchema: notionAuthSchema,
   waitFor: notionPlaylistPageBlocks,
   name: "notionPlaylistAnalysisAuth",
+  persistence: "user",
 });
 
 const notionPageResponseSchema = z

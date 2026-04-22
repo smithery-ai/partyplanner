@@ -5,6 +5,7 @@ import type {
   QueueSnapshot,
   RunEvent,
   RunSnapshot,
+  RuntimeAtomValueStore,
   SaveResult,
   StateStore,
   StoredRunState,
@@ -63,7 +64,7 @@ export type WorkflowRunSummary = {
   failedNodeCount: number;
 };
 
-export interface WorkflowStateStore extends StateStore {
+export interface WorkflowStateStore extends StateStore, RuntimeAtomValueStore {
   load(runId: string): Promise<StoredRunState | undefined>;
   save(
     runId: string,
@@ -96,4 +97,9 @@ export interface WorkflowEventSink extends EventSink {
 export type WorkflowServerDefinition = {
   ref: WorkflowRef;
   manifest: WorkflowManifest;
+};
+
+export type WorkflowIdentity = {
+  organizationId?: string;
+  userId?: string;
 };
