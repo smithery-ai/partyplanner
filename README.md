@@ -238,9 +238,10 @@ Common commands:
 
 ```sh
 npx hylo dev
+npx hylo dev remote workflow.cloudflareWorker
 npx hylo env remote
 npx hylo deploy remote
-npx hylo exec remote -- env
+npx hylo deploy remote app.client
 ```
 
 Run `npx hylo --help` for target registration and profile editing commands.
