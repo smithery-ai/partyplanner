@@ -3,6 +3,7 @@ import { devServiceNameFromUrl, portlessBinPath } from "./portless.mjs";
 import { manageChildrenAndExit, spawnAndExit, spawnChild } from "./process.mjs";
 import {
   die,
+  findFreePort,
   formatPackagePath,
   shellQuote,
   validateHttpUrl,
@@ -133,7 +134,7 @@ export function runDeployCommand(args) {
   }
 }
 
-export function runUplinkCommand(args) {
+export async function runUplinkCommand(args) {
   const parsed = parseUplinkArgs(args);
   if (parsed.help) {
     printUplinkHelp();
@@ -142,32 +143,25 @@ export function runUplinkCommand(args) {
 
   const profile = resolveProfile(parsed.profileName);
   const workflow = resolveTarget(parsed.targetName, "workflow");
-  const backend = profileBackend(profile);
-  if (backend.provider !== "cloudflare-worker") {
-    die(
-      `hylo uplink uses Wrangler from the profile backend; ${backend.id} is not a Cloudflare backend.`,
-    );
-  }
   const app = profileApp(profile);
-  const localUrl = parsed.localUrl ?? workflow.url;
-  if (!localUrl) {
-    die(`${workflow.id} must define url in hylo.json or pass --url.`);
-  }
-
-  const localWorkflowUrl = validateHttpUrl(
-    localUrl,
-    `${workflow.id} local url`,
-  );
+  const localPort = await findFreePort();
+  const inspectorPort = await findFreePort();
+  const localWorkflowUrl = parsed.localUrl
+    ? validateHttpUrl(parsed.localUrl, `${workflow.id} local url`)
+    : `http://127.0.0.1:${localPort}`;
   const env = devOutputEnv({
     ...process.env,
+    HOST: "127.0.0.1",
+    INSPECTOR_PORT: String(inspectorPort),
+    PORT: String(localPort),
     ...profileEnv(profile, { targets: [workflow] }),
     ...targetEnv(workflow),
   });
-  const workflowCommand = devShellCommand(workflow, env);
-  const wrappedWorkflow = wrapPortlessCommand(
-    shellCommand(workflowCommand),
-    workflow.url,
+  const workflowCommand = withUplinkInspectorPort(
+    devShellCommand(workflow, env),
+    inspectorPort,
   );
+  const workflowShellCommand = shellCommand(workflowCommand);
   const tunnelCommand = shellCommand(
     `pnpm exec wrangler tunnel quick-start ${shellQuote(localWorkflowUrl)} --log-level info`,
   );
@@ -185,12 +179,11 @@ export function runUplinkCommand(args) {
   );
 
   const workflowChild = spawnChild(
-    wrappedWorkflow.command[0],
-    wrappedWorkflow.command.slice(1),
+    workflowShellCommand[0],
+    workflowShellCommand.slice(1),
     env,
     {
       cwd: workflow.packageDir,
-      filterPortlessOutput: wrappedWorkflow.filterPortlessOutput,
     },
   );
   const tunnelChild = spawnChild(
@@ -198,7 +191,7 @@ export function runUplinkCommand(args) {
     tunnelCommand.slice(1),
     env,
     {
-      cwd: backend.packageDir,
+      cwd: workflow.packageDir,
       stdio: ["inherit", "pipe", "pipe"],
     },
   );
@@ -208,14 +201,22 @@ export function runUplinkCommand(args) {
     if (announced) return;
     announced = true;
     const workflowUrl = workflowApiUrl(url);
+    const appUrl = uplinkAppUrl(
+      profile,
+      app,
+      workflow,
+      workflowUrl,
+      parsed.appUrl,
+    );
     process.stderr.write(
       [
         "",
         `hylo: ${workflow.id} exposed at ${workflowUrl}`,
-        `hylo: open ${uplinkAppUrl(profile, app, workflow, workflowUrl, parsed.appUrl)}`,
+        `hylo: open ${appUrl}`,
         "",
       ].join("\n"),
     );
+    openBrowser(appUrl);
   };
   tunnelChild.stdout?.on("data", (chunk) => pipeUplinkOutput(chunk, announce));
   tunnelChild.stderr?.on("data", (chunk) => pipeUplinkOutput(chunk, announce));
@@ -532,6 +533,17 @@ function devShellCommand(target, env) {
     command = appendWranglerVars(command, env);
   }
   return command;
+}
+
+function withUplinkInspectorPort(command, port) {
+  if (!/\bwrangler\s+dev\b/.test(command)) return command;
+  if (/\s--inspector-port(?:=|\s+)\S+/.test(command)) {
+    return command.replace(
+      /\s--inspector-port(?:=|\s+)\S+/,
+      ` --inspector-port ${port}`,
+    );
+  }
+  return `${command} --inspector-port ${port}`;
 }
 
 function deployShellCommand(target, command, env) {
@@ -892,6 +904,19 @@ function uplinkAppUrl(profile, app, workflow, workflowUrl, appUrlOverride) {
   url.searchParams.set("worker", workflow.id);
   url.searchParams.set("workflowApiUrl", workflowUrl);
   return url.toString();
+}
+
+function openBrowser(url) {
+  if (!/^https?:\/\//i.test(url)) return;
+
+  const command =
+    process.platform === "darwin"
+      ? "open"
+      : process.platform === "win32"
+        ? "cmd"
+        : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  spawnSync(command, args, { stdio: "ignore" });
 }
 
 function requiredOptionValue(args, index, option) {

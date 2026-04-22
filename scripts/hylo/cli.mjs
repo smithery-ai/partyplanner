@@ -10,7 +10,7 @@ import {
 import { printHelp } from "./help.mjs";
 import { die } from "./shared.mjs";
 
-export function main(args) {
+export async function main(args) {
   const [commandName, ...rest] = args;
 
   if (!commandName || commandName === "--help" || commandName === "-h") {
@@ -34,7 +34,7 @@ export function main(args) {
   }
 
   if (commandName === "uplink") {
-    runUplinkCommand(rest);
+    await runUplinkCommand(rest);
     return;
   }
 
