@@ -27,7 +27,7 @@
     "backend.cloudflare": {
       "path": "./apps/backend-cloudflare",
       "provider": "cloudflare-worker",
-      "dev": "pnpm exec wrangler dev --ip 127.0.0.1 --port $PORT",
+      "dev": "pnpm exec wrangler dev --ip 127.0.0.1 --port $PORT --inspector-port 9230",
       "deploy": "pnpm build && pnpm exec wrangler deploy",
       "url": "https://api-worker.hylo.localhost"
     },
@@ -40,7 +40,7 @@
     "workflow.cloudflareWorker": {
       "path": "./examples/cloudflare-worker",
       "provider": "cloudflare-worker",
-      "dev": "pnpm exec wrangler dev --ip 127.0.0.1 --port $PORT",
+      "dev": "pnpm exec wrangler dev --ip 127.0.0.1 --port $PORT --inspector-port 9231",
       "deploy": "pnpm build && pnpm exec wrangler deploy",
       "url": "https://cloudflare-worker.hylo.localhost"
     },

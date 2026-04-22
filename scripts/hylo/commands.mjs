@@ -330,7 +330,7 @@ function profileEnv(profile, options = {}) {
   const app = profileApp(profile);
   const workflows = selectedWorkflowTargets(profile, options.targets);
   const backendUrl = targetRuntimeUrl(backend, profile);
-  const appUrl = optionalTargetRuntimeUrl(app, profile);
+  const appUrl = optionalTargetRuntimeUrl(app, profile, options);
   const workflowEntries = workflows.map((workflow) => ({
     id: workflow.id,
     path: workflow.packagePath,
@@ -375,11 +375,17 @@ function targetEnv(target) {
   });
 }
 
-function optionalTargetRuntimeUrl(target, profile) {
+function optionalTargetRuntimeUrl(target, profile, options = {}) {
   const value =
     profile.urls?.[target.id] ??
-    (profile.id === "local" ? target.url : undefined);
+    (profile.id === "local" || includesTarget(options.targets, target)
+      ? target.url
+      : undefined);
   return value ? validateHttpUrl(value, `${target.id} url`) : undefined;
+}
+
+function includesTarget(targets, target) {
+  return targets?.some((candidate) => candidate.id === target.id) ?? false;
 }
 
 function workflowRegistryEnv(workflows, defaultWorkflow) {
