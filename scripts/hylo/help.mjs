@@ -8,6 +8,7 @@ Usage:
   hylo uplink <profile> <workflow-target>
   hylo deploy [profile] [target...]
   hylo env [profile]
+  hylo cli <workflow-command> [options]
   hylo run [profile] -- <command...>
   hylo exec [profile] -- <command...>
   hylo profile add|remove <profile> <target>
@@ -22,6 +23,7 @@ Commands:
   uplink    Expose a local workflow to a remote app with a temporary tunnel.
   deploy    Deploy the deployable targets in a profile.
   env       Print the Hylo environment resolved for a profile.
+  cli       Forward to the Workflow app CLI.
   run       Launch a long-running command with profile env injected.
   exec      Run a one-off command with profile env injected.
   profile   Add or remove targets in hylo.json.
@@ -39,6 +41,7 @@ Common:
   hylo env remote
   hylo deploy remote
   hylo deploy remote app.client
+  hylo cli init my-app
 
 Register and attach a target:
   hylo target add workflow.someWorker --path ./examples/some-worker --url https://some-worker.hylo.localhost

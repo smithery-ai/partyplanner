@@ -247,6 +247,9 @@ npx hylo dev remote workflow.cloudflareWorker
 npx hylo env remote
 npx hylo deploy remote
 npx hylo deploy remote app.client
+
+# scaffold a Workflow app through the packaged Workflow CLI
+npx hylo cli init my-app
 ```
 
 To demo the Cloudflare Worker workflow locally inside the deployed app, uplink

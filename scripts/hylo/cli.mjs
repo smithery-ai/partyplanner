@@ -1,22 +1,29 @@
-import {
-  printEnv,
-  runCommand,
-  runDeployCommand,
-  runDevCommand,
-  runProfileCommand,
-  runTargetCommand,
-  runUplinkCommand,
-} from "./commands.mjs";
-import { printHelp } from "./help.mjs";
 import { die } from "./shared.mjs";
+import { runWorkflowCliCommand } from "./workflow-cli.mjs";
 
 export async function main(args) {
   const [commandName, ...rest] = args;
 
   if (!commandName || commandName === "--help" || commandName === "-h") {
+    const { printHelp } = await import("./help.mjs");
     printHelp();
     process.exit(0);
   }
+
+  if (commandName === "cli") {
+    runWorkflowCliCommand(rest);
+    return;
+  }
+
+  const {
+    printEnv,
+    runCommand,
+    runDeployCommand,
+    runDevCommand,
+    runProfileCommand,
+    runTargetCommand,
+    runUplinkCommand,
+  } = await import("./commands.mjs");
 
   if (commandName === "run" || commandName === "exec") {
     runCommand(commandName, rest);
@@ -54,6 +61,6 @@ export async function main(args) {
   }
 
   die(
-    `unknown command "${commandName}". Use run, dev, uplink, deploy, exec, env, profile, or target.`,
+    `unknown command "${commandName}". Use cli, run, dev, uplink, deploy, exec, env, profile, or target.`,
   );
 }
