@@ -237,8 +237,13 @@ This repo ships two profiles:
 Common commands:
 
 ```sh
+# default local profile
 npx hylo dev
+
+# run the Cloudflare Worker locally in dev mode
 npx hylo dev remote workflow.cloudflareWorker
+
+# inspect or deploy the remote profile
 npx hylo env remote
 npx hylo deploy remote
 npx hylo deploy remote app.client
