@@ -50,7 +50,7 @@
       "provider": "vite",
       "dev": "pnpm exec vite",
       "build": "vite build",
-      "deploy": "pnpm exec vercel link --yes --project hylo && pnpm exec vercel build --prod --yes && pnpm exec vercel deploy --prebuilt --prod --yes",
+      "deploy": "pnpm exec vercel link --yes --project hylo && pnpm exec vercel pull --yes --environment=production && pnpm exec vercel build --prod --yes && pnpm exec vercel deploy --prebuilt --prod --yes --force",
       "url": "https://hylo.localhost"
     }
   }
