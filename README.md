@@ -237,13 +237,13 @@ This repo ships two profiles:
 Common commands:
 
 ```sh
-pnpm hylo dev
-pnpm hylo env remote
-pnpm hylo deploy remote
-pnpm hylo exec remote -- env
+npx hylo dev
+npx hylo env remote
+npx hylo deploy remote
+npx hylo exec remote -- env
 ```
 
-Run `pnpm hylo --help` for target registration and profile editing commands.
+Run `npx hylo --help` for target registration and profile editing commands.
 
 ### Backend DB
 
