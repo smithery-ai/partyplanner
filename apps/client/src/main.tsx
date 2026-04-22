@@ -1,7 +1,8 @@
 import { WorkflowSinglePage } from "@workflow/frontend";
 import "@workflow/frontend/styles.css";
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { App } from "./App";
 import "./styles.css";
 
 type WorkflowChoice = string | "custom";
@@ -26,9 +27,13 @@ if (!root) {
   throw new Error("Root element not found");
 }
 
-createRoot(root).render(<ClientApp />);
+createRoot(root).render(
+  <App>
+    {({ sidebarFooter }) => <ClientApp sidebarFooter={sidebarFooter} />}
+  </App>,
+);
 
-function ClientApp() {
+function ClientApp({ sidebarFooter }: { sidebarFooter: ReactNode }) {
   const registry = useMemo(() => workflowRegistry(), []);
   const initialConfig = useMemo(
     () => initialWorkflowConfig(registry),
@@ -54,7 +59,10 @@ function ClientApp() {
 
   return (
     <>
-      <WorkflowSinglePage apiBaseUrl={apiBaseUrl} />
+      <WorkflowSinglePage
+        apiBaseUrl={apiBaseUrl}
+        sidebarFooter={sidebarFooter}
+      />
       <form className="hylo-client-switcher" aria-label="Workflow routing">
         <label>
           <span>Worker</span>

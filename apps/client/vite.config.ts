@@ -34,6 +34,10 @@ export default defineConfig({
         /^\/api\/cloudflare(?=\/|$)/,
       ),
       "/api": workflowProxy(nextjsTarget, /^\/api(?=\/|$)/),
+      "/user_management": {
+        target: "https://api.workos.com",
+        changeOrigin: true,
+      },
     },
   },
 });
