@@ -74,6 +74,54 @@ export function spawnAndExit(command, env, managedChildren = [], options = {}) {
   });
 }
 
+export function manageChildrenAndExit(children, options = {}) {
+  let shuttingDown = false;
+
+  const signalHandlers = new Map();
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    const handler = () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      for (const child of children) terminateChild(child, signal);
+      setTimeout(() => {
+        removeSignalHandlers(signalHandlers);
+        process.exit(
+          options.exitZeroOnSigint && signal === "SIGINT"
+            ? 0
+            : signalExitCode(signal),
+        );
+      }, 128).unref();
+    };
+    signalHandlers.set(signal, handler);
+    process.on(signal, handler);
+  }
+
+  for (const child of children) {
+    child.on("error", (error) => {
+      die(`failed to start child process: ${error.message}`);
+    });
+    child.on("exit", (code, signal) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      removeSignalHandlers(signalHandlers);
+      for (const currentChild of children) {
+        if (currentChild !== child) {
+          terminateChild(currentChild, signal || "SIGTERM");
+        }
+      }
+      if (signal) {
+        process.exit(
+          options.exitZeroOnSigint && signal === "SIGINT"
+            ? 0
+            : signalExitCode(signal),
+        );
+        return;
+      }
+      process.exit(code ?? 0);
+    });
+  }
+}
+
 function childHasExited(child) {
   return child.exitCode !== null || child.signalCode !== null;
 }

@@ -15,6 +15,10 @@ type WorkflowRegistry = {
     }
   >;
 };
+type WorkflowApiOverride = {
+  worker: string;
+  url: string;
+};
 
 const root = document.getElementById("root");
 
@@ -44,8 +48,9 @@ function ClientApp() {
     writeWorkflowConfigToUrl({
       worker,
       customWorkflowApiUrl,
+      workflowApiOverride: initialConfig.workflowApiOverride,
     });
-  }, [customWorkflowApiUrl, worker]);
+  }, [customWorkflowApiUrl, initialConfig.workflowApiOverride, worker]);
 
   return (
     <>
@@ -89,24 +94,29 @@ function ClientApp() {
 function initialWorkflowConfig(registry: WorkflowRegistry): {
   worker: WorkflowChoice;
   customWorkflowApiUrl: string;
+  workflowApiOverride?: WorkflowApiOverride;
 } {
   const params = new URLSearchParams(window.location.search);
   const explicitApiUrl = firstNonEmpty(params.get("workflowApiUrl"));
+  const requestedWorker = parseWorkflowChoice(
+    firstNonEmpty(params.get("worker"), import.meta.env.VITE_HYLO_WORKFLOW),
+    registry,
+  );
 
   return {
-    worker: explicitApiUrl
-      ? "custom"
-      : (parseWorkflowChoice(
-          firstNonEmpty(
-            params.get("worker"),
-            import.meta.env.VITE_HYLO_WORKFLOW,
-          ),
-          registry,
-        ) ??
-        registry.defaultWorkflow ??
-        Object.keys(registry.workflows)[0] ??
-        "custom"),
-    customWorkflowApiUrl: explicitApiUrl ?? "",
+    worker:
+      explicitApiUrl && !requestedWorker
+        ? "custom"
+        : (requestedWorker ??
+          registry.defaultWorkflow ??
+          Object.keys(registry.workflows)[0] ??
+          "custom"),
+    customWorkflowApiUrl:
+      explicitApiUrl && !requestedWorker ? explicitApiUrl : "",
+    workflowApiOverride:
+      explicitApiUrl && requestedWorker
+        ? { worker: requestedWorker, url: explicitApiUrl }
+        : undefined,
   };
 }
 
@@ -129,6 +139,7 @@ function workflowApiBaseUrl(config: {
 function writeWorkflowConfigToUrl(config: {
   worker: WorkflowChoice;
   customWorkflowApiUrl: string;
+  workflowApiOverride?: WorkflowApiOverride;
 }) {
   const url = new URL(window.location.href);
 
@@ -141,14 +152,38 @@ function writeWorkflowConfigToUrl(config: {
     );
   } else {
     url.searchParams.set("worker", config.worker);
-    url.searchParams.delete("workflowApiUrl");
+    if (config.workflowApiOverride?.worker === config.worker) {
+      url.searchParams.set("workflowApiUrl", config.workflowApiOverride.url);
+    } else {
+      url.searchParams.delete("workflowApiUrl");
+    }
   }
 
   window.history.replaceState(null, "", url);
 }
 
 function workflowRegistry(): WorkflowRegistry {
-  return __HYLO_WORKFLOWS__;
+  const registry = __HYLO_WORKFLOWS__;
+  const params = new URLSearchParams(window.location.search);
+  const workflowApiUrl = firstNonEmpty(params.get("workflowApiUrl"));
+  const worker = parseWorkflowChoice(
+    params.get("worker") ?? undefined,
+    registry,
+  );
+
+  if (!workflowApiUrl || !worker) return registry;
+
+  return {
+    ...registry,
+    defaultWorkflow: worker,
+    workflows: {
+      ...registry.workflows,
+      [worker]: {
+        ...registry.workflows[worker],
+        url: workflowApiUrl,
+      },
+    },
+  };
 }
 
 function parseWorkflowChoice(

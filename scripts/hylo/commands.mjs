@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { devServiceNameFromUrl, portlessBinPath } from "./portless.mjs";
-import { spawnAndExit, spawnChild } from "./process.mjs";
+import { manageChildrenAndExit, spawnAndExit, spawnChild } from "./process.mjs";
 import {
   die,
   formatPackagePath,
@@ -158,6 +158,16 @@ export function runUplinkCommand(args) {
     localUrl,
     `${workflow.id} local url`,
   );
+  const env = devOutputEnv({
+    ...process.env,
+    ...profileEnv(profile, { targets: [workflow] }),
+    ...targetEnv(workflow),
+  });
+  const workflowCommand = devShellCommand(workflow, env);
+  const wrappedWorkflow = wrapPortlessCommand(
+    shellCommand(workflowCommand),
+    workflow.url,
+  );
   const tunnelCommand = shellCommand(
     `pnpm exec wrangler tunnel quick-start ${shellQuote(localWorkflowUrl)} --log-level info`,
   );
@@ -167,17 +177,31 @@ export function runUplinkCommand(args) {
       `hylo uplink ${profile.id} ${workflow.id}`,
       `  local:   ${localWorkflowUrl}`,
       `  app:     ${uplinkConfiguredAppUrl(profile, app, parsed.appUrl) ?? "(not configured)"}`,
+      "  workflow: starting local dev server...",
       "  tunnel:  waiting for Cloudflare URL...",
       "  stop:    Ctrl+C",
       "",
     ].join("\n"),
   );
 
-  const env = devOutputEnv({ ...process.env, ...profileEnv(profile) });
-  const child = spawnChild(tunnelCommand[0], tunnelCommand.slice(1), env, {
-    cwd: backend.packageDir,
-    stdio: ["inherit", "pipe", "pipe"],
-  });
+  const workflowChild = spawnChild(
+    wrappedWorkflow.command[0],
+    wrappedWorkflow.command.slice(1),
+    env,
+    {
+      cwd: workflow.packageDir,
+      filterPortlessOutput: wrappedWorkflow.filterPortlessOutput,
+    },
+  );
+  const tunnelChild = spawnChild(
+    tunnelCommand[0],
+    tunnelCommand.slice(1),
+    env,
+    {
+      cwd: backend.packageDir,
+      stdio: ["inherit", "pipe", "pipe"],
+    },
+  );
 
   let announced = false;
   const announce = (url) => {
@@ -188,15 +212,17 @@ export function runUplinkCommand(args) {
       [
         "",
         `hylo: ${workflow.id} exposed at ${workflowUrl}`,
-        `hylo: open ${uplinkAppUrl(profile, app, workflowUrl, parsed.appUrl)}`,
+        `hylo: open ${uplinkAppUrl(profile, app, workflow, workflowUrl, parsed.appUrl)}`,
         "",
       ].join("\n"),
     );
   };
-  child.stdout?.on("data", (chunk) => pipeUplinkOutput(chunk, announce));
-  child.stderr?.on("data", (chunk) => pipeUplinkOutput(chunk, announce));
+  tunnelChild.stdout?.on("data", (chunk) => pipeUplinkOutput(chunk, announce));
+  tunnelChild.stderr?.on("data", (chunk) => pipeUplinkOutput(chunk, announce));
 
-  waitForChildAndExit(child, { exitZeroOnSigint: true });
+  manageChildrenAndExit([workflowChild, tunnelChild], {
+    exitZeroOnSigint: true,
+  });
 }
 
 export function runProfileCommand(args) {
@@ -707,11 +733,11 @@ function printUplinkHelp() {
 Usage:
   hylo uplink <profile> <workflow-target> [--url <local-url>] [--app-url <url>]
 
-Starts a temporary Cloudflare tunnel to a local workflow URL and prints a remote
-app link that points at the tunneled workflow API.
+Starts a local workflow target, exposes it through a temporary Cloudflare
+tunnel, and prints a remote app link with that workflow selected.
 
 Example:
-  hylo uplink remote workflow.nextjs
+  hylo uplink remote workflow.cloudflareWorker
 `);
 }
 
@@ -858,60 +884,14 @@ function uplinkConfiguredAppUrl(profile, app, appUrl) {
   return value ? validateHttpUrl(value, `${app.id} app url`) : undefined;
 }
 
-function uplinkAppUrl(profile, app, workflowUrl, appUrlOverride) {
+function uplinkAppUrl(profile, app, workflow, workflowUrl, appUrlOverride) {
   const appUrl = uplinkConfiguredAppUrl(profile, app, appUrlOverride);
   if (!appUrl)
     return `(app URL is not configured; use workflowApiUrl=${workflowUrl})`;
   const url = new URL(appUrl);
+  url.searchParams.set("worker", workflow.id);
   url.searchParams.set("workflowApiUrl", workflowUrl);
   return url.toString();
-}
-
-function waitForChildAndExit(child, options = {}) {
-  const signalHandlers = new Map();
-  for (const signal of ["SIGINT", "SIGTERM"]) {
-    const handler = () => {
-      terminateUplinkChild(child, signal);
-    };
-    signalHandlers.set(signal, handler);
-    process.on(signal, handler);
-  }
-
-  child.on("error", (error) => {
-    die(`failed to start tunnel: ${error.message}`);
-  });
-  child.on("exit", (code, signal) => {
-    for (const [currentSignal, handler] of signalHandlers) {
-      process.off(currentSignal, handler);
-    }
-    if (signal) {
-      process.exit(
-        options.exitZeroOnSigint && signal === "SIGINT"
-          ? 0
-          : signalExitCode(signal),
-      );
-      return;
-    }
-    process.exit(code ?? 0);
-  });
-}
-
-function terminateUplinkChild(child, signal) {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  try {
-    if (process.platform === "win32") {
-      child.kill(signal);
-      return;
-    }
-    process.kill(-child.pid, signal);
-  } catch (error) {
-    if (error?.code !== "ESRCH") throw error;
-  }
-}
-
-function signalExitCode(signal) {
-  const codes = { SIGINT: 130, SIGTERM: 143 };
-  return codes[signal] ?? 1;
 }
 
 function requiredOptionValue(args, index, option) {

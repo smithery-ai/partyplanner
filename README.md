@@ -249,6 +249,16 @@ npx hylo deploy remote
 npx hylo deploy remote app.client
 ```
 
+To demo the Cloudflare Worker workflow locally inside the deployed app, uplink
+it through a temporary Cloudflare tunnel:
+
+```sh
+npx hylo uplink remote workflow.cloudflareWorker
+```
+
+`uplink` starts the local workflow, prints the deployed app URL with the
+tunneled workflow selected, and keeps both running until Ctrl+C.
+
 Run `npx hylo --help` for target registration and profile editing commands.
 
 ### Backend DB

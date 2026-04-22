@@ -35,10 +35,10 @@ Deployable targets:
 
 Common:
   hylo dev
-  hylo uplink remote workflow.nextjs
+  hylo uplink remote workflow.cloudflareWorker
   hylo env remote
   hylo deploy remote
-  hylo exec remote -- env
+  hylo deploy remote app.client
 
 Register and attach a target:
   hylo target add workflow.someWorker --path ./examples/some-worker --url https://some-worker.hylo.localhost
