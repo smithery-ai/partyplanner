@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "hylo dev workflow.cloudflareWorker",
-    "deploy": "hylo deploy remote workflow.cloudflareWorker",
+    "dev": "hylo-dev dev workflow.cloudflareWorker",
+    "deploy": "hylo-dev deploy remote workflow.cloudflareWorker",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
