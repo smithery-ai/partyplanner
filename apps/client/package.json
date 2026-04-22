@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "hylo dev app.client",
+    "dev": "hylo-dev dev app.client",
     "build": "tsc -b && vite build",
-    "deploy": "hylo deploy remote app.client",
+    "deploy": "hylo-dev deploy remote app.client",
     "lint": "eslint .",
     "preview": "vite preview"
   },

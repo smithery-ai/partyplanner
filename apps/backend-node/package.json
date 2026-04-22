@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "hylo dev backend.node",
-    "db:migrate": "hylo exec -- pnpm -C ../../packages/postgres db:migrate",
-    "db:studio": "hylo exec -- pnpm -C ../../packages/postgres db:studio",
+    "dev": "hylo-dev dev backend.node",
+    "db:migrate": "hylo-dev exec -- pnpm -C ../../packages/postgres db:migrate",
+    "db:studio": "hylo-dev exec -- pnpm -C ../../packages/postgres db:studio",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },

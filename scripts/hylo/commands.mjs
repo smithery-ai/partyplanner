@@ -33,7 +33,7 @@ export function runCommand(mode, args) {
 
   if (parsed.command.length === 0) {
     die(
-      `missing command to ${mode}. Usage: hylo ${mode} [profile] -- <command...>`,
+      `missing command to ${mode}. Usage: hylo-dev ${mode} [profile] -- <command...>`,
     );
   }
 
@@ -87,7 +87,7 @@ export function printEnv(args) {
   }
 
   if (parsed.separator || parsed.command.length > 0) {
-    die("env accepts only a profile. Usage: hylo env [profile]");
+    die("env accepts only a profile. Usage: hylo-dev env [profile]");
   }
 
   const profile = selectedProfile(parsed.profile);
@@ -168,7 +168,7 @@ export async function runUplinkCommand(args) {
 
   process.stderr.write(
     [
-      `hylo uplink ${profile.id} ${workflow.id}`,
+      `hylo-dev uplink ${profile.id} ${workflow.id}`,
       `  local:   ${localWorkflowUrl}`,
       `  app:     ${uplinkConfiguredAppUrl(profile, app, parsed.appUrl) ?? "(not configured)"}`,
       "  workflow: starting local dev server...",
@@ -239,7 +239,7 @@ export function runProfileCommand(args) {
   }
 
   if (!profileName || !targetName || rest.length > 0) {
-    die(`Usage: hylo profile ${action} <profile> <target>`);
+    die(`Usage: hylo-dev profile ${action} <profile> <target>`);
   }
 
   const target = resolveTarget(targetName);
@@ -271,7 +271,9 @@ export function runTargetCommand(args) {
   }
 
   if (!targetId) {
-    die("Usage: hylo target add <target> --path <path> --url <url> [options]");
+    die(
+      "Usage: hylo-dev target add <target> --path <path> --url <url> [options]",
+    );
   }
 
   const options = parseTargetAddOptions(rest);
@@ -644,7 +646,7 @@ function formatGroupedEnv(profile, env) {
       ],
     ],
   ];
-  const lines = [`# hylo ${profile.id}`];
+  const lines = [`# hylo-dev ${profile.id}`];
   for (const [title, keys] of sections) {
     lines.push("", `# ${title}`);
     for (const key of keys) {
@@ -656,7 +658,7 @@ function formatGroupedEnv(profile, env) {
 
 function printDevSummary(profile, targets, env) {
   const lines = [
-    `hylo dev ${profile.id}`,
+    `hylo-dev dev ${profile.id}`,
     `  app:      ${env.HYLO_APP_URL ?? "(not exposed)"}`,
     `  backend:  ${env.HYLO_BACKEND_URL}`,
     `  workflow: ${env.HYLO_WORKFLOW_URL}`,
@@ -691,10 +693,10 @@ function uniqueTargets(targets) {
 
 function printCommandHelp(mode) {
   const kind = mode === "run" ? "long-running process" : "one-off command";
-  console.log(`hylo ${mode}
+  console.log(`hylo-dev ${mode}
 
 Usage:
-  hylo ${mode} [profile] -- <command...>
+  hylo-dev ${mode} [profile] -- <command...>
 
 Runs a ${kind} with the environment resolved from hylo.json.
 Profiles: ${profileChoices()}
@@ -702,13 +704,13 @@ Profiles: ${profileChoices()}
 }
 
 function printDevHelp() {
-  console.log(`hylo dev
+  console.log(`hylo-dev dev
 
 Usage:
-  hylo dev [profile] [target...]
+  hylo-dev dev [profile] [target...]
 
 Starts the configured local targets for a profile. From a target directory,
-hylo dev starts that target with profile env injected. Passing target ids starts
+hylo-dev dev starts that target with profile env injected. Passing target ids starts
 those targets and their required local dependencies.
 
 Profiles: ${profileChoices()}
@@ -716,10 +718,10 @@ Profiles: ${profileChoices()}
 }
 
 function printDeployHelp() {
-  console.log(`hylo deploy
+  console.log(`hylo-dev deploy
 
 Usage:
-  hylo deploy [profile] [target...]
+  hylo-dev deploy [profile] [target...]
 
 Deploys the deployable targets in a profile, or the listed targets, using
 commands from hylo.json.
@@ -729,10 +731,10 @@ Profiles: ${profileChoices()}
 }
 
 function printEnvHelp() {
-  console.log(`hylo env
+  console.log(`hylo-dev env
 
 Usage:
-  hylo env [profile]
+  hylo-dev env [profile]
 
 Prints the Hylo environment resolved from hylo.json.
 Profiles: ${profileChoices()}
@@ -740,25 +742,25 @@ Profiles: ${profileChoices()}
 }
 
 function printUplinkHelp() {
-  console.log(`hylo uplink
+  console.log(`hylo-dev uplink
 
 Usage:
-  hylo uplink <profile> <workflow-target> [--url <local-url>] [--app-url <url>]
+  hylo-dev uplink <profile> <workflow-target> [--url <local-url>] [--app-url <url>]
 
 Starts a local workflow target, exposes it through a temporary Cloudflare
 tunnel, and prints a remote app link with that workflow selected.
 
 Example:
-  hylo uplink remote workflow.cloudflareWorker
+  hylo-dev uplink remote workflow.cloudflareWorker
 `);
 }
 
 function printProfileHelp() {
-  console.log(`hylo profile
+  console.log(`hylo-dev profile
 
 Usage:
-  hylo profile add <profile> <target>
-  hylo profile remove <profile> <target>
+  hylo-dev profile add <profile> <target>
+  hylo-dev profile remove <profile> <target>
 
 Adds or removes a target from a profile in hylo.json.
 Profiles: ${profileChoices()}
@@ -766,10 +768,10 @@ Profiles: ${profileChoices()}
 }
 
 function printTargetHelp() {
-  console.log(`hylo target
+  console.log(`hylo-dev target
 
 Usage:
-  hylo target add <target> --path <path> --url <url> [options]
+  hylo-dev target add <target> --path <path> --url <url> [options]
 
 Options:
   --provider <name>
@@ -777,7 +779,7 @@ Options:
   --deploy <command>
 
 Example:
-  hylo target add workflow.someWorker --path ./examples/some-worker --url https://some-worker.hylo.localhost
+  hylo-dev target add workflow.someWorker --path ./examples/some-worker --url https://some-worker.hylo.localhost
 `);
 }
 
@@ -826,7 +828,7 @@ function parseUplinkArgs(args) {
   if (parsed.help) return parsed;
   if (!parsed.profileName || !parsed.targetName) {
     die(
-      "Usage: hylo uplink <profile> <workflow-target> [--url <local-url>] [--app-url <url>]",
+      "Usage: hylo-dev uplink <profile> <workflow-target> [--url <local-url>] [--app-url <url>]",
     );
   }
   return parsed;

@@ -9,4 +9,5 @@ dist/
 .dev.vars.*
 !.env.example
 !.dev.vars.example
+examples/sample/
 .vercel

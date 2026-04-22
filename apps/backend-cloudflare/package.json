@@ -4,12 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "hylo dev backend.cloudflare",
-    "deploy": "hylo deploy remote backend.cloudflare",
+    "dev": "hylo-dev dev backend.cloudflare",
+    "deploy": "hylo-dev deploy remote backend.cloudflare",
     "db:generate": "pnpm -C ../../packages/cloudflare db:generate",
-    "db:migrate": "pnpm -C ../../packages/cloudflare build && hylo exec -- wrangler d1 migrations apply hylo-backend --local",
-    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && hylo exec remote -- wrangler d1 migrations apply hylo-backend --remote",
-    "db:studio": "pnpm -C ../../packages/cloudflare build && hylo exec -- pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
+    "db:migrate": "pnpm -C ../../packages/cloudflare build && hylo-dev exec -- wrangler d1 migrations apply hylo-backend --local",
+    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && hylo-dev exec remote -- wrangler d1 migrations apply hylo-backend --remote",
+    "db:studio": "pnpm -C ../../packages/cloudflare build && hylo-dev exec -- pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
     "build": "tsc --noEmit"
   },
   "dependencies": {

@@ -2,13 +2,15 @@
   "name": "hylo",
   "private": true,
   "bin": {
-    "hylo": "./scripts/hylo.mjs"
+    "hylo-dev": "./scripts/hylo.mjs"
   },
   "packageManager": "pnpm@10.26.2",
   "scripts": {
     "build": "turbo run build",
     "check": "biome ci --error-on-warnings .",
-    "hylo": "node scripts/hylo.mjs",
+    "hylo": "tsx packages/cli/src/index.ts",
+    "hylo-dev": "node scripts/hylo.mjs",
+    "example": "rm -rf examples/sample && pnpm hylo init examples/sample && pnpm install && pnpm -C examples/sample exec hylo deploy --backend ${HYLO_BACKEND_URL:-https://hylo-backend.smithery.workers.dev}",
     "dev": "node scripts/hylo.mjs dev",
     "deploy": "node scripts/hylo.mjs deploy remote",
     "env": "node scripts/hylo.mjs env",

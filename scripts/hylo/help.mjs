@@ -1,17 +1,17 @@
 import { deployableTargetChoices, profileChoices } from "./workspace.mjs";
 
 export function printHelp() {
-  console.log(`hylo
+  console.log(`hylo-dev
 
 Usage:
-  hylo dev [profile]
-  hylo uplink <profile> <workflow-target>
-  hylo deploy [profile] [target...]
-  hylo env [profile]
-  hylo run [profile] -- <command...>
-  hylo exec [profile] -- <command...>
-  hylo profile add|remove <profile> <target>
-  hylo target add <target> --path <path> --url <url>
+  hylo-dev dev [profile]
+  hylo-dev uplink <profile> <workflow-target>
+  hylo-dev deploy [profile] [target...]
+  hylo-dev env [profile]
+  hylo-dev run [profile] -- <command...>
+  hylo-dev exec [profile] -- <command...>
+  hylo-dev profile add|remove <profile> <target>
+  hylo-dev target add <target> --path <path> --url <url>
 
 Profiles come from hylo.json. The default profile is used when no profile is
 passed. Targets are named by kind, for example backend.node,
@@ -34,14 +34,14 @@ Deployable targets:
   ${deployableTargetChoices()}
 
 Common:
-  hylo dev
-  hylo uplink remote workflow.cloudflareWorker
-  hylo env remote
-  hylo deploy remote
-  hylo deploy remote app.client
+  hylo-dev dev
+  hylo-dev uplink remote workflow.cloudflareWorker
+  hylo-dev env remote
+  hylo-dev deploy remote
+  hylo-dev deploy remote app.client
 
 Register and attach a target:
-  hylo target add workflow.someWorker --path ./examples/some-worker --url https://some-worker.hylo.localhost
-  hylo profile add remote workflow.someWorker
+  hylo-dev target add workflow.someWorker --path ./examples/some-worker --url https://some-worker.hylo.localhost
+  hylo-dev profile add remote workflow.someWorker
 `);
 }

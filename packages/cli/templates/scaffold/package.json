@@ -1,0 +1,21 @@
+{
+  "name": "{{name}}",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "hylo build",
+    "deploy": "hylo deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workflow/core": "workspace:*",
+    "@workflow/runtime": "workspace:*",
+    "@workflow/server": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@hylo/cli": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}
