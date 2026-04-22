@@ -5,7 +5,10 @@
   "bin": {
     "hylo": "./dist/index.js"
   },
-  "files": ["dist", "templates"],
+  "files": [
+    "dist",
+    "templates"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run --passWithNoTests"

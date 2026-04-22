@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { info } from "../log.js";
 import { scaffoldDir } from "../paths.js";

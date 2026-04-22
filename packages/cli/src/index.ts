@@ -39,7 +39,9 @@ async function main(argv: string[]): Promise<number> {
 main(process.argv.slice(2)).then(
   (code) => process.exit(code),
   (err) => {
-    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`);
+    process.stderr.write(
+      `${err instanceof Error ? err.message : String(err)}\n`,
+    );
     process.exit(1);
   },
 );

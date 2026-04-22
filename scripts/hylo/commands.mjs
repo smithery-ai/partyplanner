@@ -271,7 +271,9 @@ export function runTargetCommand(args) {
   }
 
   if (!targetId) {
-    die("Usage: hylo-dev target add <target> --path <path> --url <url> [options]");
+    die(
+      "Usage: hylo-dev target add <target> --path <path> --url <url> [options]",
+    );
   }
 
   const options = parseTargetAddOptions(rest);

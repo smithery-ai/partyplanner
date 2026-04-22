@@ -1,6 +1,6 @@
 import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { parseBuildArgs, type BuildOptions } from "../args.js";
+import { type BuildOptions, parseBuildArgs } from "../args.js";
 import { info } from "../log.js";
 import { workerShimPath } from "../paths.js";
 import { loadProject, type ProjectInfo } from "../project.js";

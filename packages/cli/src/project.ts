@@ -30,7 +30,9 @@ export async function loadProject(cwd: string): Promise<ProjectInfo> {
 
   const userEntry = resolve(root, "src", "index.ts");
   await access(userEntry).catch(() => {
-    throw new Error(`Expected workflow entry at src/index.ts (got: ${userEntry})`);
+    throw new Error(
+      `Expected workflow entry at src/index.ts (got: ${userEntry})`,
+    );
   });
 
   for (const file of FORBIDDEN_FILES) {

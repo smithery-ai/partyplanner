@@ -51,8 +51,6 @@ export function runWranglerCaptured(
     });
 
     child.on("error", rejectP);
-    child.on("exit", (code) =>
-      resolveP({ code: code ?? 1, stdout, stderr }),
-    );
+    child.on("exit", (code) => resolveP({ code: code ?? 1, stdout, stderr }));
   });
 }
