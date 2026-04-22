@@ -3,6 +3,7 @@ import {
   runCommand,
   runDeployCommand,
   runDevCommand,
+  runPreviewCommand,
   runProfileCommand,
   runTargetCommand,
   runUplinkCommand,
@@ -33,6 +34,11 @@ export async function main(args) {
     return;
   }
 
+  if (commandName === "preview") {
+    runPreviewCommand(rest);
+    return;
+  }
+
   if (commandName === "uplink") {
     await runUplinkCommand(rest);
     return;
@@ -54,6 +60,6 @@ export async function main(args) {
   }
 
   die(
-    `unknown command "${commandName}". Use run, dev, uplink, deploy, exec, env, profile, or target.`,
+    `unknown command "${commandName}". Use run, dev, uplink, deploy, preview, exec, env, profile, or target.`,
   );
 }

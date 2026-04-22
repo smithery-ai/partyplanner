@@ -29,7 +29,8 @@
       "path": "./apps/backend-cloudflare",
       "provider": "cloudflare-worker",
       "dev": "pnpm exec wrangler dev --ip 127.0.0.1 --port $PORT --inspector-port 9230",
-      "deploy": "pnpm build && pnpm exec wrangler deploy",
+      "build": "cd ../.. && pnpm exec turbo run build --filter=backend-cloudflare",
+      "deploy": "pnpm exec wrangler deploy",
       "url": "https://api-worker.hylo.localhost"
     },
     "workflow.nextjs": {
@@ -42,15 +43,16 @@
       "path": "./examples/cloudflare-worker",
       "provider": "cloudflare-worker",
       "dev": "pnpm exec wrangler dev --ip 127.0.0.1 --port $PORT --inspector-port 9231",
-      "deploy": "pnpm build && pnpm exec wrangler deploy",
+      "build": "cd ../.. && pnpm exec turbo run build --filter=workflow-cloudflare-worker-example",
+      "deploy": "pnpm exec wrangler deploy",
       "url": "https://cloudflare-worker.hylo.localhost"
     },
     "app.client": {
       "path": "./apps/client",
       "provider": "vite",
       "dev": "pnpm exec vite",
-      "build": "vite build",
-      "deploy": "cd ../.. && pnpm exec vercel link --yes --project hylo-client && pnpm exec vercel deploy --prod --yes --force --build-env VITE_HYLO_WORKFLOW=\"$VITE_HYLO_WORKFLOW\" --build-env VITE_HYLO_WORKFLOW_URL=\"$VITE_HYLO_WORKFLOW_URL\" --build-env VITE_HYLO_WORKFLOWS=\"$VITE_HYLO_WORKFLOWS\"",
+      "build": "cd ../.. && pnpm exec turbo run build --filter=client",
+      "deploy": "cd ../.. && hylo_vercel() { if [ -n \"$VERCEL_TOKEN\" ]; then pnpm exec vercel \"$@\" --token \"$VERCEL_TOKEN\"; else pnpm exec vercel \"$@\"; fi; }; hylo_vercel link --yes --scope team_Idk3ytPuEMlKkO2tZpUZZ4Ac --project hylo-client && hylo_vercel deploy --prod --yes --force --build-env VITE_HYLO_WORKFLOW=\"$VITE_HYLO_WORKFLOW\" --build-env VITE_HYLO_WORKFLOW_URL=\"$VITE_HYLO_WORKFLOW_URL\" --build-env VITE_HYLO_WORKFLOWS=\"$VITE_HYLO_WORKFLOWS\"",
       "url": "https://hylo.localhost"
     }
   }
