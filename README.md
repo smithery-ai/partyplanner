@@ -247,19 +247,24 @@ Run `pnpm hylo --help` for target registration and profile editing commands.
 
 ### Backend DB
 
-```sh
-cd apps/backend-cloudflare
-pnpm db:migrate
-pnpm db:studio
-```
-
-For the alternate Node backend:
+For the default local Node backend:
 
 ```sh
 cd apps/backend-node
 pnpm db:migrate
 pnpm db:studio
 ```
+
+For the local Cloudflare backend:
+
+```sh
+cd apps/backend-cloudflare
+pnpm db:migrate
+pnpm db:studio
+```
+
+For the deployed Cloudflare backend, run `pnpm db:migrate:remote` from
+`apps/backend-cloudflare`.
 
 ## Scripts
 
