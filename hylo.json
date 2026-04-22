@@ -14,7 +14,7 @@
       "urls": {
         "backend.cloudflare": "https://hylo-backend.smithery.workers.dev",
         "workflow.cloudflareWorker": "https://hylo-cloudflare-worker-example.smithery.workers.dev",
-        "app.client": "https://hylo-icn7ntl5m-smithery.vercel.app"
+        "app.client": "https://hylo-eight.vercel.app"
       }
     }
   },
