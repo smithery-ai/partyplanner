@@ -32,6 +32,7 @@ export type BackendAppEnv = {
   HYLO_BACKEND_PUBLIC_URL?: string;
   HYLO_BROKER_BASE_URL?: string;
   HYLO_WORKER_DISPATCH_BASE_URL?: string;
+  DISPATCHER?: WorkerDispatchNamespace;
   NODE_ENV?: string;
   NOTION_CLIENT_ID?: string;
   NOTION_CLIENT_SECRET?: string;
@@ -62,6 +63,7 @@ export function createApp(
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
+  mountWorkerDispatchApi(app, env);
   mountRemoteRuntimeOpenApi(app, createBackendOpenApiOptions());
   app.route(
     "/runtime",
@@ -177,6 +179,10 @@ type PlatformErrorStatus = 400 | 401 | 403 | 500 | 502 | 503;
 
 type WorkflowDeploymentRegistryDb = {
   prepare(query: string): D1PreparedStatement;
+};
+
+type WorkerDispatchNamespace = {
+  get(scriptName: string): { fetch(request: Request): Promise<Response> };
 };
 
 type WorkflowDeploymentRecord = {
@@ -981,6 +987,29 @@ function mountDeploymentApi(
   });
 }
 
+function mountWorkerDispatchApi(app: OpenAPIHono, env: BackendAppEnv): void {
+  const dispatch = async (c: Context) => {
+    try {
+      const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
+      if (!env.DISPATCHER) {
+        throw new PlatformApiError(
+          503,
+          "worker_dispatch_not_configured",
+          "Worker dispatch namespace binding is not configured.",
+        );
+      }
+      return await env.DISPATCHER.get(deploymentId).fetch(
+        rewriteDispatchRequest(c.req.raw),
+      );
+    } catch (e) {
+      return apiErrorResponse(c, e);
+    }
+  };
+
+  app.all("/workers/:deploymentId", dispatch);
+  app.all("/workers/:deploymentId/*", dispatch);
+}
+
 function resolveCloudflarePlatformConfig(
   env: BackendAppEnv,
 ): CloudflarePlatformConfig {
@@ -1563,6 +1592,13 @@ function resolveDefaultWorkflowApiUrl(
   return `${baseUrl}/${encodeURIComponent(deploymentId)}/api/workflow`;
 }
 
+function rewriteDispatchRequest(request: Request): Request {
+  const url = new URL(request.url);
+  const path = url.pathname.split("/").slice(3).join("/");
+  url.pathname = path ? `/${path}` : "/";
+  return new Request(url, request);
+}
+
 function assertWorkflowApiUrl(value: string): void {
   if (value.startsWith("/")) return;
   try {
@@ -1803,9 +1839,12 @@ function collectCuratedProviders(
     { spec: notionProvider, envPrefix: "NOTION" },
   ];
   for (const { spec, envPrefix } of catalog) {
-    const clientId = env[`${envPrefix}_CLIENT_ID` as keyof BackendAppEnv];
-    const clientSecret =
+    const rawClientId = env[`${envPrefix}_CLIENT_ID` as keyof BackendAppEnv];
+    const rawClientSecret =
       env[`${envPrefix}_CLIENT_SECRET` as keyof BackendAppEnv];
+    const clientId = typeof rawClientId === "string" ? rawClientId : undefined;
+    const clientSecret =
+      typeof rawClientSecret === "string" ? rawClientSecret : undefined;
     if (clientId && clientSecret) {
       registrations.push({ spec, clientId, clientSecret });
     }
