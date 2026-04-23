@@ -118,6 +118,9 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.2.8
         version: 5.2.8
+      '@hylo/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@tanstack/react-query':
         specifier: ^5.99.1
         version: 5.99.1(react@19.2.5)

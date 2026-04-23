@@ -6,6 +6,11 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const resolvedHyloBackendUrl = hyloBackendUrl();
+if (isVercelBuild() && !resolvedHyloBackendUrl) {
+  throw new Error(
+    "Vercel client builds require VITE_HYLO_BACKEND_URL or VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE.",
+  );
+}
 const backendCloudflareTarget =
   resolvedHyloBackendUrl || "http://127.0.0.1:8787";
 const nextjsTarget = envUrl(
@@ -44,6 +49,12 @@ export default defineConfig({
         /^\/api\/cloudflare(?=\/|$)/,
       ),
       "/api": workflowProxy(nextjsTarget, /^\/api(?=\/|$)/),
+      "/auth": {
+        target: backendCloudflareTarget,
+        changeOrigin: true,
+        secure: false,
+        agent: hyloLocalAgent(backendCloudflareTarget),
+      },
       "/deployments": {
         target: backendCloudflareTarget,
         changeOrigin: true,
@@ -147,6 +158,10 @@ function previewHyloBackendUrl(): string | undefined {
   ]);
   if (!template || !branch) return undefined;
   return template.replaceAll("{branch}", previewAlias(branch));
+}
+
+function isVercelBuild(): boolean {
+  return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
 }
 
 function firstEnv(names: string[]): string | undefined {

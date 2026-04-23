@@ -1,6 +1,7 @@
+import { createHyloApiClient } from "@hylo/api-client";
 import { AuthKitProvider, type User, useAuth } from "@workos-inc/authkit-react";
 import { LogOut } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 type AppProps = {
   children: (props: {
@@ -17,12 +18,34 @@ type WorkOSConfig = {
 };
 
 export function App({ children }: AppProps) {
-  const workos = getWorkOSConfig();
+  const [workos, setWorkos] = useState<WorkOSConfig | null | undefined>();
+
+  useEffect(() => {
+    if (workos !== undefined) return;
+
+    const abort = new AbortController();
+    void getApiWorkOSConfig(abort.signal)
+      .then((config) => {
+        if (!abort.signal.aborted) setWorkos(config);
+      })
+      .catch((error) => {
+        if (!abort.signal.aborted) {
+          console.warn("[hylo-client] failed to load auth config", error);
+          setWorkos(null);
+        }
+      });
+
+    return () => abort.abort();
+  }, [workos]);
+
+  if (workos === undefined) {
+    return <div className="p-6 text-sm">Loading sign-in configuration...</div>;
+  }
 
   if (!workos) {
     return (
       <div className="p-6 text-sm">
-        Set VITE_WORKOS_CLIENT_ID before starting the client.
+        WorkOS AuthKit is not configured for this Hylo backend.
       </div>
     );
   }
@@ -112,24 +135,29 @@ function UserFooter({
   );
 }
 
-function getWorkOSConfig(): WorkOSConfig | null {
-  const clientId = optionalEnv(import.meta.env.VITE_WORKOS_CLIENT_ID);
-  if (!clientId) return null;
-
-  const apiHostname =
-    optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ??
-    defaultWorkOSApiHostname();
-  const redirectUri = optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI);
-  const configuredDevMode = optionalBooleanEnv(
-    import.meta.env.VITE_WORKOS_DEV_MODE,
-  );
-  const devMode = configuredDevMode ?? (import.meta.env.DEV ? true : undefined);
+async function getApiWorkOSConfig(
+  signal: AbortSignal,
+): Promise<WorkOSConfig | null> {
+  const client = createHyloApiClient({
+    baseUrl: hyloBackendUrl() ?? window.location.origin,
+    fetch: (input, init) =>
+      fetch(input, {
+        ...init,
+        signal,
+      }),
+  });
+  const config = await client.auth.clientConfig();
+  if (!config.auth) return null;
 
   return {
-    clientId,
-    apiHostname,
-    redirectUri,
-    devMode,
+    clientId: config.auth.clientId,
+    apiHostname:
+      optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ??
+      config.auth.apiHostname,
+    redirectUri: optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI),
+    devMode:
+      optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ??
+      (import.meta.env.DEV ? true : undefined),
   };
 }
 
@@ -172,11 +200,11 @@ function optionalBooleanEnv(value: string | undefined): boolean | undefined {
   return undefined;
 }
 
-function defaultWorkOSApiHostname() {
-  if (!import.meta.env.DEV) return undefined;
-  return window.location.hostname.endsWith(".localhost")
-    ? window.location.hostname
-    : undefined;
+function hyloBackendUrl(): string | undefined {
+  return optionalEnv(import.meta.env.VITE_HYLO_BACKEND_URL)?.replace(
+    /\/+$/,
+    "",
+  );
 }
 
 function displayName(user: User) {

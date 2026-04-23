@@ -335,7 +335,7 @@ function formBody(values: Record<string, string>): URLSearchParams {
 function isJwtExpired(token: string): boolean {
   try {
     const [, payload] = token.split(".");
-    if (!payload) return false;
+    if (!payload) return true;
     const decoded = JSON.parse(
       Buffer.from(payload, "base64url").toString("utf8"),
     );
@@ -343,7 +343,7 @@ function isJwtExpired(token: string): boolean {
       isRecord(decoded) && typeof decoded.exp === "number"
         ? decoded.exp
         : undefined;
-    return exp ? exp * 1000 <= Date.now() + 30_000 : false;
+    return exp ? exp * 1000 <= Date.now() + 30_000 : true;
   } catch {
     return true;
   }

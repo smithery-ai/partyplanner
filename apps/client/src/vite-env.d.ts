@@ -6,7 +6,6 @@ interface ImportMetaEnv {
   readonly VITE_HYLO_WORKFLOW?: string;
   readonly VITE_HYLO_WORKFLOW_REGISTRY_URL?: string;
   readonly VITE_WORKOS_API_HOSTNAME?: string;
-  readonly VITE_WORKOS_CLIENT_ID?: string;
   readonly VITE_WORKOS_DEV_MODE?: string;
   readonly VITE_WORKOS_REDIRECT_URI?: string;
 }
