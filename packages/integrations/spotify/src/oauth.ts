@@ -35,8 +35,8 @@ const rawTokenSchema = z
   .passthrough();
 
 // Provider spec consumed by the OAuth broker on the backend. Worker code
-// does not import this — it's only used by `apps/backend-node` (or other
-// brokers) to register the curated Spotify connector. The spec contains no
+// does not import this; the backend uses it to register the curated Spotify
+// connector. The spec contains no
 // credentials; client_id/secret are fetched from the backend's secret store.
 export const spotifyProvider: OAuthProviderSpec<SpotifyAuth> = {
   id: "spotify",
