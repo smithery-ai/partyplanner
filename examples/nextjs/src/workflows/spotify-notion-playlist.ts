@@ -2,6 +2,8 @@ import { atom, input } from "@workflow/core";
 import {
   NOTION_VERSION,
   type NotionBlock,
+  normalizeNotionId,
+  normalizeNotionParent,
   notionAuthSchema,
 } from "@workflow/integrations-notion";
 import { createConnection } from "@workflow/integrations-oauth";
@@ -21,7 +23,7 @@ export const spotifyPlaylistAnalysisRequest = input(
       .string()
       .default(process.env.NOTION_PARENT_PAGE_ID ?? "")
       .describe(
-        "The Notion page ID where the playlist document should be created.",
+        "The Notion page ID, page URL, slug, or database URL where the playlist document should be created.",
       ),
     notionPageTitle: z
       .string()
@@ -366,7 +368,7 @@ async function createNotionPage(args: {
       "Notion-Version": NOTION_VERSION,
     },
     body: JSON.stringify({
-      parent: { page_id: args.parentPageId },
+      parent: normalizeNotionParent(args.parentPageId),
       properties: {
         title: {
           title: [{ type: "text", text: { content: args.title } }],
@@ -406,7 +408,7 @@ async function appendNotionBlocks(args: {
   children: NotionBlock[];
 }): Promise<void> {
   const response = await fetch(
-    `https://api.notion.com/v1/blocks/${encodeURIComponent(args.blockId)}/children`,
+    `https://api.notion.com/v1/blocks/${encodeURIComponent(normalizeNotionId(args.blockId, "Notion block ID"))}/children`,
     {
       method: "PATCH",
       headers: {

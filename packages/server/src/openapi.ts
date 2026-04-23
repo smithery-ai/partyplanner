@@ -119,7 +119,7 @@ const QueueSnapshotSchema = z
 const GraphNodeSchema = z
   .object({
     id: z.string(),
-    kind: z.enum(["input", "deferred_input", "atom"]),
+    kind: z.enum(["input", "deferred_input", "atom", "action"]),
     secret: z.boolean().optional(),
     description: z.string().optional(),
     status: z.enum([

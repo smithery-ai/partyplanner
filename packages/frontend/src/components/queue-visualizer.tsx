@@ -100,7 +100,7 @@ const STATUS_LEGEND: {
 
 type WorkflowNodeData = {
   label: string;
-  kind: "input" | "atom";
+  kind: "input" | "atom" | "action";
   deferred?: boolean;
   secret?: boolean;
   /** Waiting on this input or secret (no node record in state until submitted). */
@@ -281,7 +281,9 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
         : data.deferred
           ? "Deferred input"
           : "Input"
-      : "Atom";
+      : data.kind === "action"
+        ? "Action"
+        : "Atom";
 
   return (
     <WorkflowCard
@@ -380,12 +382,18 @@ function workflowNodeOrder(
   const ids = new Set<string>();
   for (const id of registry.allIds()) ids.add(id);
   for (const input of manifest?.inputs ?? []) ids.add(input.id);
+  for (const atom of manifest?.atoms ?? []) ids.add(atom.id);
+  for (const action of manifest?.actions ?? []) ids.add(action.id);
   for (const id of Object.keys(runState?.nodes ?? {})) ids.add(id);
   for (const item of queue?.pending ?? []) ids.add(queueNodeId(item.event));
   for (const item of queue?.running ?? []) ids.add(queueNodeId(item.event));
 
   const manifestOrder = new Map(
-    (manifest?.inputs ?? []).map((input, index) => [input.id, index]),
+    [
+      ...(manifest?.inputs ?? []),
+      ...(manifest?.atoms ?? []),
+      ...(manifest?.actions ?? []),
+    ].map((node, index) => [node.id, index]),
   );
   const registryOrder = new Map(
     registry.allIds().map((id, index) => [id, index + manifestOrder.size]),
@@ -682,7 +690,14 @@ function buildFlow(
   const nodes: Node[] = ids.map((id) => {
     const rec = runState?.nodes[id];
     const inputDef = inputDefinition(registry, manifest, id);
-    const kind: WorkflowNodeData["kind"] = inputDef ? "input" : "atom";
+    const actionDef =
+      registry.getAction(id) ??
+      manifest?.actions.find((item) => item.id === id);
+    const kind: WorkflowNodeData["kind"] = inputDef
+      ? "input"
+      : actionDef
+        ? "action"
+        : "atom";
     const deferred = Boolean(inputDef?.kind === "deferred_input");
     const secret = Boolean(inputDef?.secret);
     const pendingInput = Boolean(

@@ -15,7 +15,7 @@ export const notionLogRequest = input(
   {
     title: "Create a Notion page",
     description:
-      "Authorize Notion and create a new page under the provided parent. Defaults the parent to NOTION_PARENT_PAGE_ID.",
+      "Authorize Notion and create a new page under the provided parent page ID, page URL, slug, or database URL. Defaults the parent to NOTION_PARENT_PAGE_ID.",
   },
 );
 
@@ -48,7 +48,7 @@ export const notionFetchRequest = input(
   {
     title: "Fetch a Notion page",
     description:
-      "Authorize Notion and fetch a page by ID. Defaults the pageId to NOTION_PAGE_ID.",
+      "Authorize Notion and fetch a page by ID, URL, or slug. Defaults the pageId to NOTION_PAGE_ID.",
   },
 );
 

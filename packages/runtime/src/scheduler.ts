@@ -479,12 +479,14 @@ function buildGraphNodes(
   return registry.allIds().map((id) => {
     const inputDef = registry.getInput(id);
     const atomDef = registry.getAtom(id);
+    const actionDef = registry.getAction(id);
     const rec = state.nodes[id] ?? fallbackRecord(inputDef?.kind);
     return {
       id,
-      kind: inputDef?.kind ?? "atom",
+      kind: inputDef?.kind ?? atomDef?.kind ?? actionDef?.kind ?? "atom",
       secret: inputDef?.secret,
-      description: inputDef?.description ?? atomDef?.description,
+      description:
+        inputDef?.description ?? atomDef?.description ?? actionDef?.description,
       status: running.has(id)
         ? "running"
         : pending.has(id)
