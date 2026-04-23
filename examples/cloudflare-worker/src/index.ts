@@ -1,6 +1,8 @@
 import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
 
+export * from "./notion";
+
 export const incidentAlert = input(
   "incidentAlert",
   z.object({
@@ -36,7 +38,7 @@ export const incidentCommsApproval = input.deferred(
 
 export const incidentPublisherToken = secret(
   "INCIDENT_PUBLISHER_TOKEN",
-  undefined,
+  "inc-pub-token-123",
   {
     description: "Token used to publish external incident communications.",
     errorMessage: "INCIDENT_PUBLISHER_TOKEN is not available to this Worker.",

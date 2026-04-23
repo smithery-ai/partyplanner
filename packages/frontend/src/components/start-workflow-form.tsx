@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
+  KeyRound,
   Play,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +12,7 @@ import { workflowInputLabel } from "../lib/workflow-labels";
 import type { WorkflowInputManifest } from "../types";
 import { JsonSchemaForm } from "./json-schema-form";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 type Step = "secrets" | "choose";
 
@@ -34,8 +36,11 @@ export function StartWorkflowForm({
   const secrets = immediate.filter((input) => input.secret);
 
   const allSecretsResolved = useMemo(
-    () => secrets.every((s) => s.resolved === true),
-    [secrets],
+    () =>
+      secrets.every(
+        (s) => s.resolved === true || secretStringValue(inputValues[s.id]),
+      ),
+    [secrets, inputValues],
   );
   const secretsNeedAttention = secrets.length > 0 && !allSecretsResolved;
 
@@ -74,11 +79,16 @@ export function StartWorkflowForm({
     return (
       <Shell
         title="Secrets"
-        description="Secrets are resolved on the server. Set the environment variables below if any are missing."
+        description="Secrets are resolved on the server. Enter values for missing secrets to use with this run."
       >
         <div className="space-y-2">
           {secrets.map((input) => (
-            <SecretStatusRow key={input.id} input={input} />
+            <SecretStatusRow
+              key={input.id}
+              input={input}
+              value={secretStringValue(inputValues[input.id])}
+              onChange={(value) => onInputValuesChange(input.id, value)}
+            />
           ))}
         </div>
         {error ? <ErrorText>{error}</ErrorText> : null}
@@ -172,14 +182,25 @@ function Shell({
   );
 }
 
-function SecretStatusRow({ input }: { input: WorkflowInputManifest }) {
+function SecretStatusRow({
+  input,
+  value,
+  onChange,
+}: {
+  input: WorkflowInputManifest;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   const resolved = input.resolved === true;
+  const provided = !resolved && value.length > 0;
   return (
     <div
       className={cn(
         "flex items-start gap-2.5 rounded-lg border p-3",
         resolved
           ? "border-emerald-500/40 bg-emerald-500/5"
+          : provided
+            ? "border-blue-500/40 bg-blue-500/5"
           : "border-yellow-500/50 bg-yellow-500/5",
       )}
     >
@@ -189,12 +210,21 @@ function SecretStatusRow({ input }: { input: WorkflowInputManifest }) {
           aria-hidden
         />
       ) : (
-        <AlertTriangle
-          className="mt-0.5 size-3.5 shrink-0 text-yellow-700 dark:text-yellow-500"
-          aria-hidden
-        />
+        <>
+          {provided ? (
+            <KeyRound
+              className="mt-0.5 size-3.5 shrink-0 text-blue-700 dark:text-blue-400"
+              aria-hidden
+            />
+          ) : (
+            <AlertTriangle
+              className="mt-0.5 size-3.5 shrink-0 text-yellow-700 dark:text-yellow-500"
+              aria-hidden
+            />
+          )}
+        </>
       )}
-      <div className="min-w-0 flex-1 space-y-0.5">
+      <div className="min-w-0 flex-1 space-y-2">
         <code className="block truncate text-[11px] text-foreground">
           {input.id}
         </code>
@@ -208,17 +238,43 @@ function SecretStatusRow({ input }: { input: WorkflowInputManifest }) {
             "text-[11px] leading-snug",
             resolved
               ? "text-emerald-700 dark:text-emerald-400"
-              : "text-yellow-800 dark:text-yellow-300",
+              : provided
+                ? "text-blue-800 dark:text-blue-300"
+                : "text-yellow-800 dark:text-yellow-300",
           )}
         >
           {resolved
             ? "Resolved by the workflow."
+            : provided
+              ? "Provided for this run."
             : (input.errorMessage ??
               "Missing — resolve this secret in the workflow server.")}
         </p>
+        {!resolved ? (
+          <div className="grid gap-1.5">
+            <label
+              className="text-[11px] font-medium text-muted-foreground"
+              htmlFor={`secret-${input.id}`}
+            >
+              Value
+            </label>
+            <Input
+              id={`secret-${input.id}`}
+              type="password"
+              value={value}
+              onChange={(e) => onChange(e.currentTarget.value)}
+              placeholder="Secret value"
+              autoComplete="off"
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
+}
+
+function secretStringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 function InputOption({

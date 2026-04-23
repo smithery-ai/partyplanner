@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "wrangler dev --ip 127.0.0.1 --port 8788 --inspector-port 9231 --var HYLO_BACKEND_URL:${HYLO_BACKEND_URL:-http://127.0.0.1:8787}",
+    "dev": "wrangler dev src/index.ts --name hylo-cloudflare-worker-example --compatibility-date 2026-04-19 --compatibility-flag global_fetch_strictly_public --ip 127.0.0.1 --port 8788 --inspector-port 9231 --var HYLO_BACKEND_URL:${HYLO_BACKEND_URL:-http://127.0.0.1:8787} --var INCIDENT_PUBLISHER_TOKEN:${INCIDENT_PUBLISHER_TOKEN:-local-dev-incident-publisher-token}",
     "deploy": "hylo deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@workflow/core": "workspace:*",
+    "@workflow/integrations-notion": "workspace:*",
+    "@workflow/integrations-oauth": "workspace:*",
     "@workflow/runtime": "workspace:*",
     "@workflow/server": "workspace:*",
     "hono": "^4.12.14",

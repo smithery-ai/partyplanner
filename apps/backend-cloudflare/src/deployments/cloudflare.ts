@@ -103,7 +103,7 @@ function workflowBindings(
   input: ProvisionDeploymentInput,
   backendUrl: string,
 ): Record<string, unknown>[] {
-  return [
+  const bindings = [
     plainTextBinding(
       "HYLO_WORKFLOW_ID",
       input.workflowId ?? input.deploymentId,
@@ -115,6 +115,19 @@ function workflowBindings(
     plainTextBinding("HYLO_WORKFLOW_VERSION", input.workflowVersion ?? "0.0.0"),
     plainTextBinding("HYLO_BACKEND_URL", backendUrl.replace(/\/+$/, "")),
   ];
+  const appUrl = appBaseUrlFromWorkflowApiUrl(input.workflowApiUrl);
+  if (appUrl) bindings.push(plainTextBinding("HYLO_APP_URL", appUrl));
+  return bindings;
+}
+
+// Derive the tenant worker's external app base URL from its workflowApiUrl.
+// Brokered OAuth handoff routes are mounted under `/api/workflow/integrations`,
+// so the app URL is the workflowApiUrl minus the trailing `/api/workflow`.
+function appBaseUrlFromWorkflowApiUrl(
+  workflowApiUrl: string | undefined,
+): string | undefined {
+  if (!workflowApiUrl) return undefined;
+  return workflowApiUrl.replace(/\/+$/, "").replace(/\/api\/workflow$/, "");
 }
 
 function plainTextBinding(name: string, text: string): Record<string, unknown> {

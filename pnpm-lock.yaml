@@ -221,6 +221,12 @@ importers:
       '@workflow/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@workflow/integrations-notion':
+        specifier: workspace:*
+        version: link:../../packages/integrations/notion
+      '@workflow/integrations-oauth':
+        specifier: workspace:*
+        version: link:../../packages/integrations/_oauth
       '@workflow/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
