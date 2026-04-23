@@ -45,10 +45,11 @@ function ClientApp({
   getAccessToken: () => Promise<string>;
   sidebarFooter: ReactNode;
 }) {
+  const showBackendSwitcher = shouldShowBackendSwitcher();
   const [backendTarget, setBackendTarget] = useState<BackendTarget>(() =>
     requestedBackendTarget(),
   );
-  const registryBackendTarget = import.meta.env.DEV ? backendTarget : undefined;
+  const registryBackendTarget = showBackendSwitcher ? backendTarget : undefined;
   const registryConfig = useMemo(
     () => workflowRegistryConfig(registryBackendTarget),
     [registryBackendTarget],
@@ -100,11 +101,12 @@ function ClientApp({
   }, [getAccessToken, registryConfig]);
 
   useEffect(() => {
-    if (import.meta.env.DEV) writeBackendTargetConfig(backendTarget);
-  }, [backendTarget]);
+    if (showBackendSwitcher) writeBackendTargetConfig(backendTarget);
+  }, [backendTarget, showBackendSwitcher]);
 
   const switcher = (
     <ClientSwitcher
+      showBackendSwitcher={showBackendSwitcher}
       backendTarget={backendTarget}
       onBackendTargetChange={setBackendTarget}
       selectedWorker={worker}
@@ -165,12 +167,14 @@ function ClientApp({
 }
 
 function ClientSwitcher({
+  showBackendSwitcher,
   backendTarget,
   onBackendTargetChange,
   selectedWorker,
   onWorkerChange,
   workflows,
 }: {
+  showBackendSwitcher: boolean;
   backendTarget: BackendTarget;
   onBackendTargetChange: (target: BackendTarget) => void;
   selectedWorker: string | undefined;
@@ -183,7 +187,7 @@ function ClientSwitcher({
 
   return (
     <form className="hylo-client-switcher" aria-label="Workflow routing">
-      {import.meta.env.DEV ? (
+      {showBackendSwitcher ? (
         <label>
           <span>Backend</span>
           <select
@@ -422,6 +426,11 @@ function requestedBackendTarget(): BackendTarget {
     readLocalStorage(BACKEND_TARGET_STORAGE_KEY),
   );
   return requested === "hosted" ? "hosted" : "local";
+}
+
+function shouldShowBackendSwitcher(): boolean {
+  if (!import.meta.env.DEV) return false;
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 }
 
 function writeWorkflowConfigToUrl(worker: string) {
