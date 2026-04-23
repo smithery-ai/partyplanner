@@ -49,6 +49,11 @@
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 35%, transparent);
 }
 
+.hylo-client-switcher select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 .hylo-client-switcher__wide {
   grid-column: 1 / -1;
 }
