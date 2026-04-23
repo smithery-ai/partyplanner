@@ -1,10 +1,12 @@
 import { spawnSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import { devServiceNameFromUrl, portlessBinPath } from "./portless.mjs";
 import { manageChildrenAndExit, spawnAndExit, spawnChild } from "./process.mjs";
 import {
   die,
   findFreePort,
   formatPackagePath,
+  repoRoot,
   shellQuote,
   validateHttpUrl,
 } from "./shared.mjs";
@@ -125,13 +127,68 @@ export function runDeployCommand(args) {
     if (!target.deploy) {
       die(`${target.id} does not define a deploy command in hylo.json.`);
     }
-    runTargetShellCommand(
+    runTargetBuild(target, env);
+    const output = runTargetShellCommandCapture(
       target,
       deployShellCommand(target, target.deploy, env),
       env,
       "deploying",
     );
+    if (target.kind === "app") {
+      configureWorkOSAppUrl(
+        appUrlFromOutput(output) ?? optionalTargetRuntimeUrl(target, profile),
+        env,
+      );
+    }
   }
+}
+
+export function runPreviewCommand(args) {
+  const parsed = parsePreviewArgs(args);
+
+  if (parsed.help) {
+    printPreviewHelp();
+    process.exit(0);
+  }
+
+  const profile = selectedPreviewProfile(parsed.profile);
+  const targets =
+    parsed.targets.length > 0
+      ? parsed.targets.map((targetName) => resolveTarget(targetName))
+      : profile.targets.filter((target) => target.deploy);
+
+  if (targets.length === 0) {
+    die(`profile "${profile.id}" does not include any previewable targets.`);
+  }
+
+  const alias = previewAlias(parsed.name);
+  const urlOverrides = {};
+  const results = [];
+
+  for (const target of targets) {
+    if (!target.deploy) {
+      die(`${target.id} does not define a deploy command in hylo.json.`);
+    }
+    const env = {
+      ...process.env,
+      ...profileEnv(profileWithUrlOverrides(profile, urlOverrides)),
+    };
+    runTargetBuild(target, env);
+    const command = previewShellCommand(target, target.deploy, env, alias);
+    const output = runTargetShellCommandCapture(
+      target,
+      command,
+      env,
+      "previewing",
+    );
+    const url = previewUrlFromOutput(target, output);
+    urlOverrides[target.id] = url;
+    if (target.kind === "app") configureWorkOSAppUrl(url, env);
+    results.push({ target, url });
+  }
+
+  printPreviewSummary(parsed.name, profile, results);
+  writePreviewOutputs(results);
 }
 
 export async function runUplinkCommand(args) {
@@ -371,6 +428,12 @@ function selectedProfile(profileName) {
   return profile;
 }
 
+function selectedPreviewProfile(profileName) {
+  if (profileName) return resolveProfile(profileName);
+  if (hasProfile("remote")) return resolveProfile("remote");
+  return selectedProfile(undefined);
+}
+
 function devOutputEnv(env) {
   if (env.NO_COLOR || env.FORCE_COLOR) return env;
   return {
@@ -379,6 +442,52 @@ function devOutputEnv(env) {
     FORCE_COLOR: "1",
     npm_config_color: "always",
   };
+}
+
+function parsePreviewArgs(args) {
+  const parsed = {
+    help: false,
+    name: undefined,
+    profile: undefined,
+    targets: [],
+  };
+
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+
+    if (arg === "--help" || arg === "-h") {
+      parsed.help = true;
+      continue;
+    }
+
+    if (arg === "--profile") {
+      parsed.profile = requiredOptionValue(args, ++index, "--profile");
+      continue;
+    }
+
+    if (arg.startsWith("--profile=")) {
+      parsed.profile = arg.slice("--profile=".length);
+      continue;
+    }
+
+    if (!parsed.name) {
+      parsed.name = arg;
+      continue;
+    }
+
+    if (!parsed.profile && hasProfile(arg)) {
+      parsed.profile = arg;
+      continue;
+    }
+
+    parsed.targets.push(arg);
+  }
+
+  if (parsed.help) return parsed;
+  if (!parsed.name) {
+    die("Usage: hylo-dev preview <name> [profile] [target...]");
+  }
+  return parsed;
 }
 
 function parseProfileCommandArgs(args, options) {
@@ -461,6 +570,16 @@ function profileEnv(profile, options = {}) {
     VITE_HYLO_WORKFLOW_URL: defaultWorkflow?.url,
     VITE_HYLO_WORKFLOWS: workflowRegistry,
   });
+}
+
+function profileWithUrlOverrides(profile, urlOverrides) {
+  return {
+    ...profile,
+    urls: {
+      ...profile.urls,
+      ...urlOverrides,
+    },
+  };
 }
 
 function targetEnv(target) {
@@ -559,6 +678,31 @@ function deployShellCommand(target, command, env) {
   return command;
 }
 
+function previewShellCommand(target, command, env, alias) {
+  if (
+    target.provider === "cloudflare-worker" &&
+    /\bwrangler\s+deploy\b/.test(command)
+  ) {
+    const previewCommand = command.replace(
+      /\bwrangler\s+deploy\b/,
+      `wrangler versions upload --preview-alias ${shellQuote(alias)}`,
+    );
+    return appendWranglerVars(previewCommand, env);
+  }
+
+  if (
+    target.kind === "app" &&
+    (/\bvercel\s+deploy\b/.test(command) ||
+      /\bhylo_vercel\s+deploy\b/.test(command))
+  ) {
+    return command.replace(/\s--prod\b/g, "");
+  }
+
+  die(
+    `${target.id} cannot be previewed yet. Supported preview providers are cloudflare-worker and Vercel app targets.`,
+  );
+}
+
 function appendWranglerVars(command, env) {
   let next = command;
   for (const name of ["HYLO_BACKEND_URL", "HYLO_APP_URL"]) {
@@ -576,11 +720,65 @@ function appendWranglerDeployVars(command, env) {
   return appendWranglerVars(next, env);
 }
 
+function runTargetShellCommandCapture(target, command, env, verb) {
+  process.stderr.write(
+    `hylo: ${verb} ${target.id} from ${formatPackagePath(target.packageDir)}\n`,
+  );
+  const result = spawnSyncShellCapture(command, env, target.packageDir);
+  const stdout = redactOutput(result.stdout, env);
+  const stderr = redactOutput(result.stderr, env);
+  if (stdout) process.stdout.write(stdout);
+  if (stderr) process.stderr.write(stderr);
+  if (result.error) {
+    die(`failed to run ${target.id}: ${result.error.message}`);
+  }
+  if (result.signal) {
+    process.kill(process.pid, result.signal);
+    setTimeout(() => process.exit(1), 128).unref();
+    return "";
+  }
+  if (result.status && result.status !== 0) {
+    process.exit(result.status);
+  }
+  return `${stdout}\n${stderr}`;
+}
+
+function runTargetBuild(target, env) {
+  if (!target.build) return;
+  runTargetShellCommand(target, target.build, env, "building");
+}
+
+function configureWorkOSAppUrl(url, env) {
+  if (!url || !env.WORKOS_API_KEY) return;
+  const appUrl = validateHttpUrl(url, "WorkOS app url");
+  for (const command of [
+    `pnpm exec workos config redirect add ${shellQuote(appUrl)} --json`,
+    `pnpm exec workos config cors add ${shellQuote(appUrl)} --json`,
+  ]) {
+    process.stderr.write(`hylo: registering WorkOS app URL ${appUrl}\n`);
+    const result = spawnSyncShellCapture(command, env, repoRoot);
+    const stdout = redactOutput(result.stdout, env);
+    const stderr = redactOutput(result.stderr, env);
+    if (stdout) process.stdout.write(stdout);
+    if (stderr) process.stderr.write(stderr);
+    if (result.error) {
+      die(`failed to configure WorkOS for ${appUrl}: ${result.error.message}`);
+    }
+    if (result.status && result.status !== 0) {
+      process.exit(result.status);
+    }
+  }
+}
+
 function runTargetShellCommand(target, command, env, verb) {
   process.stderr.write(
     `hylo: ${verb} ${target.id} from ${formatPackagePath(target.packageDir)}\n`,
   );
-  const result = spawnSyncShell(command, env, target.packageDir);
+  const result = spawnSyncShellCapture(command, env, target.packageDir);
+  const stdout = redactOutput(result.stdout, env);
+  const stderr = redactOutput(result.stderr, env);
+  if (stdout) process.stdout.write(stdout);
+  if (stderr) process.stderr.write(stderr);
   if (result.error) {
     die(`failed to run ${target.id}: ${result.error.message}`);
   }
@@ -594,12 +792,28 @@ function runTargetShellCommand(target, command, env, verb) {
   }
 }
 
-function spawnSyncShell(command, env, cwd) {
+function redactOutput(output, env) {
+  let next = output ?? "";
+  for (const name of [
+    "CLOUDFLARE_API_TOKEN",
+    "INFISICAL_TOKEN",
+    "VERCEL_ACCESS_TOKEN",
+    "VERCEL_TOKEN",
+    "WORKOS_API_KEY",
+  ]) {
+    const value = env[name];
+    if (typeof value !== "string" || value.length < 8) continue;
+    next = next.split(value).join("<redacted>");
+  }
+  return next;
+}
+
+function spawnSyncShellCapture(command, env, cwd) {
   const shell = shellCommand(command);
   return spawnSync(shell[0], shell.slice(1), {
     cwd,
+    encoding: "utf8",
     env,
-    stdio: "inherit",
     shell: process.platform === "win32",
   });
 }
@@ -727,6 +941,22 @@ Deploys the deployable targets in a profile, or the listed targets, using
 commands from hylo.json.
 
 Profiles: ${profileChoices()}
+`);
+}
+
+function printPreviewHelp() {
+  console.log(`hylo-dev preview
+
+Usage:
+  hylo-dev preview <name> [profile] [target...]
+
+Deploys a named preview stack for a profile. Cloudflare targets use Wrangler
+Version preview aliases. Vercel app targets deploy as Vercel previews. If no
+profile is passed, the remote profile is used when it exists.
+
+Examples:
+  hylo-dev preview pr-123
+  hylo-dev preview pr-123 remote app.client
 `);
 }
 
@@ -906,6 +1136,88 @@ function uplinkAppUrl(profile, app, workflow, workflowUrl, appUrlOverride) {
   url.searchParams.set("worker", workflow.id);
   url.searchParams.set("workflowApiUrl", workflowUrl);
   return url.toString();
+}
+
+function previewAlias(value) {
+  const alias = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+  if (!alias) die("preview name must include at least one letter or number.");
+  return alias;
+}
+
+function previewUrlFromOutput(target, output) {
+  const urls = output.match(/https:\/\/[^\s"'<>]+/g) ?? [];
+  const candidates =
+    target.provider === "cloudflare-worker"
+      ? urls.filter((url) => url.includes(".workers.dev"))
+      : urls.filter((url) => url.includes(".vercel.app"));
+  const url = candidates.at(-1);
+  if (!url) {
+    die(`could not find preview URL in ${target.id} output.`);
+  }
+  return url.replace(/[),.;]+$/g, "");
+}
+
+function appUrlFromOutput(output) {
+  const urls = output.match(/https:\/\/[^\s"'<>]+/g) ?? [];
+  return urls
+    .filter((url) => url.includes(".vercel.app"))
+    .at(-1)
+    ?.replace(/[),.;]+$/g, "");
+}
+
+function printPreviewSummary(name, profile, results) {
+  const lines = [
+    "",
+    `hylo-dev preview ${name}`,
+    `  profile: ${profile.id}`,
+    ...results.map(({ target, url }) => `  ${target.kind}: ${url}`),
+    "",
+  ];
+  process.stdout.write(`${lines.join("\n")}\n`);
+}
+
+function writePreviewOutputs(results) {
+  const outputPath = process.env.GITHUB_OUTPUT;
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  const byKind = new Map(
+    results.map(({ target, url }) => [target.kind, { target, url }]),
+  );
+  const markdown = [
+    "## Hylo Preview",
+    "",
+    "| Target | URL |",
+    "| --- | --- |",
+    ...results.map(
+      ({ target, url }) => `| \`${target.id}\` | ${markdownLink(url)} |`,
+    ),
+    "",
+  ].join("\n");
+
+  if (summaryPath) appendFileSync(summaryPath, `${markdown}\n`);
+  if (!outputPath) return;
+
+  const outputs = {
+    app_url: byKind.get("app")?.url,
+    backend_url: byKind.get("backend")?.url,
+    workflow_url: byKind.get("workflow")?.url
+      ? workflowApiUrl(byKind.get("workflow").url)
+      : undefined,
+    summary: markdown,
+  };
+
+  for (const [name, value] of Object.entries(removeEmpty(outputs))) {
+    appendFileSync(outputPath, `${name}<<HYLO_OUTPUT\n${value}\nHYLO_OUTPUT\n`);
+  }
+}
+
+function markdownLink(url) {
+  return `[${url}](${url})`;
 }
 
 function openBrowser(url) {
