@@ -4,6 +4,8 @@ import type {
   HandoffValue,
   PendingValue,
   RefreshValue,
+  WebhookSubscription,
+  WebhookSubscriptionStore,
 } from "@workflow/oauth-broker";
 import type {
   QueueItem,
@@ -25,6 +27,7 @@ import {
   oauthHandoffs,
   oauthPending,
   oauthRefreshTokens,
+  webhookSubscriptions,
   workflowEvents,
   workflowQueueItems,
   workflowRunDocuments,
@@ -62,6 +65,13 @@ export function createCloudflareBrokerStore(
   options: CloudflareWorkflowAdapterOptions = {},
 ): BrokerStore {
   return new CloudflareBrokerStore(db, options);
+}
+
+export function createCloudflareWebhookSubscriptionStore(
+  db: WorkflowCloudflareDbLike,
+  options: CloudflareWorkflowAdapterOptions = {},
+): WebhookSubscriptionStore {
+  return new CloudflareWebhookSubscriptionStore(db, options);
 }
 
 class CloudflareWorkflowStateStore implements WorkflowStateStore {
@@ -511,6 +521,102 @@ class CloudflareBrokerStore implements BrokerStore {
     this.ready ??= Promise.resolve();
     return this.ready;
   }
+}
+
+class CloudflareWebhookSubscriptionStore implements WebhookSubscriptionStore {
+  private ready: Promise<void> | undefined;
+
+  constructor(
+    private readonly db: WorkflowCloudflareDbLike,
+    private readonly options: CloudflareWorkflowAdapterOptions,
+  ) {}
+
+  async create(subscription: WebhookSubscription): Promise<void> {
+    await this.ensureReady();
+    await asDb(this.db)
+      .insert(webhookSubscriptions)
+      .values({
+        id: subscription.id,
+        tenantId: subscription.tenantId,
+        providerId: subscription.providerId,
+        deploymentId: subscription.deploymentId,
+        inputId: subscription.inputId,
+        eventTypesJson: subscription.eventTypes
+          ? JSON.stringify(subscription.eventTypes)
+          : null,
+        configJson: JSON.stringify(subscription.config),
+        mode: subscription.mode,
+        status: subscription.status,
+        createdAt: subscription.createdAt,
+        updatedAt: subscription.updatedAt,
+      });
+  }
+
+  async get(id: string): Promise<WebhookSubscription | undefined> {
+    await this.ensureReady();
+    const rows = await asDb(this.db)
+      .select()
+      .from(webhookSubscriptions)
+      .where(eq(webhookSubscriptions.id, id))
+      .limit(1);
+    const row = (rows as WebhookSubscriptionRow[])[0];
+    if (!row) return undefined;
+    return rowToSubscription(row);
+  }
+
+  async list(tenantId?: string): Promise<WebhookSubscription[]> {
+    await this.ensureReady();
+    const baseQuery = asDb(this.db).select().from(webhookSubscriptions);
+    const rows = await (tenantId
+      ? baseQuery.where(eq(webhookSubscriptions.tenantId, tenantId))
+      : baseQuery);
+    return (rows as WebhookSubscriptionRow[]).map(rowToSubscription);
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.ensureReady();
+    await asDb(this.db)
+      .delete(webhookSubscriptions)
+      .where(eq(webhookSubscriptions.id, id));
+  }
+
+  private ensureReady(): Promise<void> {
+    void this.options;
+    this.ready ??= Promise.resolve();
+    return this.ready;
+  }
+}
+
+type WebhookSubscriptionRow = {
+  id: string;
+  tenantId: string;
+  providerId: string;
+  deploymentId: string;
+  inputId: string;
+  eventTypesJson: string | null;
+  configJson: string;
+  mode: string;
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+function rowToSubscription(row: WebhookSubscriptionRow): WebhookSubscription {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    providerId: row.providerId,
+    deploymentId: row.deploymentId,
+    inputId: row.inputId,
+    eventTypes: row.eventTypesJson
+      ? parseJson<string[]>(row.eventTypesJson)
+      : null,
+    config: parseJson<Record<string, unknown>>(row.configJson),
+    mode: row.mode as WebhookSubscription["mode"],
+    status: row.status as WebhookSubscription["status"],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
 }
 
 function filterQueue(items: QueueItem[], status: QueueItemStatus): QueueItem[] {

@@ -4,6 +4,7 @@ export type {
 } from "./adapter";
 export {
   createCloudflareBrokerStore,
+  createCloudflareWebhookSubscriptionStore,
   createCloudflareWorkflowQueue,
   createCloudflareWorkflowStateStore,
 } from "./adapter";
@@ -15,6 +16,7 @@ export {
   oauthHandoffs,
   oauthPending,
   oauthRefreshTokens,
+  webhookSubscriptions,
   workflowDeployments,
   workflowEvents,
   workflowQueueItems,

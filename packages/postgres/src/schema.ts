@@ -1,4 +1,10 @@
-import { doublePrecision, integer, pgTable, text } from "drizzle-orm/pg-core";
+import {
+  doublePrecision,
+  index,
+  integer,
+  pgTable,
+  text,
+} from "drizzle-orm/pg-core";
 
 export const workflowRunStates = pgTable("workflow_run_states", {
   runId: text("run_id").primaryKey(),
@@ -38,3 +44,27 @@ export const workflowQueueItems = pgTable("workflow_queue_items", {
   attempts: integer("attempts").notNull(),
   error: text("error"),
 });
+
+export const webhookSubscriptions = pgTable(
+  "webhook_subscriptions",
+  {
+    id: text("id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    deploymentId: text("deployment_id").notNull(),
+    inputId: text("input_id").notNull(),
+    eventTypesJson: text("event_types_json"),
+    configJson: text("config_json").notNull(),
+    mode: text("mode").notNull(),
+    status: text("status").notNull(),
+    createdAt: doublePrecision("created_at").notNull(),
+    updatedAt: doublePrecision("updated_at").notNull(),
+  },
+  (table) => [
+    index("webhook_subscriptions_tenant_id_idx").on(table.tenantId),
+    index("webhook_subscriptions_provider_id_idx").on(
+      table.providerId,
+      table.status,
+    ),
+  ],
+);

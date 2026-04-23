@@ -38,6 +38,9 @@ importers:
       '@workflow/integrations-notion':
         specifier: workspace:*
         version: link:../../packages/integrations/notion
+      '@workflow/integrations-slack':
+        specifier: workspace:*
+        version: link:../../packages/integrations/slack
       '@workflow/integrations-spotify':
         specifier: workspace:*
         version: link:../../packages/integrations/spotify
@@ -454,6 +457,15 @@ importers:
         specifier: ^3.1.0
         version: 3.2.4(@edge-runtime/vm@3.2.0)(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
 
+  packages/integrations/_webhook:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@edge-runtime/vm@3.2.0)(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
+
   packages/integrations/notion:
     dependencies:
       '@workflow/core':
@@ -465,6 +477,28 @@ importers:
       hono:
         specifier: ^4.12.14
         version: 4.12.14
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@edge-runtime/vm@3.2.0)(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
+
+  packages/integrations/slack:
+    dependencies:
+      '@workflow/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@workflow/integrations-oauth':
+        specifier: workspace:*
+        version: link:../_oauth
+      '@workflow/integrations-webhook':
+        specifier: workspace:*
+        version: link:../_webhook
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -503,6 +537,9 @@ importers:
       '@workflow/integrations-oauth':
         specifier: workspace:*
         version: link:../integrations/_oauth
+      '@workflow/integrations-webhook':
+        specifier: workspace:*
+        version: link:../integrations/_webhook
       hono:
         specifier: ^4.12.14
         version: 4.12.14
