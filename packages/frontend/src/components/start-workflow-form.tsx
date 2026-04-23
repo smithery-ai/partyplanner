@@ -201,7 +201,7 @@ function SecretStatusRow({
           ? "border-emerald-500/40 bg-emerald-500/5"
           : provided
             ? "border-blue-500/40 bg-blue-500/5"
-          : "border-yellow-500/50 bg-yellow-500/5",
+            : "border-yellow-500/50 bg-yellow-500/5",
       )}
     >
       {resolved ? (
@@ -209,20 +209,16 @@ function SecretStatusRow({
           className="mt-0.5 size-3.5 shrink-0 text-emerald-600"
           aria-hidden
         />
+      ) : provided ? (
+        <KeyRound
+          className="mt-0.5 size-3.5 shrink-0 text-blue-700 dark:text-blue-400"
+          aria-hidden
+        />
       ) : (
-        <>
-          {provided ? (
-            <KeyRound
-              className="mt-0.5 size-3.5 shrink-0 text-blue-700 dark:text-blue-400"
-              aria-hidden
-            />
-          ) : (
-            <AlertTriangle
-              className="mt-0.5 size-3.5 shrink-0 text-yellow-700 dark:text-yellow-500"
-              aria-hidden
-            />
-          )}
-        </>
+        <AlertTriangle
+          className="mt-0.5 size-3.5 shrink-0 text-yellow-700 dark:text-yellow-500"
+          aria-hidden
+        />
       )}
       <div className="min-w-0 flex-1 space-y-2">
         <code className="block truncate text-[11px] text-foreground">
@@ -247,8 +243,8 @@ function SecretStatusRow({
             ? "Resolved by the workflow."
             : provided
               ? "Provided for this run."
-            : (input.errorMessage ??
-              "Missing — resolve this secret in the workflow server.")}
+              : (input.errorMessage ??
+                "Missing — resolve this secret in the workflow server.")}
         </p>
         {!resolved ? (
           <div className="grid gap-1.5">
