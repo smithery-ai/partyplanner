@@ -1,6 +1,6 @@
 import { AuthKitProvider, type User, useAuth } from "@workos-inc/authkit-react";
 import { LogOut } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 
 type AppProps = {
   children: (props: { sidebarFooter: ReactNode }) => ReactNode;
@@ -15,6 +15,20 @@ type WorkOSConfig = {
 
 export function App({ children }: AppProps) {
   const workos = getWorkOSConfig();
+  const [isRestoringRedirect, setIsRestoringRedirect] = useState(false);
+  const handleRedirectCallback = useCallback(
+    ({ state }: { state: Record<string, unknown> | null }) => {
+      setIsRestoringRedirect(true);
+
+      const fallback = "/";
+      const returnTo =
+        state && typeof state.returnTo === "string" ? state.returnTo : fallback;
+      replaceAfterAuthKitCleanup(sameOriginPath(returnTo) ?? fallback, () =>
+        setIsRestoringRedirect(false),
+      );
+    },
+    [],
+  );
 
   if (!workos) {
     return (
@@ -35,12 +49,17 @@ export function App({ children }: AppProps) {
         void signIn({ state: { returnTo: currentReturnTo() } });
       }}
     >
-      <AuthenticatedApp>{children}</AuthenticatedApp>
+      <AuthenticatedApp isRestoringRedirect={isRestoringRedirect}>
+        {children}
+      </AuthenticatedApp>
     </AuthKitProvider>
   );
 }
 
-function AuthenticatedApp({ children }: AppProps) {
+function AuthenticatedApp({
+  children,
+  isRestoringRedirect,
+}: AppProps & { isRestoringRedirect: boolean }) {
   const { isLoading, user, signIn, signOut } = useAuth();
   const isLoginRoute = window.location.pathname === "/login";
 
@@ -57,7 +76,7 @@ function AuthenticatedApp({ children }: AppProps) {
     }
   }, [isLoading, isLoginRoute, signIn, user]);
 
-  if (!user) return null;
+  if (!user || isRestoringRedirect) return null;
 
   return children({
     sidebarFooter: (
@@ -129,17 +148,6 @@ function getWorkOSConfig(): WorkOSConfig | null {
   };
 }
 
-function handleRedirectCallback({
-  state,
-}: {
-  state: Record<string, unknown> | null;
-}) {
-  const fallback = "/";
-  const returnTo =
-    state && typeof state.returnTo === "string" ? state.returnTo : fallback;
-  replaceAfterAuthKitCleanup(sameOriginPath(returnTo) ?? fallback);
-}
-
 function currentReturnTo() {
   const path = `${window.location.pathname}${window.location.search}${window.location.hash}`;
   return path === "/login" ? "/" : path;
@@ -155,9 +163,10 @@ function sameOriginPath(value: string): string | null {
   }
 }
 
-function replaceAfterAuthKitCleanup(path: string) {
+function replaceAfterAuthKitCleanup(path: string, onRestored: () => void) {
   queueMicrotask(() => {
     window.history.replaceState({}, "", path);
+    onRestored();
   });
 }
 
