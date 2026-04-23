@@ -58,3 +58,17 @@ From the repo root, deploy this backend target with:
 ```sh
 pnpm --filter backend-cloudflare deploy
 ```
+
+## Preview Deployments
+
+Use Cloudflare Workers Builds for branch and pull-request previews. Configure
+the Workers project with:
+
+- Root directory: repository root
+- Build command: `pnpm --filter backend-cloudflare build`
+- Deploy command: `pnpm --filter backend-cloudflare deploy`
+- Non-production branch deploy command:
+  `pnpm --filter backend-cloudflare exec wrangler versions upload`
+
+`wrangler.toml` enables Worker preview URLs, so Cloudflare non-production
+branch builds produce preview URLs without promoting the Worker to production.

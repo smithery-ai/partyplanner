@@ -1,6 +1,7 @@
 name = "hylo-backend"
 main = "src/index.ts"
 compatibility_date = "2026-04-19"
+preview_urls = true
 
 [vars]
 CLOUDFLARE_ACCOUNT_ID = "c4cf21d8a5e8878bc3c92708b1f80193"

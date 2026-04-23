@@ -44,3 +44,18 @@ VITE_HYLO_BACKEND_URL=https://hylo-backend.smithery.workers.dev
 The app loads the signed-in user’s workflow registry from
 `$VITE_HYLO_BACKEND_URL/tenants/me/workflows`. Deploy the app with Vercel using
 the package-owned deploy script.
+
+## Preview Deployments
+
+Use Vercel's Git integration for branch and pull-request previews. Configure
+the Vercel project with:
+
+- Root directory: `apps/client`
+- Framework preset: Vite
+- Build command: from `vercel.json`
+- Output directory: `dist`
+- Preview environment variable: `VITE_HYLO_BACKEND_URL`
+
+Set `VITE_HYLO_BACKEND_URL` in Vercel's Preview environment to the backend
+preview origin you want the app to use. Vercel automatically creates preview
+deployments for non-production branches and pull requests.
