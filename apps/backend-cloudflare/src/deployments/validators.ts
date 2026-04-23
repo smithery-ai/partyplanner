@@ -6,6 +6,7 @@ import {
   assertModuleName,
   assertWorkerTags,
   deploymentIdForTenant,
+  deploymentIdForTenantDeployment,
   tagForTenant,
 } from "./ids";
 import type {
@@ -35,11 +36,14 @@ export function parseProvisionDeploymentInput(
       'Missing required field "tenantId".',
     );
   }
-  const deploymentId =
+  const requestedDeploymentId =
     optionalString(body, "deploymentId") ??
     optionalString(body, "scriptName") ??
     deploymentIdForTenant(tenantId);
-  assertDeploymentId(deploymentId);
+  assertDeploymentId(requestedDeploymentId);
+  const deploymentId = allowAdvancedOptions
+    ? requestedDeploymentId
+    : deploymentIdForTenantDeployment(tenantId, requestedDeploymentId);
 
   const label = optionalString(body, "label");
   const workflowApiUrl =

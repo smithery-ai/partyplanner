@@ -16,6 +16,21 @@ export function deploymentIdForTenant(tenantId: string): string {
   return `tenant-${slug}`;
 }
 
+export function deploymentIdForTenantDeployment(
+  tenantId: string,
+  deploymentId: string,
+): string {
+  assertDeploymentId(deploymentId);
+  const suffix = stableTenantSuffix(tenantId);
+  const maxBaseLength = 63 - suffix.length - 1;
+  const base =
+    deploymentId
+      .slice(0, maxBaseLength)
+      .replace(/[-_]+$/g, "")
+      .replace(/^[-_]+/g, "") || "workflow";
+  return `${base}-${suffix}`;
+}
+
 export function tagForTenant(tenantId: string): string {
   const slug = tenantId
     .toLowerCase()
@@ -39,6 +54,20 @@ export function assertDeploymentId(deploymentId: string): void {
       "deploymentId must be 1-63 lowercase letters, numbers, dashes, or underscores, and start with a letter or number.",
     );
   }
+}
+
+function stableTenantSuffix(tenantId: string): string {
+  const slug = tenantId
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(-10);
+  if (slug) return slug;
+
+  throw new PlatformApiError(
+    400,
+    "invalid_tenant_id",
+    "tenantId must contain at least one alphanumeric character.",
+  );
 }
 
 export function assertModuleName(moduleName: string): void {
