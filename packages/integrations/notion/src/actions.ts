@@ -1,6 +1,8 @@
 import { type Action, type Atom, action, type Handle } from "@workflow/core";
 import { z } from "zod";
 import type { NotionPage } from "./atoms";
+import { notionApiError } from "./errors";
+import { normalizeNotionId, normalizeNotionParent } from "./ids";
 import { NOTION_VERSION, type NotionAuth } from "./oauth";
 
 export type NotionBlock = Record<string, unknown>;
@@ -26,7 +28,7 @@ const pageResponseSchema = z
 export function createPage(opts: CreatePageOptions): Action<NotionPage> {
   return action(
     async (get) => {
-      const parentPageId = get(opts.parentPageId);
+      const parent = normalizeNotionParent(get(opts.parentPageId));
       const title = get(opts.title);
       const body = opts.body ? get(opts.body) : undefined;
       const children = opts.children ? get(opts.children) : undefined;
@@ -45,7 +47,7 @@ export function createPage(opts: CreatePageOptions): Action<NotionPage> {
           "Notion-Version": NOTION_VERSION,
         },
         body: JSON.stringify({
-          parent: { page_id: parentPageId },
+          parent,
           properties: {
             title: {
               title: [{ type: "text", text: { content: title } }],
@@ -56,9 +58,7 @@ export function createPage(opts: CreatePageOptions): Action<NotionPage> {
         }),
       });
       if (!response.ok) {
-        throw new Error(
-          `Notion POST /v1/pages failed (${response.status}): ${await response.text()}`,
-        );
+        throw await notionApiError(response, "POST /v1/pages");
       }
       const raw = await response.json();
       const parsed = pageResponseSchema.parse(raw);
@@ -126,7 +126,7 @@ async function appendBlockChildren(args: {
   children: NotionBlock[];
 }): Promise<void> {
   const response = await fetch(
-    `https://api.notion.com/v1/blocks/${encodeURIComponent(args.blockId)}/children`,
+    `https://api.notion.com/v1/blocks/${encodeURIComponent(normalizeNotionId(args.blockId, "Notion block ID"))}/children`,
     {
       method: "PATCH",
       headers: {
@@ -138,8 +138,6 @@ async function appendBlockChildren(args: {
     },
   );
   if (!response.ok) {
-    throw new Error(
-      `Notion PATCH /v1/blocks/:id/children failed (${response.status}): ${await response.text()}`,
-    );
+    throw await notionApiError(response, "PATCH /v1/blocks/:id/children");
   }
 }

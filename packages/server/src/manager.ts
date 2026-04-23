@@ -298,6 +298,7 @@ function cloneRegistry(registry: Registry): Registry {
   const clone = new Registry();
   for (const input of registry.allInputs()) clone.registerInput(input);
   for (const atom of registry.allAtoms()) clone.registerAtom(atom);
+  for (const action of registry.allActions()) clone.registerAction(action);
   return clone;
 }
 
@@ -313,6 +314,11 @@ function hashRegistry(registry: Registry): string {
       id: atom.id,
       description: atom.description,
       fn: atom.fn.toString(),
+    })),
+    actions: registry.allActions().map((action) => ({
+      id: action.id,
+      description: action.description,
+      fn: action.fn.toString(),
     })),
   });
   return hashString(source);

@@ -3,7 +3,7 @@ import { createPage, getPage, notion } from "@workflow/integrations-notion";
 import { z } from "zod";
 
 // Workflow 1: create a page under a parent page.
-// input → notion connection (brokered OAuth) → createPage (action).
+// input → notion connection (brokered OAuth) → createPage (action) → result atom.
 
 export const notionLogRequest = input(
   "notionLogRequest",
@@ -15,7 +15,7 @@ export const notionLogRequest = input(
   {
     title: "Create a Notion page",
     description:
-      "Authorize Notion and create a new page under the provided parent page ID.",
+      "Authorize Notion and create a new page under the provided parent page ID, page URL, slug, or database URL.",
   },
 );
 
@@ -37,6 +37,11 @@ export const notionLogPage = createPage({
   actionName: "notionLogPage",
 });
 
+export const notionCreatedPage = atom((get) => get(notionLogPage), {
+  name: "notionCreatedPage",
+  description: "Create the Notion page and expose the created page response.",
+});
+
 // Workflow 2: fetch a page by ID.
 // input → notion connection (brokered OAuth) → getPage (atom).
 
@@ -47,7 +52,7 @@ export const notionFetchRequest = input(
   }),
   {
     title: "Fetch a Notion page",
-    description: "Authorize Notion and fetch a page by ID.",
+    description: "Authorize Notion and fetch a page by ID, URL, or slug.",
   },
 );
 

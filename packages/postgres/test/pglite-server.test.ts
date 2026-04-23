@@ -1,5 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
-import { atom, globalRegistry, input } from "@workflow/core";
+import { action, atom, globalRegistry, input } from "@workflow/core";
 import { createRemoteRuntimeServer } from "@workflow/remote";
 import { createWorkflow, type WorkflowRunDocument } from "@workflow/server";
 import { drizzle } from "drizzle-orm/pglite";
@@ -107,6 +107,63 @@ describe("PGlite Workflow server", () => {
         status: "completed",
       }),
     ]);
+  });
+
+  it("executes actions read by workflow atoms", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+    let actionRuns = 0;
+
+    const writeAuditLog = action(
+      (get) => {
+        actionRuns += 1;
+        const value = get(seed);
+        return { auditId: `audit:${value.name}` };
+      },
+      { name: "writeAuditLog" },
+    );
+
+    atom(
+      (get) => {
+        const result = get(writeAuditLog);
+        return `wrote:${result.auditId}`;
+      },
+      { name: "auditSummary" },
+    );
+
+    client = new PGlite();
+    const db = drizzle({ client });
+    const backend = createRemoteRuntimeServer({
+      stateStore: createPostgresWorkflowStateStore(db),
+      queue: createPostgresWorkflowQueue(db),
+    });
+    const app = createWorkflow({
+      backendApi: {
+        url: "http://backend.test",
+        fetch: localFetch(backend),
+      },
+      workflow: {
+        id: "action-example",
+        version: "v1",
+      },
+    });
+
+    const started = await post<WorkflowRunDocument>(app, "/runs", {
+      inputId: "seed",
+      payload: { name: "ada" },
+    });
+
+    expect(actionRuns).toBe(1);
+    expect(started.status).toBe("completed");
+    expect(
+      started.nodes.find((node) => node.id === "writeAuditLog"),
+    ).toMatchObject({
+      kind: "action",
+      status: "resolved",
+      value: { auditId: "audit:ada" },
+    });
+    expect(
+      started.nodes.find((node) => node.id === "auditSummary"),
+    ).toHaveProperty("value", "wrote:audit:ada");
   });
 });
 

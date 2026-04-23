@@ -38,7 +38,7 @@ export const incidentCommsApproval = input.deferred(
 
 export const incidentPublisherToken = secret(
   "INCIDENT_PUBLISHER_TOKEN",
-  "inc-pub-token-123",
+  undefined,
   {
     description: "Token used to publish external incident communications.",
     errorMessage: "INCIDENT_PUBLISHER_TOKEN is not available to this Worker.",

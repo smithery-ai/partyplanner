@@ -162,7 +162,7 @@ export type ExecutionStatus =
 
 export type GraphNode = {
   id: string;
-  kind: "input" | "deferred_input" | "atom";
+  kind: "input" | "deferred_input" | "atom" | "action";
   secret?: boolean;
   description?: string;
   status: ExecutionStatus;
