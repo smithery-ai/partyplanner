@@ -10,9 +10,16 @@ export type RemoteRuntimeOpenApiOptions = {
   swaggerPath?: string;
   servers?: { url: string; description?: string }[];
   includeRootHealth?: boolean;
+  extraTags?: { name: string; description?: string }[];
+  extraPaths?: Record<string, unknown>;
 };
 
 export type RemoteRuntimeRoutes = ReturnType<typeof createRemoteRuntimeRoutes>;
+
+type OpenApiDocument = {
+  tags?: { name: string; description?: string }[];
+  paths?: Record<string, unknown>;
+} & Record<string, unknown>;
 
 const JsonContentType = "application/json";
 
@@ -353,7 +360,7 @@ export function createRemoteRuntimeOpenApiDocument(
 ): object {
   const app = createRemoteRuntimeOpenApiApp(options);
 
-  return app.getOpenAPIDocument({
+  const document = app.getOpenAPIDocument({
     openapi: "3.0.3",
     info: {
       title: options.title ?? "Hylo Backend API",
@@ -368,8 +375,21 @@ export function createRemoteRuntimeOpenApiDocument(
       { name: "Events" },
       { name: "Documents" },
       { name: "Queue" },
+      ...(options.extraTags ?? []),
     ],
-  });
+  }) as unknown as OpenApiDocument;
+
+  if (!options.extraPaths || Object.keys(options.extraPaths).length === 0) {
+    return document;
+  }
+
+  return {
+    ...document,
+    paths: {
+      ...(document.paths ?? {}),
+      ...options.extraPaths,
+    },
+  };
 }
 
 export function mountRemoteRuntimeOpenApi(

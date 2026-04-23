@@ -58,6 +58,18 @@ export function createApp(
   mountRemoteRuntimeOpenApi(app, {
     title: "Hylo Backend Worker API",
     runtimeBasePath: "/runtime",
+    extraTags: [
+      {
+        name: "Deployments",
+        description:
+          "Provision and manage tenant Workers for Platforms scripts.",
+      },
+      {
+        name: "Tenants",
+        description: "Read tenant-specific workflow deployment registry data.",
+      },
+    ],
+    extraPaths: createDeploymentOpenApiPaths(),
   });
   app.route(
     "/runtime",
@@ -373,6 +385,283 @@ function mountDeploymentApi(
       return apiErrorResponse(c, e);
     }
   });
+}
+
+function createDeploymentOpenApiPaths(): Record<string, unknown> {
+  const authHeader = {
+    schema: { type: "string" },
+    required: true,
+    name: "Authorization",
+    in: "header",
+    description: "Bearer admin API key.",
+  };
+  const tenantIdParam = {
+    schema: { type: "string" },
+    required: true,
+    name: "tenantId",
+    in: "path",
+  };
+  const deploymentIdParam = {
+    schema: { type: "string" },
+    required: true,
+    name: "deploymentId",
+    in: "path",
+  };
+  const tenantIdQuery = {
+    schema: { type: "string" },
+    required: false,
+    name: "tenantId",
+    in: "query",
+    description: "Filter by tenant ID.",
+  };
+  const tagQuery = {
+    schema: { type: "string" },
+    required: false,
+    name: "tag",
+    in: "query",
+    description: "Filter by Cloudflare Worker tag.",
+  };
+  const errorResponse = jsonOpenApiResponse("Error response", {
+    type: "object",
+    properties: {
+      error: { type: "string" },
+      message: { type: "string" },
+      details: {},
+    },
+    required: ["error", "message"],
+  });
+  const okResponse = jsonOpenApiResponse("Operation completed", {
+    type: "object",
+    properties: { ok: { type: "boolean", enum: [true] } },
+    required: ["ok"],
+  });
+  const workflowDeploymentSchema = {
+    type: "object",
+    properties: {
+      tenantId: { type: "string" },
+      deploymentId: { type: "string" },
+      label: { type: "string" },
+      workflowApiUrl: { type: "string" },
+      dispatchNamespace: { type: "string" },
+      tags: { type: "array", items: { type: "string" } },
+      createdAt: { type: "number" },
+      updatedAt: { type: "number" },
+    },
+    required: [
+      "tenantId",
+      "deploymentId",
+      "dispatchNamespace",
+      "tags",
+      "createdAt",
+      "updatedAt",
+    ],
+  };
+
+  return {
+    "/tenants/{tenantId}/deployments": {
+      get: {
+        tags: ["Tenants"],
+        summary: "List workflow deployments for a tenant",
+        parameters: [tenantIdParam],
+        responses: {
+          200: jsonOpenApiResponse("Tenant deployment registry entries", {
+            type: "object",
+            properties: {
+              ok: { type: "boolean", enum: [true] },
+              tenantId: { type: "string" },
+              deployments: {
+                type: "array",
+                items: workflowDeploymentSchema,
+              },
+            },
+            required: ["ok", "tenantId", "deployments"],
+          }),
+          400: errorResponse,
+          503: errorResponse,
+        },
+      },
+    },
+    "/tenants/{tenantId}/workflows": {
+      get: {
+        tags: ["Tenants"],
+        summary: "Get the client workflow map for a tenant",
+        parameters: [tenantIdParam],
+        responses: {
+          200: jsonOpenApiResponse("Tenant workflow registry", {
+            type: "object",
+            properties: {
+              defaultWorkflow: { type: "string" },
+              tenantId: { type: "string" },
+              workflows: {
+                type: "object",
+                additionalProperties: {
+                  type: "object",
+                  properties: {
+                    label: { type: "string" },
+                    url: { type: "string" },
+                  },
+                  required: ["url"],
+                },
+              },
+            },
+            required: ["tenantId", "workflows"],
+          }),
+          400: errorResponse,
+          503: errorResponse,
+        },
+      },
+    },
+    "/deployments": {
+      get: {
+        tags: ["Deployments"],
+        summary: "List Workers for Platforms deployments",
+        parameters: [authHeader, tenantIdQuery, tagQuery],
+        responses: {
+          200: jsonOpenApiResponse("Cloudflare dispatch namespace scripts", {
+            type: "object",
+            properties: {
+              ok: { type: "boolean", enum: [true] },
+              namespace: { type: "string" },
+              deployments: { type: "array", items: {} },
+              resultInfo: {},
+            },
+            required: ["ok", "namespace", "deployments"],
+          }),
+          400: errorResponse,
+          401: errorResponse,
+          503: errorResponse,
+        },
+      },
+      post: {
+        tags: ["Deployments"],
+        summary: "Create or update a tenant Worker deployment",
+        parameters: [authHeader],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  tenantId: { type: "string" },
+                  deploymentId: { type: "string" },
+                  scriptName: {
+                    type: "string",
+                    description: "Deprecated alias for deploymentId.",
+                  },
+                  label: { type: "string" },
+                  workflowApiUrl: { type: "string" },
+                  url: {
+                    type: "string",
+                    description: "Alias for workflowApiUrl.",
+                  },
+                  moduleName: { type: "string" },
+                  moduleCode: { type: "string" },
+                  script: { type: "string" },
+                  code: { type: "string" },
+                  compatibilityDate: { type: "string" },
+                  compatibilityFlags: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
+                  bindings: { type: "array", items: { type: "object" } },
+                  tags: { type: "array", items: { type: "string" } },
+                },
+                required: ["tenantId"],
+              },
+            },
+          },
+        },
+        responses: {
+          201: jsonOpenApiResponse("Deployment provisioned", {
+            type: "object",
+            properties: {
+              ok: { type: "boolean", enum: [true] },
+              tenantId: { type: "string" },
+              deploymentId: { type: "string" },
+              namespace: { type: "string" },
+              workflowApiUrl: { type: "string" },
+              tags: { type: "array", items: { type: "string" } },
+              result: {},
+            },
+            required: ["ok", "tenantId", "deploymentId", "namespace", "tags"],
+          }),
+          400: errorResponse,
+          401: errorResponse,
+          502: errorResponse,
+          503: errorResponse,
+        },
+      },
+      delete: {
+        tags: ["Deployments"],
+        summary: "Delete deployments by tenant or tag",
+        parameters: [authHeader, tenantIdQuery, tagQuery],
+        responses: {
+          200: okResponse,
+          400: errorResponse,
+          401: errorResponse,
+          502: errorResponse,
+          503: errorResponse,
+        },
+      },
+    },
+    "/deployments/{deploymentId}": {
+      get: {
+        tags: ["Deployments"],
+        summary: "Get a Workers for Platforms deployment",
+        parameters: [authHeader, deploymentIdParam],
+        responses: {
+          200: jsonOpenApiResponse("Cloudflare dispatch namespace script", {
+            type: "object",
+            properties: {
+              ok: { type: "boolean", enum: [true] },
+              namespace: { type: "string" },
+              deploymentId: { type: "string" },
+              deployment: {},
+            },
+            required: ["ok", "namespace", "deploymentId"],
+          }),
+          400: errorResponse,
+          401: errorResponse,
+          502: errorResponse,
+          503: errorResponse,
+        },
+      },
+      delete: {
+        tags: ["Deployments"],
+        summary: "Delete a Workers for Platforms deployment",
+        parameters: [authHeader, deploymentIdParam],
+        responses: {
+          200: jsonOpenApiResponse("Deployment deleted", {
+            type: "object",
+            properties: {
+              ok: { type: "boolean", enum: [true] },
+              namespace: { type: "string" },
+              deploymentId: { type: "string" },
+              result: {},
+            },
+            required: ["ok", "namespace", "deploymentId"],
+          }),
+          400: errorResponse,
+          401: errorResponse,
+          502: errorResponse,
+          503: errorResponse,
+        },
+      },
+    },
+  };
+}
+
+function jsonOpenApiResponse(
+  description: string,
+  schema: Record<string, unknown>,
+) {
+  return {
+    description,
+    content: {
+      "application/json": { schema },
+    },
+  };
 }
 
 function resolveCloudflarePlatformConfig(
