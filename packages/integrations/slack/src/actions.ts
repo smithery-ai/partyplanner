@@ -1,4 +1,4 @@
-import { action, type Atom } from "@workflow/core";
+import { type Atom, action } from "@workflow/core";
 import type { SlackAuth } from "./oauth";
 
 export function sendMessage(opts: {

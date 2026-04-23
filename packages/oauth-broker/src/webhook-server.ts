@@ -19,9 +19,7 @@ export type WebhookDispatch = (
 
 export type CreateWebhookIngressServerOptions = {
   store: WebhookSubscriptionStore;
-  authenticateAppToken: (
-    token: string,
-  ) => AuthenticatedAppIdentity | undefined;
+  authenticateAppToken: (token: string) => AuthenticatedAppIdentity | undefined;
   providers: WebhookProviderRegistration[];
   dispatch: WebhookDispatch;
 };

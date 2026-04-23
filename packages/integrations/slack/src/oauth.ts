@@ -1,4 +1,7 @@
-import { createConnection, type OAuthProviderSpec } from "@workflow/integrations-oauth";
+import {
+  createConnection,
+  type OAuthProviderSpec,
+} from "@workflow/integrations-oauth";
 import { z } from "zod";
 
 export type SlackAuth = {

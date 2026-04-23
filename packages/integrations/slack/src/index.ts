@@ -1,8 +1,8 @@
+export { addReaction, sendMessage } from "./actions";
 export {
-  slack,
-  slackProvider,
-  slackAuthSchema,
   type SlackAuth,
+  slack,
+  slackAuthSchema,
+  slackProvider,
 } from "./oauth";
 export { slackWebhookProvider } from "./webhook";
-export { sendMessage, addReaction } from "./actions";
