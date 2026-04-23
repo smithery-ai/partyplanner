@@ -217,49 +217,24 @@ pnpm install
 pnpm dev
 ```
 
-Open `https://hylo.localhost`.
+Open the Vite URL printed by `apps/client`.
 
-`pnpm dev` starts the `local` profile from `hylo.json`: the Node backend, the
-Next.js workflow server, and the client.
+`pnpm dev` runs the Cloudflare backend, Cloudflare workflow example, and client
+through their package-owned `dev` scripts.
 
 ### Hylo CLI
 
-The Hylo CLI reads `hylo.json` and launches or deploys a profile. A profile is
-a set of targets: one backend, one app, and one or more workflow servers. Hylo
-uses that graph to inject the backend URL into workflows and the workflow
-registry into the app.
-
-This repo ships two profiles:
-
-- `local` — Node backend, Next.js workflow, Vite client
-- `remote` — Cloudflare backend, Cloudflare workflow, Vercel client
-
-Common commands:
+The Hylo CLI is the customer-facing workflow CLI. It authenticates with WorkOS
+and deploys tenant-scoped workflow workers through the backend deployments API.
 
 ```sh
-# default local profile
-npx hylo dev
-
-# run the Cloudflare Worker locally in dev mode
-npx hylo dev remote workflow.cloudflareWorker
-
-# inspect or deploy the remote profile
-npx hylo env remote
-npx hylo deploy remote
-npx hylo deploy remote app.client
+pnpm hylo auth login
+pnpm hylo deploy
+pnpm hylo deployments list
 ```
 
-To demo the Cloudflare Worker workflow locally inside the deployed app, uplink
-it through a temporary Cloudflare tunnel:
-
-```sh
-npx hylo uplink remote workflow.cloudflareWorker
-```
-
-`uplink` starts the local workflow, prints the deployed app URL with the
-tunneled workflow selected, and keeps both running until Ctrl+C.
-
-Run `npx hylo --help` for target registration and profile editing commands.
+Platform infrastructure uses normal vendor tooling: deploy the backend with
+Wrangler and the browser app with Vercel.
 
 ### Backend DB
 

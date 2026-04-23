@@ -270,14 +270,22 @@ function dynamicWorkflowRegistryConfig(): { url: string } | undefined {
       url: expandRegistryUrlTemplate(explicitUrl, tenantId),
     };
   }
-  if (!tenantId) {
-    return {
-      url: "/tenants/me/workflows",
-    };
-  }
+
+  const backendUrl = hyloBackendUrl();
+  const registryPath = tenantId
+    ? `/tenants/${encodeURIComponent(tenantId)}/workflows`
+    : "/tenants/me/workflows";
+
   return {
-    url: `/tenants/${encodeURIComponent(tenantId)}/workflows`,
+    url: backendUrl ? `${backendUrl}${registryPath}` : registryPath,
   };
+}
+
+function hyloBackendUrl(): string | undefined {
+  return firstNonEmpty(import.meta.env.VITE_HYLO_BACKEND_URL)?.replace(
+    /\/+$/,
+    "",
+  );
 }
 
 function expandRegistryUrlTemplate(url: string, tenantId: string | undefined) {
@@ -290,7 +298,7 @@ function workflowRegistryHeaders(
   accessToken: string,
 ): HeadersInit {
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (isSameOriginUrl(url)) {
+  if (isSameOriginUrl(url) || isHyloBackendUrl(url)) {
     headers.Authorization = `Bearer ${accessToken}`;
   }
   return headers;
@@ -300,6 +308,19 @@ function isSameOriginUrl(value: string): boolean {
   if (value.startsWith("/")) return true;
   try {
     return new URL(value).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
+function isHyloBackendUrl(value: string): boolean {
+  const backendUrl = hyloBackendUrl();
+  if (!backendUrl) return false;
+  try {
+    return (
+      new URL(value, window.location.origin).origin ===
+      new URL(backendUrl).origin
+    );
   } catch {
     return false;
   }

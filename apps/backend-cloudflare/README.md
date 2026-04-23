@@ -56,5 +56,5 @@ client can load it by passing `?tenantId=customer-123` or by setting
 From the repo root, deploy this backend target with:
 
 ```sh
-pnpm hylo deploy remote backend.cloudflare
+pnpm --filter backend-cloudflare deploy
 ```

@@ -19,8 +19,9 @@ jobs:
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      WORKOS_API_KEY: ${{ secrets.WORKOS_API_KEY }}
 
     steps:
       - name: Checkout
@@ -43,7 +44,7 @@ jobs:
       - name: Check deploy environment
         run: |
           missing=0
-          for name in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN VERCEL_TOKEN WORKOS_API_KEY; do
+          for name in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_TOKEN; do
             if [ -z "${!name}" ]; then
               echo "::error::Missing required secret: ${name}"
               missing=1
@@ -51,5 +52,11 @@ jobs:
           done
           exit "$missing"
 
-      - name: Deploy remote Hylo profile
-        run: pnpm hylo-dev deploy remote
+      - name: Deploy backend worker
+        run: pnpm --filter backend-cloudflare deploy
+
+      - name: Deploy client app
+        working-directory: apps/client
+        run: |
+          pnpm exec vercel pull --yes --environment=production --token "$VERCEL_TOKEN"
+          pnpm exec vercel deploy --prod --yes --token "$VERCEL_TOKEN"

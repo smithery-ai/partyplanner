@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "hylo-dev dev backend.node",
-    "db:migrate": "hylo-dev exec -- pnpm -C ../../packages/postgres db:migrate",
-    "db:studio": "hylo-dev exec -- pnpm -C ../../packages/postgres db:studio",
+    "dev": "tsx src/index.ts",
+    "db:migrate": "pnpm -C ../../packages/postgres db:migrate",
+    "db:studio": "pnpm -C ../../packages/postgres db:studio",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit"
   },
@@ -23,7 +23,6 @@
   },
   "devDependencies": {
     "@types/node": "^24.12.2",
-    "hylo": "workspace:*",
     "tsx": "^4.21.0",
     "typescript": "~6.0.2"
   }

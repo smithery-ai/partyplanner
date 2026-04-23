@@ -1,19 +1,29 @@
 import dns from "node:dns";
-import { readFileSync } from "node:fs";
 import https from "node:https";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const hyloConfig = readHyloConfig();
-const backendCloudflareTarget = targetUrl("backend.cloudflare");
-const nextjsTarget = targetUrl("workflow.nextjs");
-const cloudflareWorkerTarget = targetUrl("workflow.cloudflareWorker");
+const backendCloudflareTarget = envUrl(
+  ["VITE_HYLO_BACKEND_URL", "HYLO_BACKEND_URL"],
+  "http://127.0.0.1:8787",
+);
+const nextjsTarget = envUrl(
+  ["VITE_HYLO_NEXTJS_WORKFLOW_URL", "HYLO_NEXTJS_WORKFLOW_URL"],
+  "http://127.0.0.1:3000",
+);
+const cloudflareWorkerTarget = envUrl(
+  ["VITE_HYLO_CLOUDFLARE_WORKFLOW_URL", "HYLO_CLOUDFLARE_WORKFLOW_URL"],
+  "http://127.0.0.1:8788",
+);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
+    "import.meta.env.VITE_HYLO_BACKEND_URL": JSON.stringify(
+      process.env.VITE_HYLO_BACKEND_URL ?? process.env.HYLO_BACKEND_URL ?? "",
+    ),
     "import.meta.env.VITE_HYLO_WORKFLOW": JSON.stringify(
       process.env.VITE_HYLO_WORKFLOW ?? process.env.HYLO_WORKFLOW ?? "",
     ),
@@ -107,18 +117,12 @@ function hyloLocalAgent(target: string): https.Agent | undefined {
   }
 }
 
-function readHyloConfig() {
-  return JSON.parse(
-    readFileSync(path.resolve(__dirname, "../../hylo.json"), "utf8"),
-  );
-}
-
-function targetUrl(target: string): string {
-  const devUrl = hyloConfig.targets?.[target]?.url;
-  if (typeof devUrl === "string" && devUrl.trim()) {
-    return devUrl.trim().replace(/\/$/, "");
+function envUrl(names: string[], fallback: string): string {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value.replace(/\/+$/, "");
   }
-  throw new Error(`hylo.json must define targets.${target}.url`);
+  return fallback;
 }
 
 function workflowRegistry() {

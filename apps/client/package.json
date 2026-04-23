@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "hylo-dev dev app.client",
+    "dev": "vite",
     "build": "tsc -b && vite build",
-    "deploy": "hylo-dev deploy remote app.client",
+    "deploy": "vercel deploy --prod --yes",
     "lint": "eslint .",
     "preview": "vite preview"
   },
@@ -42,7 +42,6 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.4.0",
     "hono": "^4.12.14",
-    "hylo": "workspace:*",
     "tailwindcss": "^4.2.2",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.0",

@@ -8,15 +8,8 @@ Use the root quickstart for the full local experience:
 pnpm dev
 ```
 
-To inspect the local profile environment:
-
-```sh
-pnpm hylo env
-```
-
-From this directory, `pnpm dev` starts the client with the local profile
-dependencies it needs. The client talks to a worker; the worker reads and
-writes durable state through the selected backend.
+From this directory, `pnpm dev` starts only the Vite client. Start the backend
+and workflow servers separately, or use the root `pnpm dev` Turbo task.
 
 ## WorkOS AuthKit
 
@@ -42,12 +35,12 @@ In local dev, Vite proxies `/user_management/*` to `https://api.workos.com`.
 This keeps browser code-exchange requests same-origin while preserving WorkOS
 as the upstream API.
 
-From the repo root, deploy the browser app after the workflow service:
+For deployed environments, set the backend URL in Vercel:
 
 ```sh
-pnpm hylo deploy remote workflow.cloudflareWorker
-pnpm hylo deploy remote app.client
+VITE_HYLO_BACKEND_URL=https://hylo-backend.smithery.workers.dev
 ```
 
-Hylo injects the workflow URL during the Vite build. This app deploys to
-Vercel using the package-owned deploy script.
+The app loads the signed-in user’s workflow registry from
+`$VITE_HYLO_BACKEND_URL/tenants/me/workflows`. Deploy the app with Vercel using
+the package-owned deploy script.
