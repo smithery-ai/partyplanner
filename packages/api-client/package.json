@@ -11,8 +11,9 @@
     }
   },
   "scripts": {
-    "build": "tsc",
-    "generate": "tsx scripts/generate-schema.ts && biome format --write src/generated/schema.d.ts",
+    "build": "pnpm run generate && tsc",
+    "generate": "tsx scripts/generate-schema.ts && biome format --write --vcs-use-ignore-file=false src/generated/schema.d.ts",
+    "prepack": "pnpm run build",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {

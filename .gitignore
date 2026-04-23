@@ -11,3 +11,4 @@ dist/
 !.dev.vars.example
 examples/sample/
 .vercel
+packages/api-client/src/generated/

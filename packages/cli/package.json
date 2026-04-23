@@ -10,7 +10,7 @@
     "templates"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "pnpm --filter @hylo/api-client generate && tsc",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
