@@ -376,12 +376,8 @@ export function SecretVaultApp({
       </header>
 
       <main className="mx-auto grid w-full max-w-4xl flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-[20rem_minmax(0,1fr)]">
-        <form
+        <div
           className="grid content-start gap-3 border-border border-b pb-4 lg:border-r lg:border-b-0 lg:pr-4 lg:pb-0"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void createSecret();
-          }}
         >
           <div className="grid gap-1.5">
             <label className="text-xs font-medium" htmlFor="vault-name">
@@ -407,7 +403,7 @@ export function SecretVaultApp({
           </div>
           <div className="grid gap-1.5">
             <label className="text-xs font-medium" htmlFor="vault-value">
-              Value
+              Secret
             </label>
             <Input
               id="vault-value"
@@ -435,7 +431,7 @@ export function SecretVaultApp({
               <option value="organization">Organization</option>
             </select>
           </div>
-          <Button type="submit" disabled={vault.isPending}>
+          <Button type="button" onClick={() => void createSecret()} disabled={vault.isPending}>
             <Plus className="size-4" aria-hidden />
             Add Secret
           </Button>
@@ -444,7 +440,7 @@ export function SecretVaultApp({
               {formError ?? vault.error?.message}
             </p>
           ) : null}
-        </form>
+        </div>
 
         <section className="min-w-0">
           {vault.entries.length === 0 ? (
