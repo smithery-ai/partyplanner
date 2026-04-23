@@ -32,6 +32,7 @@ const HYLO_BACKEND_URL = secret(
       "Base URL of the Hylo backend hosting the OAuth broker (broker is mounted at <HYLO_BACKEND_URL>/oauth).",
     errorMessage:
       "Set HYLO_BACKEND_URL in the worker environment to point at your Hylo backend.",
+    internal: true,
   },
 );
 
@@ -43,6 +44,7 @@ const HYLO_API_KEY = secret("HYLO_API_KEY", resolveApiKey(), {
   description:
     "Bearer token presented to the Hylo OAuth broker. Must match the backend's HYLO_API_KEY.",
   errorMessage: "Set HYLO_API_KEY in the worker environment.",
+  internal: true,
 });
 
 function resolveApiKey(): string | undefined {
@@ -62,6 +64,7 @@ export const defaultBroker: Atom<BrokerCredentials> = atom(
   {
     name: "@workflow/integrations-oauth/defaultBroker",
     description: "Resolves OAuth broker URL + API key from worker env.",
+    internal: true,
   },
 );
 
@@ -73,6 +76,7 @@ const HYLO_APP_URL = secret("HYLO_APP_URL", resolveDefaultAppBaseUrl(), {
   description:
     "Base URL of the app that hosts the OAuth handoff route. On hosted Hylo this is injected at deploy time.",
   errorMessage: "Set HYLO_APP_URL in the worker environment.",
+  internal: true,
 });
 
 export const defaultAppBaseUrl: Atom<string> = atom(
@@ -81,6 +85,7 @@ export const defaultAppBaseUrl: Atom<string> = atom(
     name: "@workflow/integrations-oauth/defaultAppBaseUrl",
     description:
       "Resolves the app base URL used to build OAuth handoff redirects.",
+    internal: true,
   },
 );
 

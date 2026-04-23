@@ -121,7 +121,7 @@ export function PendingInputSheet({
                   className="text-xs font-medium"
                   htmlFor={`pending-secret-${input.id}`}
                 >
-                  Value
+                  Secret
                 </label>
                 <Input
                   id={`pending-secret-${input.id}`}

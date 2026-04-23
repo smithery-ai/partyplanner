@@ -3,7 +3,7 @@ import { type DeferredInput, type Input, makeHandle } from "./handles";
 import { globalRegistry } from "./registry";
 
 type InputOpts = { title?: string; description?: string };
-type SecretOpts = InputOpts & { errorMessage?: string };
+type SecretOpts = InputOpts & { errorMessage?: string; internal?: boolean };
 
 export function input<T>(
   name: string,
@@ -56,6 +56,7 @@ export function secret(
     secret: true,
     secretValue: resolved,
     errorMessage: opts?.errorMessage,
+    internal: opts?.internal,
   });
   return makeHandle<string>("input", name) as Input<string>;
 }

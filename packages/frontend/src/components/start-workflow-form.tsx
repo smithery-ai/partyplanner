@@ -31,7 +31,12 @@ export function StartWorkflowForm({
   onSubmitSeed: (inputId: string) => void;
   error?: string;
 }) {
-  const immediate = inputs.filter((input) => input.kind === "input");
+  const immediate = inputs.filter(
+    (input) =>
+      input.kind === "input" &&
+      !input.internal &&
+      !(input.secret && input.resolved),
+  );
   const dataInputs = immediate.filter((input) => !input.secret);
   const secrets = immediate.filter((input) => input.secret);
 
@@ -54,10 +59,8 @@ export function StartWorkflowForm({
   useEffect(() => {
     if (secretsNeedAttention) {
       setStep("secrets");
-    } else if (step === "secrets") {
-      setStep("choose");
     }
-  }, [secretsNeedAttention, step]);
+  }, [secretsNeedAttention]);
 
   useEffect(() => {
     if (dataInputs.length === 1 && selectedInputId == null) {
@@ -75,7 +78,7 @@ export function StartWorkflowForm({
     );
   }
 
-  if (step === "secrets" && secretsNeedAttention) {
+  if (step === "secrets" && secrets.length > 0) {
     return (
       <Shell
         title="Secrets"
@@ -252,7 +255,7 @@ function SecretStatusRow({
               className="text-[11px] font-medium text-muted-foreground"
               htmlFor={`secret-${input.id}`}
             >
-              Value
+              Secret
             </label>
             <Input
               id={`secret-${input.id}`}
