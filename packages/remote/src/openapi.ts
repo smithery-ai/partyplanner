@@ -1,6 +1,6 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import type { Hono } from "hono";
+import type { Env, Hono, Schema } from "hono";
 
 export type RemoteRuntimeOpenApiOptions = {
   title?: string;
@@ -393,10 +393,10 @@ export function createRemoteRuntimeOpenApiDocument(
     ...document,
     ...(hasExtraComponents
       ? {
-          components: {
-            ...((document.components as Record<string, unknown>) ?? {}),
-            ...options.extraComponents,
-          },
+          components: mergeOpenApiComponents(
+            (document.components as Record<string, unknown>) ?? {},
+            options.extraComponents ?? {},
+          ),
         }
       : {}),
     ...(hasExtraPaths
@@ -410,10 +410,29 @@ export function createRemoteRuntimeOpenApiDocument(
   };
 }
 
+function mergeOpenApiComponents(
+  base: Record<string, unknown>,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(extra)) {
+    if (isRecord(merged[key]) && isRecord(value)) {
+      merged[key] = { ...merged[key], ...value };
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function mountRemoteRuntimeOpenApi(
-  app: Hono,
+  app: Hono<Env, Schema, string>,
   options: RemoteRuntimeOpenApiOptions = {},
-): Hono {
+): Hono<Env, Schema, string> {
   const openApiPath = normalizePath(options.openApiPath ?? "/openapi.json");
   const swaggerPath = normalizePath(options.swaggerPath ?? "/swagger");
 

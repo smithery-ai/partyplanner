@@ -817,6 +817,124 @@ export interface components {
     QueueSizeResponse: {
       size: number;
     };
+    AuthClientConfig: {
+      auth: {
+        /** @enum {string} */
+        provider: "workos";
+        clientId: string;
+        apiHostname: string;
+      } | null;
+      api: {
+        baseUrl: string;
+      };
+      features: {
+        cliAuth: boolean;
+        deployments: boolean;
+      };
+    };
+    CurrentIdentity: {
+      auth: {
+        /** @enum {string} */
+        kind: "admin" | "workos";
+      };
+      organization?: {
+        id: string;
+      };
+      permissions?: string[];
+      role?: string | null;
+      user?: {
+        id: string;
+      };
+    };
+    PlatformErrorResponse: {
+      error: string;
+      message: string;
+      details?: unknown;
+    };
+    TenantDeploymentsResponse: {
+      /** @enum {boolean} */
+      ok: true;
+      tenantId: string;
+      deployments: components["schemas"]["WorkflowDeployment"][];
+    };
+    WorkflowDeployment: {
+      tenantId: string;
+      deploymentId: string;
+      label?: string;
+      workflowApiUrl?: string;
+      dispatchNamespace: string;
+      tags: string[];
+      createdAt: number;
+      updatedAt: number;
+    };
+    TenantWorkflowRegistry: {
+      defaultWorkflow?: string;
+      tenantId: string;
+      workflows: {
+        [key: string]: {
+          label?: string;
+          url: string;
+        };
+      };
+    };
+    ListDeploymentsResponse: {
+      /** @enum {boolean} */
+      ok: true;
+      namespace: string;
+      deployments: unknown[];
+      resultInfo?: unknown;
+    };
+    CreateDeploymentResponse: {
+      /** @enum {boolean} */
+      ok: true;
+      tenantId: string;
+      deploymentId: string;
+      namespace: string;
+      workflowApiUrl?: string;
+      tags: string[];
+      result?: unknown;
+    };
+    CreateDeploymentRequest: {
+      tenantId?: string;
+      deploymentId?: string;
+      /** @description Deprecated alias for deploymentId. */
+      scriptName?: string;
+      label?: string;
+      workflowApiUrl?: string;
+      /** @description Alias for workflowApiUrl. */
+      url?: string;
+      moduleName?: string;
+      moduleCode?: string;
+      script?: string;
+      code?: string;
+      compatibilityDate?: string;
+      compatibilityFlags?: string[];
+      bindings?: {
+        [key: string]: unknown;
+      }[];
+      tags?: string[];
+    };
+    DeleteDeploymentsResponse: {
+      /** @enum {boolean} */
+      ok: true;
+      namespace: string;
+      tag?: string;
+      result?: unknown;
+    };
+    GetDeploymentResponse: {
+      /** @enum {boolean} */
+      ok: true;
+      namespace: string;
+      deploymentId: string;
+      deployment?: unknown;
+    };
+    DeleteDeploymentResponse: {
+      /** @enum {boolean} */
+      ok: true;
+      namespace: string;
+      deploymentId: string;
+      result?: unknown;
+    };
   };
   responses: never;
   parameters: never;
@@ -841,21 +959,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            auth: {
-              /** @enum {string} */
-              provider: "workos";
-              clientId: string;
-              apiHostname: string;
-            } | null;
-            api: {
-              baseUrl: string;
-            };
-            features: {
-              cliAuth: boolean;
-              deployments: boolean;
-            };
-          };
+          "application/json": components["schemas"]["AuthClientConfig"];
         };
       };
     };
@@ -875,33 +979,16 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            auth: {
-              /** @enum {string} */
-              kind: "admin" | "workos";
-            };
-            organization?: {
-              id: string;
-            };
-            permissions?: string[];
-            role?: string | null;
-            user?: {
-              id: string;
-            };
-          };
+          "application/json": components["schemas"]["CurrentIdentity"];
         };
       };
-      /** @description Error response */
+      /** @description Authentication failed */
       401: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
     };
@@ -923,47 +1010,25 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            /** @enum {boolean} */
-            ok: true;
-            tenantId: string;
-            deployments: {
-              tenantId: string;
-              deploymentId: string;
-              label?: string;
-              workflowApiUrl?: string;
-              dispatchNamespace: string;
-              tags: string[];
-              createdAt: number;
-              updatedAt: number;
-            }[];
-          };
+          "application/json": components["schemas"]["TenantDeploymentsResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Invalid request */
       400: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Deployment registry unavailable */
       503: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
     };
@@ -985,42 +1050,25 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            defaultWorkflow?: string;
-            tenantId: string;
-            workflows: {
-              [key: string]: {
-                label?: string;
-                url: string;
-              };
-            };
-          };
+          "application/json": components["schemas"]["TenantWorkflowRegistry"];
         };
       };
-      /** @description Error response */
+      /** @description Invalid request */
       400: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Deployment registry unavailable */
       503: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
     };
@@ -1028,9 +1076,7 @@ export interface operations {
   listDeployments: {
     parameters: {
       query?: {
-        /** @description Filter by tenant ID. */
         tenantId?: string;
-        /** @description Filter by Cloudflare Worker tag. */
         tag?: string;
       };
       header?: never;
@@ -1045,52 +1091,34 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            /** @enum {boolean} */
-            ok: true;
-            namespace: string;
-            deployments: unknown[];
-            resultInfo?: unknown;
-          };
+          "application/json": components["schemas"]["ListDeploymentsResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Invalid request */
       400: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Authentication failed */
       401: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Deployments unavailable */
       503: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
     };
@@ -1104,26 +1132,7 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": {
-          tenantId?: string;
-          deploymentId?: string;
-          /** @description Deprecated alias for deploymentId. */
-          scriptName?: string;
-          label?: string;
-          workflowApiUrl?: string;
-          /** @description Alias for workflowApiUrl. */
-          url?: string;
-          moduleName?: string;
-          moduleCode?: string;
-          script?: string;
-          code?: string;
-          compatibilityDate?: string;
-          compatibilityFlags?: string[];
-          bindings?: {
-            [key: string]: unknown;
-          }[];
-          tags?: string[];
-        };
+        "application/json": components["schemas"]["CreateDeploymentRequest"];
       };
     };
     responses: {
@@ -1133,68 +1142,43 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            /** @enum {boolean} */
-            ok: true;
-            tenantId: string;
-            deploymentId: string;
-            namespace: string;
-            workflowApiUrl?: string;
-            tags: string[];
-            result?: unknown;
-          };
+          "application/json": components["schemas"]["CreateDeploymentResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Invalid request */
       400: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Authentication failed */
       401: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Cloudflare request failed */
       502: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Deployments unavailable */
       503: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
     };
@@ -1202,9 +1186,7 @@ export interface operations {
   deleteDeployments: {
     parameters: {
       query?: {
-        /** @description Filter by tenant ID. */
         tenantId?: string;
-        /** @description Filter by Cloudflare Worker tag. */
         tag?: string;
       };
       header?: never;
@@ -1213,68 +1195,49 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Operation completed */
+      /** @description Deployments deleted */
       200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            /** @enum {boolean} */
-            ok: true;
-          };
+          "application/json": components["schemas"]["DeleteDeploymentsResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Invalid request */
       400: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Authentication failed */
       401: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Cloudflare request failed */
       502: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Deployments unavailable */
       503: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
     };
@@ -1296,65 +1259,43 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            /** @enum {boolean} */
-            ok: true;
-            namespace: string;
-            deploymentId: string;
-            deployment?: unknown;
-          };
+          "application/json": components["schemas"]["GetDeploymentResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Invalid request */
       400: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Authentication failed */
       401: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Cloudflare request failed */
       502: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Deployments unavailable */
       503: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
     };
@@ -1376,65 +1317,43 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            /** @enum {boolean} */
-            ok: true;
-            namespace: string;
-            deploymentId: string;
-            result?: unknown;
-          };
+          "application/json": components["schemas"]["DeleteDeploymentResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Invalid request */
       400: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Authentication failed */
       401: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Cloudflare request failed */
       502: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
-      /** @description Error response */
+      /** @description Deployments unavailable */
       503: {
         headers: {
           [name: string]: unknown;
         };
         content: {
-          "application/json": {
-            error: string;
-            message: string;
-            details?: unknown;
-          };
+          "application/json": components["schemas"]["PlatformErrorResponse"];
         };
       };
     };

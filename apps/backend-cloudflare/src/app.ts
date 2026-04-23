@@ -1,3 +1,4 @@
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import {
   createCloudflareBrokerStore,
   createCloudflareWorkflowQueue,
@@ -15,7 +16,6 @@ import {
   type RemoteRuntimeOpenApiOptions,
 } from "@workflow/remote";
 import type { Context } from "hono";
-import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createRemoteJWKSet, type JWTPayload, jwtVerify } from "jose";
 
@@ -51,7 +51,7 @@ export function createApp(
   const adapterOptions = { autoMigrate: false };
   const stateStore = createCloudflareWorkflowStateStore(db, adapterOptions);
   const queue = createCloudflareWorkflowQueue(db, adapterOptions);
-  const app = new Hono();
+  const app = new OpenAPIHono();
 
   app.use(
     "/*",
@@ -97,6 +97,7 @@ export function createBackendOpenApiDocument(): object {
 }
 
 function createBackendOpenApiOptions(): RemoteRuntimeOpenApiOptions {
+  const routeDocument = createBackendRouteOpenApiDocument();
   return {
     title: "Hylo Backend Worker API",
     runtimeBasePath: "/runtime",
@@ -116,7 +117,10 @@ function createBackendOpenApiOptions(): RemoteRuntimeOpenApiOptions {
       },
     ],
     extraComponents: {
+      ...((routeDocument.components as Record<string, unknown>) ?? {}),
       securitySchemes: {
+        ...(((routeDocument.components as Record<string, unknown> | undefined)
+          ?.securitySchemes as Record<string, unknown> | undefined) ?? {}),
         bearerAuth: {
           type: "http",
           scheme: "bearer",
@@ -124,11 +128,32 @@ function createBackendOpenApiOptions(): RemoteRuntimeOpenApiOptions {
         },
       },
     },
-    extraPaths: {
-      ...createAuthOpenApiPaths(),
-      ...createDeploymentOpenApiPaths(),
-    },
+    extraPaths: (routeDocument.paths as Record<string, unknown>) ?? {},
   };
+}
+
+function createBackendRouteOpenApiDocument(): Record<string, unknown> {
+  const app = new OpenAPIHono();
+  mountBackendOpenApiRoutes(app);
+  return app.getOpenAPIDocument({
+    openapi: "3.0.3",
+    info: {
+      title: "Hylo Backend Worker API",
+      version: "0.0.0",
+    },
+  }) as unknown as Record<string, unknown>;
+}
+
+function mountBackendOpenApiRoutes(app: OpenAPIHono): void {
+  app.openAPIRegistry.registerPath(GetAuthClientConfigRoute);
+  app.openAPIRegistry.registerPath(GetCurrentIdentityRoute);
+  app.openAPIRegistry.registerPath(ListTenantDeploymentsRoute);
+  app.openAPIRegistry.registerPath(GetTenantWorkflowsRoute);
+  app.openAPIRegistry.registerPath(ListDeploymentsRoute);
+  app.openAPIRegistry.registerPath(CreateDeploymentRoute);
+  app.openAPIRegistry.registerPath(DeleteDeploymentsRoute);
+  app.openAPIRegistry.registerPath(GetDeploymentRoute);
+  app.openAPIRegistry.registerPath(DeleteDeploymentRoute);
 }
 
 type CloudflarePlatformConfig = {
@@ -194,21 +219,428 @@ type WorkOSAccessTokenClaims = JWTPayload & {
   role?: unknown;
 };
 
-function mountAuthApi(app: Hono, env: BackendAppEnv, apiKey: string) {
-  app.get("/auth/client-config", (c) =>
-    c.json({
-      auth: authClientConfig(env),
-      api: {
-        baseUrl: resolveBackendPublicUrl(env, c),
-      },
-      features: {
-        cliAuth: Boolean(env.WORKOS_CLIENT_ID?.trim()),
-        deployments: true,
-      },
+const JsonContentType = "application/json";
+const BearerSecurity = [{ bearerAuth: [] }];
+
+const PlatformErrorResponseSchema = z
+  .object({
+    error: z.string(),
+    message: z.string(),
+    details: z.unknown().optional(),
+  })
+  .openapi("PlatformErrorResponse");
+
+const AuthClientConfigSchema = z
+  .object({
+    auth: z
+      .object({
+        provider: z.literal("workos"),
+        clientId: z.string(),
+        apiHostname: z.string(),
+      })
+      .nullable(),
+    api: z.object({
+      baseUrl: z.string(),
     }),
+    features: z.object({
+      cliAuth: z.boolean(),
+      deployments: z.boolean(),
+    }),
+  })
+  .openapi("AuthClientConfig");
+
+const CurrentIdentitySchema = z
+  .object({
+    auth: z.object({
+      kind: z.enum(["admin", "workos"]),
+    }),
+    organization: z.object({ id: z.string() }).optional(),
+    permissions: z.array(z.string()).optional(),
+    role: z.string().nullable().optional(),
+    user: z.object({ id: z.string() }).optional(),
+  })
+  .openapi("CurrentIdentity");
+
+const WorkflowDeploymentSchema = z
+  .object({
+    tenantId: z.string(),
+    deploymentId: z.string(),
+    label: z.string().optional(),
+    workflowApiUrl: z.string().optional(),
+    dispatchNamespace: z.string(),
+    tags: z.array(z.string()),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .openapi("WorkflowDeployment");
+
+const TenantDeploymentsResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    tenantId: z.string(),
+    deployments: z.array(WorkflowDeploymentSchema),
+  })
+  .openapi("TenantDeploymentsResponse");
+
+const TenantWorkflowRegistrySchema = z
+  .object({
+    defaultWorkflow: z.string().optional(),
+    tenantId: z.string(),
+    workflows: z.record(
+      z.string(),
+      z.object({
+        label: z.string().optional(),
+        url: z.string(),
+      }),
+    ),
+  })
+  .openapi("TenantWorkflowRegistry");
+
+const DeploymentFilterQuerySchema = z
+  .object({
+    tenantId: z.string().optional(),
+    tag: z.string().optional(),
+  })
+  .openapi("DeploymentFilterQuery");
+
+const TenantParamSchema = z.object({
+  tenantId: z.string().openapi({
+    param: { name: "tenantId", in: "path" },
+  }),
+});
+
+const DeploymentParamSchema = z.object({
+  deploymentId: z.string().openapi({
+    param: { name: "deploymentId", in: "path" },
+  }),
+});
+
+const CreateDeploymentRequestSchema = z
+  .object({
+    tenantId: z.string().optional(),
+    deploymentId: z.string().optional(),
+    scriptName: z
+      .string()
+      .optional()
+      .openapi({ description: "Deprecated alias for deploymentId." }),
+    label: z.string().optional(),
+    workflowApiUrl: z.string().optional(),
+    url: z
+      .string()
+      .optional()
+      .openapi({ description: "Alias for workflowApiUrl." }),
+    moduleName: z.string().optional(),
+    moduleCode: z.string().optional(),
+    script: z.string().optional(),
+    code: z.string().optional(),
+    compatibilityDate: z.string().optional(),
+    compatibilityFlags: z.array(z.string()).optional(),
+    bindings: z.array(z.record(z.string(), z.unknown())).optional(),
+    tags: z.array(z.string()).optional(),
+  })
+  .openapi("CreateDeploymentRequest");
+
+const ListDeploymentsResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    namespace: z.string(),
+    deployments: z.array(z.unknown()),
+    resultInfo: z.unknown().optional(),
+  })
+  .openapi("ListDeploymentsResponse");
+
+const CreateDeploymentResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    tenantId: z.string(),
+    deploymentId: z.string(),
+    namespace: z.string(),
+    workflowApiUrl: z.string().optional(),
+    tags: z.array(z.string()),
+    result: z.unknown().optional(),
+  })
+  .openapi("CreateDeploymentResponse");
+
+const DeleteDeploymentsResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    namespace: z.string(),
+    tag: z.string().optional(),
+    result: z.unknown().optional(),
+  })
+  .openapi("DeleteDeploymentsResponse");
+
+const GetDeploymentResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    namespace: z.string(),
+    deploymentId: z.string(),
+    deployment: z.unknown().optional(),
+  })
+  .openapi("GetDeploymentResponse");
+
+const DeleteDeploymentResponseSchema = z
+  .object({
+    ok: z.literal(true),
+    namespace: z.string(),
+    deploymentId: z.string(),
+    result: z.unknown().optional(),
+  })
+  .openapi("DeleteDeploymentResponse");
+
+const GetAuthClientConfigRoute = createRoute({
+  method: "get",
+  path: "/auth/client-config",
+  operationId: "getAuthClientConfig",
+  tags: ["Auth"],
+  summary: "Get public auth client configuration",
+  responses: {
+    200: openApiJsonResponse(
+      "Public auth client configuration",
+      AuthClientConfigSchema,
+    ),
+  },
+});
+
+const GetCurrentIdentityRoute = createRoute({
+  method: "get",
+  path: "/me",
+  operationId: "getCurrentIdentity",
+  tags: ["Auth"],
+  summary: "Get the authenticated identity",
+  security: BearerSecurity,
+  responses: {
+    200: openApiJsonResponse("Authenticated identity", CurrentIdentitySchema),
+    401: openApiJsonResponse(
+      "Authentication failed",
+      PlatformErrorResponseSchema,
+    ),
+  },
+});
+
+const ListTenantDeploymentsRoute = createRoute({
+  method: "get",
+  path: "/tenants/{tenantId}/deployments",
+  operationId: "listTenantDeployments",
+  tags: ["Tenants"],
+  summary: "List workflow deployments for a tenant",
+  security: BearerSecurity,
+  request: { params: TenantParamSchema },
+  responses: {
+    200: openApiJsonResponse(
+      "Tenant deployment registry entries",
+      TenantDeploymentsResponseSchema,
+    ),
+    400: openApiJsonResponse("Invalid request", PlatformErrorResponseSchema),
+    503: openApiJsonResponse(
+      "Deployment registry unavailable",
+      PlatformErrorResponseSchema,
+    ),
+  },
+});
+
+const GetTenantWorkflowsRoute = createRoute({
+  method: "get",
+  path: "/tenants/{tenantId}/workflows",
+  operationId: "getTenantWorkflows",
+  tags: ["Tenants"],
+  summary: "Get the client workflow map for a tenant",
+  security: BearerSecurity,
+  request: { params: TenantParamSchema },
+  responses: {
+    200: openApiJsonResponse(
+      "Tenant workflow registry",
+      TenantWorkflowRegistrySchema,
+    ),
+    400: openApiJsonResponse("Invalid request", PlatformErrorResponseSchema),
+    503: openApiJsonResponse(
+      "Deployment registry unavailable",
+      PlatformErrorResponseSchema,
+    ),
+  },
+});
+
+const ListDeploymentsRoute = createRoute({
+  method: "get",
+  path: "/deployments",
+  operationId: "listDeployments",
+  tags: ["Deployments"],
+  summary: "List Workers for Platforms deployments",
+  security: BearerSecurity,
+  request: { query: DeploymentFilterQuerySchema },
+  responses: {
+    200: openApiJsonResponse(
+      "Cloudflare dispatch namespace scripts",
+      ListDeploymentsResponseSchema,
+    ),
+    400: openApiJsonResponse("Invalid request", PlatformErrorResponseSchema),
+    401: openApiJsonResponse(
+      "Authentication failed",
+      PlatformErrorResponseSchema,
+    ),
+    503: openApiJsonResponse(
+      "Deployments unavailable",
+      PlatformErrorResponseSchema,
+    ),
+  },
+});
+
+const CreateDeploymentRoute = createRoute({
+  method: "post",
+  path: "/deployments",
+  operationId: "createDeployment",
+  tags: ["Deployments"],
+  summary: "Create or update a tenant Worker deployment",
+  security: BearerSecurity,
+  request: {
+    body: {
+      required: true,
+      content: {
+        [JsonContentType]: { schema: CreateDeploymentRequestSchema },
+      },
+    },
+  },
+  responses: {
+    201: openApiJsonResponse(
+      "Deployment provisioned",
+      CreateDeploymentResponseSchema,
+    ),
+    400: openApiJsonResponse("Invalid request", PlatformErrorResponseSchema),
+    401: openApiJsonResponse(
+      "Authentication failed",
+      PlatformErrorResponseSchema,
+    ),
+    502: openApiJsonResponse(
+      "Cloudflare request failed",
+      PlatformErrorResponseSchema,
+    ),
+    503: openApiJsonResponse(
+      "Deployments unavailable",
+      PlatformErrorResponseSchema,
+    ),
+  },
+});
+
+const DeleteDeploymentsRoute = createRoute({
+  method: "delete",
+  path: "/deployments",
+  operationId: "deleteDeployments",
+  tags: ["Deployments"],
+  summary: "Delete deployments by tenant or tag",
+  security: BearerSecurity,
+  request: { query: DeploymentFilterQuerySchema },
+  responses: {
+    200: openApiJsonResponse(
+      "Deployments deleted",
+      DeleteDeploymentsResponseSchema,
+    ),
+    400: openApiJsonResponse("Invalid request", PlatformErrorResponseSchema),
+    401: openApiJsonResponse(
+      "Authentication failed",
+      PlatformErrorResponseSchema,
+    ),
+    502: openApiJsonResponse(
+      "Cloudflare request failed",
+      PlatformErrorResponseSchema,
+    ),
+    503: openApiJsonResponse(
+      "Deployments unavailable",
+      PlatformErrorResponseSchema,
+    ),
+  },
+});
+
+const GetDeploymentRoute = createRoute({
+  method: "get",
+  path: "/deployments/{deploymentId}",
+  operationId: "getDeployment",
+  tags: ["Deployments"],
+  summary: "Get a Workers for Platforms deployment",
+  security: BearerSecurity,
+  request: { params: DeploymentParamSchema },
+  responses: {
+    200: openApiJsonResponse(
+      "Cloudflare dispatch namespace script",
+      GetDeploymentResponseSchema,
+    ),
+    400: openApiJsonResponse("Invalid request", PlatformErrorResponseSchema),
+    401: openApiJsonResponse(
+      "Authentication failed",
+      PlatformErrorResponseSchema,
+    ),
+    502: openApiJsonResponse(
+      "Cloudflare request failed",
+      PlatformErrorResponseSchema,
+    ),
+    503: openApiJsonResponse(
+      "Deployments unavailable",
+      PlatformErrorResponseSchema,
+    ),
+  },
+});
+
+const DeleteDeploymentRoute = createRoute({
+  method: "delete",
+  path: "/deployments/{deploymentId}",
+  operationId: "deleteDeployment",
+  tags: ["Deployments"],
+  summary: "Delete a Workers for Platforms deployment",
+  security: BearerSecurity,
+  request: { params: DeploymentParamSchema },
+  responses: {
+    200: openApiJsonResponse(
+      "Deployment deleted",
+      DeleteDeploymentResponseSchema,
+    ),
+    400: openApiJsonResponse("Invalid request", PlatformErrorResponseSchema),
+    401: openApiJsonResponse(
+      "Authentication failed",
+      PlatformErrorResponseSchema,
+    ),
+    502: openApiJsonResponse(
+      "Cloudflare request failed",
+      PlatformErrorResponseSchema,
+    ),
+    503: openApiJsonResponse(
+      "Deployments unavailable",
+      PlatformErrorResponseSchema,
+    ),
+  },
+});
+
+function openApiJsonResponse(description: string, schema: z.ZodType) {
+  return {
+    description,
+    content: {
+      [JsonContentType]: { schema },
+    },
+  };
+}
+
+function typedRouteResponse(response: Response): never {
+  return response as never;
+}
+
+function mountAuthApi(app: OpenAPIHono, env: BackendAppEnv, apiKey: string) {
+  app.openapi(GetAuthClientConfigRoute, (c) =>
+    typedRouteResponse(
+      c.json(
+        {
+          auth: authClientConfig(env),
+          api: {
+            baseUrl: resolveBackendPublicUrl(env, c),
+          },
+          features: {
+            cliAuth: Boolean(env.WORKOS_CLIENT_ID?.trim()),
+            deployments: true,
+          },
+        },
+        200,
+      ),
+    ),
   );
 
-  app.get("/me", async (c) => {
+  app.openapi(GetCurrentIdentityRoute, async (c) => {
     try {
       const auth = await authenticateRequest(c, env, apiKey);
       if (!auth) {
@@ -219,59 +651,74 @@ function mountAuthApi(app: Hono, env: BackendAppEnv, apiKey: string) {
         );
       }
       if (auth.kind === "admin") {
-        return c.json({
-          auth: { kind: "admin" },
-        });
+        return typedRouteResponse(
+          c.json(
+            {
+              auth: { kind: "admin" },
+            },
+            200,
+          ),
+        );
       }
-      return c.json({
-        auth: { kind: "workos" },
-        organization: {
-          id: auth.tenantId,
-        },
-        permissions: auth.permissions,
-        role: auth.role ?? null,
-        user: {
-          id: auth.userId,
-        },
-      });
+      return typedRouteResponse(
+        c.json(
+          {
+            auth: { kind: "workos" },
+            organization: {
+              id: auth.tenantId,
+            },
+            permissions: auth.permissions,
+            role: auth.role ?? null,
+            user: {
+              id: auth.userId,
+            },
+          },
+          200,
+        ),
+      );
     } catch (e) {
-      return apiErrorResponse(c, e);
+      return typedRouteResponse(apiErrorResponse(c, e));
     }
   });
 }
 
 function mountDeploymentApi(
-  app: Hono,
+  app: OpenAPIHono,
   env: BackendAppEnv,
   apiKey: string,
   deploymentDb?: WorkflowDeploymentRegistryDb,
 ) {
-  app.get("/tenants/:tenantId/deployments", async (c) => {
+  app.openapi(ListTenantDeploymentsRoute, async (c) => {
     try {
       const tenantId = await resolveTenantAccess(
         c,
         env,
         apiKey,
-        c.req.param("tenantId"),
+        c.req.valid("param").tenantId,
       );
       const registry = requireWorkflowDeploymentRegistry(deploymentDb);
-      return c.json({
-        ok: true,
-        tenantId,
-        deployments: await registry.list(tenantId),
-      });
+      return typedRouteResponse(
+        c.json(
+          {
+            ok: true,
+            tenantId,
+            deployments: await registry.list(tenantId),
+          },
+          200,
+        ),
+      );
     } catch (e) {
-      return apiErrorResponse(c, e);
+      return typedRouteResponse(apiErrorResponse(c, e));
     }
   });
 
-  app.get("/tenants/:tenantId/workflows", async (c) => {
+  app.openapi(GetTenantWorkflowsRoute, async (c) => {
     try {
       const tenantId = await resolveTenantAccess(
         c,
         env,
         apiKey,
-        c.req.param("tenantId"),
+        c.req.valid("param").tenantId,
       );
       const registry = requireWorkflowDeploymentRegistry(deploymentDb);
       const deployments = await registry.list(tenantId);
@@ -286,25 +733,29 @@ function mountDeploymentApi(
             },
           ]),
       );
-      return c.json({
-        defaultWorkflow: Object.keys(workflows)[0],
-        tenantId,
-        workflows,
-      });
+      return typedRouteResponse(
+        c.json(
+          {
+            defaultWorkflow: Object.keys(workflows)[0],
+            tenantId,
+            workflows,
+          },
+          200,
+        ),
+      );
     } catch (e) {
-      return apiErrorResponse(c, e);
+      return typedRouteResponse(apiErrorResponse(c, e));
     }
   });
 
-  app.get("/deployments", async (c) => {
+  app.openapi(ListDeploymentsRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
+      const query = c.req.valid("query");
       const tagFilter =
         auth.kind === "workos"
-          ? tagForTenant(
-              resolveAuthorizedTenant(c, auth, c.req.query("tenantId")),
-            )
+          ? tagForTenant(resolveAuthorizedTenant(c, auth, query.tenantId))
           : parseDeploymentTagFilter(c);
       const suffix = tagFilter
         ? `?tags=${encodeURIComponent(`${tagFilter}:yes`)}`
@@ -317,22 +768,27 @@ function mountDeploymentApi(
           config.dispatchNamespace,
         )}/scripts${suffix}`,
       );
-      return c.json({
-        ok: true,
-        namespace: config.dispatchNamespace,
-        deployments: response.result ?? [],
-        resultInfo: response.result_info,
-      });
+      return typedRouteResponse(
+        c.json(
+          {
+            ok: true,
+            namespace: config.dispatchNamespace,
+            deployments: response.result ?? [],
+            resultInfo: response.result_info,
+          },
+          200,
+        ),
+      );
     } catch (e) {
-      return apiErrorResponse(c, e);
+      return typedRouteResponse(apiErrorResponse(c, e));
     }
   });
 
-  app.post("/deployments", async (c) => {
+  app.openapi(CreateDeploymentRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
-      const body = await readJsonBody(c);
+      const body = c.req.valid("json");
       const input = parseProvisionDeploymentInput(
         body,
         config,
@@ -378,32 +834,33 @@ function mountDeploymentApi(
         });
       }
 
-      return c.json(
-        {
-          ok: true,
-          tenantId: input.tenantId,
-          deploymentId: input.deploymentId,
-          namespace: config.dispatchNamespace,
-          workflowApiUrl: input.workflowApiUrl,
-          tags: input.tags,
-          result: response.result ?? null,
-        },
-        201,
+      return typedRouteResponse(
+        c.json(
+          {
+            ok: true,
+            tenantId: input.tenantId,
+            deploymentId: input.deploymentId,
+            namespace: config.dispatchNamespace,
+            workflowApiUrl: input.workflowApiUrl,
+            tags: input.tags,
+            result: response.result ?? null,
+          },
+          201,
+        ),
       );
     } catch (e) {
-      return apiErrorResponse(c, e);
+      return typedRouteResponse(apiErrorResponse(c, e));
     }
   });
 
-  app.delete("/deployments", async (c) => {
+  app.openapi(DeleteDeploymentsRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
+      const query = c.req.valid("query");
       const tagFilter =
         auth.kind === "workos"
-          ? tagForTenant(
-              resolveAuthorizedTenant(c, auth, c.req.query("tenantId")),
-            )
+          ? tagForTenant(resolveAuthorizedTenant(c, auth, query.tenantId))
           : parseDeploymentTagFilter(c);
       if (!tagFilter) {
         throw new PlatformApiError(
@@ -425,9 +882,7 @@ function mountDeploymentApi(
       if (deploymentDb) {
         const registry = createWorkflowDeploymentRegistry(deploymentDb);
         const tenantId =
-          auth.kind === "workos"
-            ? auth.tenantId
-            : c.req.query("tenantId")?.trim();
+          auth.kind === "workos" ? auth.tenantId : query.tenantId;
         if (tenantId) {
           await registry.deleteByTenant(parseTenantIdParam(tenantId));
         } else {
@@ -435,22 +890,29 @@ function mountDeploymentApi(
         }
       }
 
-      return c.json({
-        ok: true,
-        namespace: config.dispatchNamespace,
-        tag: tagFilter,
-        result: response.result ?? null,
-      });
+      return typedRouteResponse(
+        c.json(
+          {
+            ok: true,
+            namespace: config.dispatchNamespace,
+            tag: tagFilter,
+            result: response.result ?? null,
+          },
+          200,
+        ),
+      );
     } catch (e) {
-      return apiErrorResponse(c, e);
+      return typedRouteResponse(apiErrorResponse(c, e));
     }
   });
 
-  app.get("/deployments/:deploymentId", async (c) => {
+  app.openapi(GetDeploymentRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
-      const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
+      const deploymentId = parseDeploymentIdParam(
+        c.req.valid("param").deploymentId,
+      );
       if (auth.kind === "workos") {
         await requireDeploymentAccess(deploymentDb, deploymentId, auth);
       }
@@ -462,22 +924,29 @@ function mountDeploymentApi(
           config.dispatchNamespace,
         )}/scripts/${encodeURIComponent(deploymentId)}`,
       );
-      return c.json({
-        ok: true,
-        namespace: config.dispatchNamespace,
-        deploymentId,
-        deployment: response.result ?? null,
-      });
+      return typedRouteResponse(
+        c.json(
+          {
+            ok: true,
+            namespace: config.dispatchNamespace,
+            deploymentId,
+            deployment: response.result ?? null,
+          },
+          200,
+        ),
+      );
     } catch (e) {
-      return apiErrorResponse(c, e);
+      return typedRouteResponse(apiErrorResponse(c, e));
     }
   });
 
-  app.delete("/deployments/:deploymentId", async (c) => {
+  app.openapi(DeleteDeploymentRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
-      const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
+      const deploymentId = parseDeploymentIdParam(
+        c.req.valid("param").deploymentId,
+      );
       if (auth.kind === "workos") {
         await requireDeploymentAccess(deploymentDb, deploymentId, auth);
       }
@@ -495,398 +964,21 @@ function mountDeploymentApi(
           deploymentId,
         );
       }
-      return c.json({
-        ok: true,
-        namespace: config.dispatchNamespace,
-        deploymentId,
-        result: response.result ?? null,
-      });
+      return typedRouteResponse(
+        c.json(
+          {
+            ok: true,
+            namespace: config.dispatchNamespace,
+            deploymentId,
+            result: response.result ?? null,
+          },
+          200,
+        ),
+      );
     } catch (e) {
-      return apiErrorResponse(c, e);
+      return typedRouteResponse(apiErrorResponse(c, e));
     }
   });
-}
-
-function createAuthOpenApiPaths(): Record<string, unknown> {
-  const errorResponse = jsonOpenApiResponse("Error response", {
-    type: "object",
-    properties: {
-      error: { type: "string" },
-      message: { type: "string" },
-      details: {},
-    },
-    required: ["error", "message"],
-  });
-
-  return {
-    "/auth/client-config": {
-      get: {
-        operationId: "getAuthClientConfig",
-        tags: ["Auth"],
-        summary: "Get public auth client configuration",
-        responses: {
-          200: jsonOpenApiResponse("Public auth client configuration", {
-            type: "object",
-            properties: {
-              auth: {
-                nullable: true,
-                type: "object",
-                properties: {
-                  provider: { type: "string", enum: ["workos"] },
-                  clientId: { type: "string" },
-                  apiHostname: { type: "string" },
-                },
-                required: ["provider", "clientId", "apiHostname"],
-              },
-              api: {
-                type: "object",
-                properties: {
-                  baseUrl: { type: "string" },
-                },
-                required: ["baseUrl"],
-              },
-              features: {
-                type: "object",
-                properties: {
-                  cliAuth: { type: "boolean" },
-                  deployments: { type: "boolean" },
-                },
-                required: ["cliAuth", "deployments"],
-              },
-            },
-            required: ["auth", "api", "features"],
-          }),
-        },
-      },
-    },
-    "/me": {
-      get: {
-        operationId: "getCurrentIdentity",
-        tags: ["Auth"],
-        summary: "Get the authenticated identity",
-        security: [{ bearerAuth: [] }],
-        responses: {
-          200: jsonOpenApiResponse("Authenticated identity", {
-            type: "object",
-            properties: {
-              auth: {
-                type: "object",
-                properties: {
-                  kind: { type: "string", enum: ["admin", "workos"] },
-                },
-                required: ["kind"],
-              },
-              organization: {
-                type: "object",
-                properties: {
-                  id: { type: "string" },
-                },
-                required: ["id"],
-              },
-              permissions: { type: "array", items: { type: "string" } },
-              role: { type: "string", nullable: true },
-              user: {
-                type: "object",
-                properties: {
-                  id: { type: "string" },
-                },
-                required: ["id"],
-              },
-            },
-            required: ["auth"],
-          }),
-          401: errorResponse,
-        },
-      },
-    },
-  };
-}
-
-function createDeploymentOpenApiPaths(): Record<string, unknown> {
-  const bearerSecurity = [{ bearerAuth: [] }];
-  const tenantIdParam = {
-    schema: { type: "string" },
-    required: true,
-    name: "tenantId",
-    in: "path",
-  };
-  const deploymentIdParam = {
-    schema: { type: "string" },
-    required: true,
-    name: "deploymentId",
-    in: "path",
-  };
-  const tenantIdQuery = {
-    schema: { type: "string" },
-    required: false,
-    name: "tenantId",
-    in: "query",
-    description: "Filter by tenant ID.",
-  };
-  const tagQuery = {
-    schema: { type: "string" },
-    required: false,
-    name: "tag",
-    in: "query",
-    description: "Filter by Cloudflare Worker tag.",
-  };
-  const errorResponse = jsonOpenApiResponse("Error response", {
-    type: "object",
-    properties: {
-      error: { type: "string" },
-      message: { type: "string" },
-      details: {},
-    },
-    required: ["error", "message"],
-  });
-  const okResponse = jsonOpenApiResponse("Operation completed", {
-    type: "object",
-    properties: { ok: { type: "boolean", enum: [true] } },
-    required: ["ok"],
-  });
-  const workflowDeploymentSchema = {
-    type: "object",
-    properties: {
-      tenantId: { type: "string" },
-      deploymentId: { type: "string" },
-      label: { type: "string" },
-      workflowApiUrl: { type: "string" },
-      dispatchNamespace: { type: "string" },
-      tags: { type: "array", items: { type: "string" } },
-      createdAt: { type: "number" },
-      updatedAt: { type: "number" },
-    },
-    required: [
-      "tenantId",
-      "deploymentId",
-      "dispatchNamespace",
-      "tags",
-      "createdAt",
-      "updatedAt",
-    ],
-  };
-
-  return {
-    "/tenants/{tenantId}/deployments": {
-      get: {
-        operationId: "listTenantDeployments",
-        tags: ["Tenants"],
-        summary: "List workflow deployments for a tenant",
-        security: bearerSecurity,
-        parameters: [tenantIdParam],
-        responses: {
-          200: jsonOpenApiResponse("Tenant deployment registry entries", {
-            type: "object",
-            properties: {
-              ok: { type: "boolean", enum: [true] },
-              tenantId: { type: "string" },
-              deployments: {
-                type: "array",
-                items: workflowDeploymentSchema,
-              },
-            },
-            required: ["ok", "tenantId", "deployments"],
-          }),
-          400: errorResponse,
-          503: errorResponse,
-        },
-      },
-    },
-    "/tenants/{tenantId}/workflows": {
-      get: {
-        operationId: "getTenantWorkflows",
-        tags: ["Tenants"],
-        summary: "Get the client workflow map for a tenant",
-        security: bearerSecurity,
-        parameters: [tenantIdParam],
-        responses: {
-          200: jsonOpenApiResponse("Tenant workflow registry", {
-            type: "object",
-            properties: {
-              defaultWorkflow: { type: "string" },
-              tenantId: { type: "string" },
-              workflows: {
-                type: "object",
-                additionalProperties: {
-                  type: "object",
-                  properties: {
-                    label: { type: "string" },
-                    url: { type: "string" },
-                  },
-                  required: ["url"],
-                },
-              },
-            },
-            required: ["tenantId", "workflows"],
-          }),
-          400: errorResponse,
-          503: errorResponse,
-        },
-      },
-    },
-    "/deployments": {
-      get: {
-        operationId: "listDeployments",
-        tags: ["Deployments"],
-        summary: "List Workers for Platforms deployments",
-        security: bearerSecurity,
-        parameters: [tenantIdQuery, tagQuery],
-        responses: {
-          200: jsonOpenApiResponse("Cloudflare dispatch namespace scripts", {
-            type: "object",
-            properties: {
-              ok: { type: "boolean", enum: [true] },
-              namespace: { type: "string" },
-              deployments: { type: "array", items: {} },
-              resultInfo: {},
-            },
-            required: ["ok", "namespace", "deployments"],
-          }),
-          400: errorResponse,
-          401: errorResponse,
-          503: errorResponse,
-        },
-      },
-      post: {
-        operationId: "createDeployment",
-        tags: ["Deployments"],
-        summary: "Create or update a tenant Worker deployment",
-        security: bearerSecurity,
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                properties: {
-                  tenantId: { type: "string" },
-                  deploymentId: { type: "string" },
-                  scriptName: {
-                    type: "string",
-                    description: "Deprecated alias for deploymentId.",
-                  },
-                  label: { type: "string" },
-                  workflowApiUrl: { type: "string" },
-                  url: {
-                    type: "string",
-                    description: "Alias for workflowApiUrl.",
-                  },
-                  moduleName: { type: "string" },
-                  moduleCode: { type: "string" },
-                  script: { type: "string" },
-                  code: { type: "string" },
-                  compatibilityDate: { type: "string" },
-                  compatibilityFlags: {
-                    type: "array",
-                    items: { type: "string" },
-                  },
-                  bindings: {
-                    type: "array",
-                    items: { type: "object", additionalProperties: true },
-                  },
-                  tags: { type: "array", items: { type: "string" } },
-                },
-                required: [],
-              },
-            },
-          },
-        },
-        responses: {
-          201: jsonOpenApiResponse("Deployment provisioned", {
-            type: "object",
-            properties: {
-              ok: { type: "boolean", enum: [true] },
-              tenantId: { type: "string" },
-              deploymentId: { type: "string" },
-              namespace: { type: "string" },
-              workflowApiUrl: { type: "string" },
-              tags: { type: "array", items: { type: "string" } },
-              result: {},
-            },
-            required: ["ok", "tenantId", "deploymentId", "namespace", "tags"],
-          }),
-          400: errorResponse,
-          401: errorResponse,
-          502: errorResponse,
-          503: errorResponse,
-        },
-      },
-      delete: {
-        operationId: "deleteDeployments",
-        tags: ["Deployments"],
-        summary: "Delete deployments by tenant or tag",
-        security: bearerSecurity,
-        parameters: [tenantIdQuery, tagQuery],
-        responses: {
-          200: okResponse,
-          400: errorResponse,
-          401: errorResponse,
-          502: errorResponse,
-          503: errorResponse,
-        },
-      },
-    },
-    "/deployments/{deploymentId}": {
-      get: {
-        operationId: "getDeployment",
-        tags: ["Deployments"],
-        summary: "Get a Workers for Platforms deployment",
-        security: bearerSecurity,
-        parameters: [deploymentIdParam],
-        responses: {
-          200: jsonOpenApiResponse("Cloudflare dispatch namespace script", {
-            type: "object",
-            properties: {
-              ok: { type: "boolean", enum: [true] },
-              namespace: { type: "string" },
-              deploymentId: { type: "string" },
-              deployment: {},
-            },
-            required: ["ok", "namespace", "deploymentId"],
-          }),
-          400: errorResponse,
-          401: errorResponse,
-          502: errorResponse,
-          503: errorResponse,
-        },
-      },
-      delete: {
-        operationId: "deleteDeployment",
-        tags: ["Deployments"],
-        summary: "Delete a Workers for Platforms deployment",
-        security: bearerSecurity,
-        parameters: [deploymentIdParam],
-        responses: {
-          200: jsonOpenApiResponse("Deployment deleted", {
-            type: "object",
-            properties: {
-              ok: { type: "boolean", enum: [true] },
-              namespace: { type: "string" },
-              deploymentId: { type: "string" },
-              result: {},
-            },
-            required: ["ok", "namespace", "deploymentId"],
-          }),
-          400: errorResponse,
-          401: errorResponse,
-          502: errorResponse,
-          503: errorResponse,
-        },
-      },
-    },
-  };
-}
-
-function jsonOpenApiResponse(
-  description: string,
-  schema: Record<string, unknown>,
-) {
-  return {
-    description,
-    content: {
-      "application/json": { schema },
-    },
-  };
 }
 
 function resolveCloudflarePlatformConfig(
@@ -1177,18 +1269,6 @@ function requireWorkflowDeploymentRegistry(
     );
   }
   return createWorkflowDeploymentRegistry(db);
-}
-
-async function readJsonBody(c: Context): Promise<unknown> {
-  try {
-    return await c.req.json();
-  } catch {
-    throw new PlatformApiError(
-      400,
-      "invalid_body",
-      "Expected a valid JSON request body.",
-    );
-  }
 }
 
 async function resolveTenantAccess(
