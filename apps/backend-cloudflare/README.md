@@ -56,7 +56,7 @@ client can load it by passing `?tenantId=customer-123` or by setting
 From the repo root, deploy this backend target with:
 
 ```sh
-pnpm --filter backend-cloudflare deploy
+pnpm --filter backend-cloudflare run deploy
 ```
 
 ## Preview Deployments
@@ -66,7 +66,7 @@ the Workers project with:
 
 - Root directory: repository root
 - Build command: `pnpm --filter backend-cloudflare build`
-- Deploy command: `pnpm --filter backend-cloudflare deploy`
+- Deploy command: `pnpm --filter backend-cloudflare run deploy`
 - Non-production branch deploy command:
   ```sh
   ALIAS="$(echo "$WORKERS_CI_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/^-*//; s/-*$//; s/--*/-/g' | cut -c1-40 | sed 's/-*$//')" && pnpm --filter backend-cloudflare exec wrangler versions upload --preview-alias "${ALIAS:-preview}"

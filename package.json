@@ -8,8 +8,8 @@
     "hylo": "tsx packages/cli/src/index.ts",
     "example": "rm -rf examples/sample && pnpm hylo init examples/sample && pnpm -C examples/sample install && pnpm -C examples/sample exec hylo deploy --backend ${HYLO_BACKEND_URL:-https://hylo-backend.smithery.workers.dev}",
     "dev": "turbo run dev --filter=backend-cloudflare --filter=workflow-cloudflare-worker-example --filter=client",
-    "deploy:backend": "pnpm --filter backend-cloudflare deploy",
-    "deploy:app": "pnpm --filter client deploy",
+    "deploy:backend": "pnpm --filter backend-cloudflare run deploy",
+    "deploy:app": "pnpm --filter client run deploy",
     "fmt": "biome check --write --unsafe .",
     "prepare": "husky",
     "test": "turbo run test"
