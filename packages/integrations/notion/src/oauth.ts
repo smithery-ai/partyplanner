@@ -77,8 +77,8 @@ function base64(value: string): string {
 }
 
 // Provider spec consumed by the OAuth broker on the backend. Worker code
-// does not import this — it's only used by `apps/backend-node` (or other
-// brokers) to register the curated Notion connector.
+// does not import this; the backend uses it to register the curated Notion
+// connector.
 export const notionProvider: OAuthProviderSpec<NotionAuth> = {
   id: "notion",
   authorizeUrl: "https://api.notion.com/v1/oauth/authorize",

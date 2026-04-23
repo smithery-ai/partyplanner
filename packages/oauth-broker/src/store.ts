@@ -1,5 +1,5 @@
-// Storage interface for the OAuth broker. Each backend (PGlite, Durable
-// Object, etc.) provides its own implementation. The broker keeps three
+// Storage interface for the OAuth broker. Each backend provides its own
+// implementation. The broker keeps three
 // short-lived kinds of records:
 //
 //   - Pending: a `state` nonce → callback context. Created on /start, taken

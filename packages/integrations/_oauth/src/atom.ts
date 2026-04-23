@@ -35,8 +35,8 @@ const HYLO_BACKEND_URL = secret(
   },
 );
 
-// Stable dev default — matches the backend-node fallback so local setups
-// work without coordinating env vars between worker and backend.
+// Stable dev default so local setups work without coordinating env vars between
+// worker and backend.
 const DEV_API_KEY = "local-dev-hylo-api-key";
 
 const HYLO_API_KEY = secret("HYLO_API_KEY", resolveApiKey(), {
