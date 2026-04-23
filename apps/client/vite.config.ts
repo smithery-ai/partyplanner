@@ -140,7 +140,11 @@ function previewHyloBackendUrl(): string | undefined {
     "VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE",
     "HYLO_BACKEND_PREVIEW_URL_TEMPLATE",
   ]);
-  const branch = firstEnv(["VERCEL_GIT_COMMIT_REF", "GITHUB_HEAD_REF"]);
+  const branch = firstEnv([
+    "VITE_VERCEL_GIT_COMMIT_REF",
+    "VERCEL_GIT_COMMIT_REF",
+    "GITHUB_HEAD_REF",
+  ]);
   if (!template || !branch) return undefined;
   return template.replaceAll("{branch}", previewAlias(branch));
 }
