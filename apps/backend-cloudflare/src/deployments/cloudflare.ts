@@ -10,6 +10,9 @@ import type {
 
 const CLOUDFLARE_API_TIMEOUT_MS = 15_000;
 const CLOUDFLARE_API_RETRIES = 1;
+const REQUIRED_TENANT_WORKER_COMPATIBILITY_FLAGS = [
+  "global_fetch_strictly_public",
+];
 
 export function resolveCloudflarePlatformConfig(
   env: BackendAppEnv,
@@ -74,8 +77,11 @@ export function createDeploymentMetadata(
     compatibility_date: input.compatibilityDate,
     tags: input.tags,
   };
-  if (input.compatibilityFlags && input.compatibilityFlags.length > 0) {
-    metadata.compatibility_flags = input.compatibilityFlags;
+  const compatibilityFlags = tenantWorkerCompatibilityFlags(
+    input.compatibilityFlags,
+  );
+  if (compatibilityFlags.length > 0) {
+    metadata.compatibility_flags = compatibilityFlags;
   }
   const bindings = [
     ...(input.bindings ?? []),
@@ -85,6 +91,12 @@ export function createDeploymentMetadata(
     metadata.bindings = bindings;
   }
   return metadata;
+}
+
+function tenantWorkerCompatibilityFlags(flags: string[] = []): string[] {
+  return Array.from(
+    new Set([...flags, ...REQUIRED_TENANT_WORKER_COMPATIBILITY_FLAGS]),
+  );
 }
 
 function workflowBindings(

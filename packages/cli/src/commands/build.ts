@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { type BuildOptions, parseBuildArgs } from "../args.js";
 import { info } from "../log.js";
@@ -53,9 +53,12 @@ export async function prepareBuildDir(
   await rm(project.buildDir, { recursive: true, force: true });
   await mkdir(project.buildSrcDir, { recursive: true });
 
-  await copyFile(
-    resolve(project.root, "src", "index.ts"),
-    resolve(project.buildSrcDir, "user-workflow.ts"),
+  await cp(
+    resolve(project.root, "src"),
+    resolve(project.buildSrcDir, "user-workflow"),
+    {
+      recursive: true,
+    },
   );
   await copyFile(workerShimPath, resolve(project.buildSrcDir, "index.ts"));
   await writeFile(
