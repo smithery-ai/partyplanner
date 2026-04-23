@@ -156,10 +156,7 @@ It's the "user-defined worker" from the mental model above — when the schedule
 
 A managed REST API. Owns the durable state manager (run state, events, run documents) and the mutation queue. Stateless with respect to workflow code — it addresses work by `workflowId` + `runId` and dispatches it to your worker over HTTP.
 
-Two deployable flavors of the **same** backend:
-
-- `apps/backend-node` — Node + PGlite (alternate local dev)
-- `apps/backend-cloudflare` — Cloudflare Worker + D1 (the cloud backend; also runs locally via Wrangler)
+The backend lives in `apps/backend-cloudflare`: a Cloudflare Worker backed by D1. The same Worker app also runs locally through Wrangler.
 
 The Cloudflare backend also hosts an **OAuth broker** at `/oauth`. Provider client secrets (Spotify, Notion, …) live on the backend, not on workers — workers only ever see resolved access tokens.
 
@@ -167,7 +164,7 @@ The Cloudflare backend also hosts an **OAuth broker** at `/oauth`. Provider clie
 
 Backend and worker talk HTTP both directions, so both must be reachable by the other:
 
-- **Local**: `backend-node` + a locally-running worker (e.g. `examples/nextjs`)
+- **Local**: `backend-cloudflare` through Wrangler + a locally-running worker
 - **Cloud**: `backend-cloudflare` + a cloud-deployed worker
 
 Mixing a local worker with a cloud backend won't work without tunneling.
@@ -181,7 +178,6 @@ Mixing a local worker with a cloud backend won't work without tunneling.
 ```
 apps/
   backend-cloudflare/ Cloud backend (Cloudflare Worker + D1)
-  backend-node/       Alternate local backend (Node + PGlite)
   client/             React UI (Vite)
 
 packages/
@@ -190,7 +186,7 @@ packages/
   server/         Worker SDK — createWorkflow() mounts HTTP routes
   remote/         REST transport between worker and backend
   cloudflare/     D1 adapters for apps/backend-cloudflare
-  postgres/       Drizzle schema + adapters for apps/backend-node
+  postgres/       Postgres schema + migration helpers
   oauth-broker/   Backend-hosted OAuth broker (mounted at /oauth)
   frontend/       React components (WorkflowSinglePage)
   integrations/   Worker-side OAuth + service integrations
@@ -222,7 +218,7 @@ Returns a Hono app. Mount it anywhere that serves HTTP. Worker routes include:
 
 ## Backend API
 
-Mounted under `/runtime` on both flavors. OpenAPI docs at `/runtime/openapi.json`.
+Mounted under `/runtime`. OpenAPI docs at `/runtime/openapi.json`.
 
 - `GET/PUT /runs/:runId/state`
 - `GET/PUT /runs/:runId/document`
@@ -230,15 +226,6 @@ Mounted under `/runtime` on both flavors. OpenAPI docs at `/runtime/openapi.json
 - `POST /queue/enqueue`, `POST /queue/:runId/claim`
 - `POST /queue/:eventId/complete`, `POST /queue/:eventId/fail`
 - `GET  /queue/:runId/snapshot`, `/queue/:runId/size`
-
-## Postgres schema (`backend-node`)
-
-| Table                    | Purpose                                         |
-| ------------------------ | ----------------------------------------------- |
-| `workflow_run_states`    | Versioned run state snapshots                   |
-| `workflow_run_documents` | Run metadata + trace + status                   |
-| `workflow_events`        | Append-only event log                           |
-| `workflow_queue_items`   | Work queue with leases, retries, attempt counts |
 
 ## Quickstart
 
@@ -273,14 +260,6 @@ Wrangler and the browser app with Vercel.
 
 ### Backend DB
 
-For the default local Node backend:
-
-```sh
-cd apps/backend-node
-pnpm db:migrate
-pnpm db:studio
-```
-
 For the local Cloudflare backend:
 
 ```sh
@@ -291,6 +270,9 @@ pnpm db:studio
 
 For the deployed Cloudflare backend, run `pnpm db:migrate:remote` from
 `apps/backend-cloudflare`.
+
+Postgres migration helpers live in `packages/postgres` for the planned backend
+storage migration. They require `POSTGRES_URL` or `DATABASE_URL`.
 
 ## Scripts
 
