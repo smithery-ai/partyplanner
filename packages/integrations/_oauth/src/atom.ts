@@ -65,11 +65,18 @@ export const defaultBroker: Atom<BrokerCredentials> = atom(
   },
 );
 
-// Default app base URL for building handoff URLs. Hylo sets HYLO_APP_URL for
-// local dev. Override per connection via the `appBaseUrl` option if your
-// deployment uses something different.
+// Default app base URL for building handoff URLs. Read via `secret()` so CF
+// worker bindings resolve it at runtime; falls back to process.env for node.
+// Override per connection via the `appBaseUrl` option if your deployment
+// uses something different.
+const HYLO_APP_URL = secret("HYLO_APP_URL", resolveDefaultAppBaseUrl(), {
+  description:
+    "Base URL of the app that hosts the OAuth handoff route. On hosted Hylo this is injected at deploy time.",
+  errorMessage: "Set HYLO_APP_URL in the worker environment.",
+});
+
 export const defaultAppBaseUrl: Atom<string> = atom(
-  () => resolveDefaultAppBaseUrl(),
+  (get) => get(HYLO_APP_URL),
   {
     name: "@workflow/integrations-oauth/defaultAppBaseUrl",
     description:
@@ -156,7 +163,11 @@ export function createConnection<Token>(
       const brokerCreds = get(broker);
       const appBaseUrl = get(appBaseUrlHandle);
       const extra = opts.extra ? get(opts.extra) : {};
-      const runtimeHandoffUrl = new URL(handoffPath, appBaseUrl).toString();
+      // Avoid `new URL(path, base)` — a leading slash in `path` wipes
+      // the base's path, breaking deployments reachable at {origin}/{id}.
+      const runtimeHandoffUrl = /^https?:\/\//i.test(handoffPath)
+        ? handoffPath
+        : `${appBaseUrl.replace(/\/+$/, "")}/${handoffPath.replace(/^\/+/, "")}`;
 
       const interventionKey = "oauth-callback";
       const interventionId = context.interventionId(interventionKey);

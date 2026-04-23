@@ -1,13 +1,14 @@
 import {
-  AlertTriangle,
   ChevronDown,
   ChevronRight,
   ExternalLink,
+  KeyRound,
   X,
 } from "lucide-react";
 import { useState } from "react";
 import { JsonSchemaForm } from "../components/json-schema-form";
 import { Button, buttonVariants } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { cn } from "../lib/utils";
 import { workflowInputLabel } from "../lib/workflow-labels";
 import type { JsonSchema, WorkflowInputManifest } from "../types";
@@ -66,6 +67,9 @@ export function PendingInputSheet({
   const actionLabel = action?.label;
   const label = workflowInputLabel(input);
   const title = formTitle ?? (isSecret ? "Pending secret" : label);
+  const rawSecretValue = inputValues[input.id];
+  const secretValue =
+    isSecret && typeof rawSecretValue === "string" ? rawSecretValue : "";
 
   return (
     <>
@@ -95,7 +99,7 @@ export function PendingInputSheet({
           {isSecret ? (
             <div className="space-y-2 rounded-lg border border-yellow-500/50 bg-yellow-500/5 p-3">
               <div className="flex items-start gap-2.5">
-                <AlertTriangle
+                <KeyRound
                   className="mt-0.5 size-3.5 shrink-0 text-yellow-700 dark:text-yellow-500"
                   aria-hidden
                 />
@@ -108,10 +112,36 @@ export function PendingInputSheet({
                   ) : null}
                   <p className="text-[11px] leading-snug text-yellow-800 dark:text-yellow-300">
                     {input.errorMessage ??
-                      "This step is waiting on a secret. Resolve it in the workflow server, then advance the run."}
+                      "This step is waiting on a secret. Enter a value to continue this run."}
                   </p>
                 </div>
               </div>
+              <div className="grid gap-1.5">
+                <label
+                  className="text-xs font-medium"
+                  htmlFor={`pending-secret-${input.id}`}
+                >
+                  Value
+                </label>
+                <Input
+                  id={`pending-secret-${input.id}`}
+                  type="password"
+                  value={secretValue}
+                  onChange={(e) =>
+                    onInputValuesChange(input.id, e.currentTarget.value)
+                  }
+                  placeholder="Secret value"
+                  autoComplete="off"
+                />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onSubmit()}
+                disabled={secretValue.length === 0}
+              >
+                Add secret
+              </Button>
             </div>
           ) : (
             <div className="space-y-2 rounded-lg border border-yellow-500/40 bg-yellow-500/8 p-3">

@@ -1,4 +1,5 @@
 import { globalRegistry, Registry } from "@workflow/core";
+import { createOAuthHandoffRoutes } from "@workflow/integrations-oauth";
 import { RuntimeExecutor } from "@workflow/runtime";
 import { createWorkflow } from "@workflow/server";
 import "./user-workflow/index";
@@ -8,24 +9,53 @@ type Env = {
   HYLO_WORKFLOW_NAME?: string;
   HYLO_WORKFLOW_VERSION?: string;
   HYLO_BACKEND_URL?: string;
+  HYLO_APP_URL?: string;
+  HYLO_API_KEY?: string;
   [key: string]: unknown;
 };
 
+type WorkflowApp = ReturnType<typeof createWorkflow>;
+const workflowAppCache = new Map<string, WorkflowApp>();
+
+// Curated OAuth providers whose handoff routes the shim mounts so brokered
+// OAuth resumes the workflow run after the user authorizes in the browser.
+const CURATED_OAUTH_PROVIDERS = ["spotify", "notion"];
+
 export default {
   fetch(request, env) {
-    return createWorkflow({
-      basePath: "/api/workflow",
-      backendApi: backendApiUrl(request, env),
-      executor: new RuntimeExecutor(secretResolverFromEnv(env)),
-      registry: registryWithEnvSecrets(env),
-      workflow: {
-        id: requireEnv(env, "HYLO_WORKFLOW_ID"),
-        name: requireEnv(env, "HYLO_WORKFLOW_NAME"),
-        version: requireEnv(env, "HYLO_WORKFLOW_VERSION"),
-      },
-    }).fetch(request);
+    const backendApi = backendApiUrl(request, env);
+    const app =
+      workflowAppCache.get(backendApi) ?? createCachedApp(env, backendApi);
+    return app.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
+
+function createCachedApp(env: Env, backendApi: string): WorkflowApp {
+  const app = createWorkflow({
+    basePath: "/api/workflow",
+    backendApi,
+    executor: new RuntimeExecutor(secretResolverFromEnv(env)),
+    registry: registryWithEnvSecrets(env),
+    workflow: {
+      id: requireEnv(env, "HYLO_WORKFLOW_ID"),
+      name: requireEnv(env, "HYLO_WORKFLOW_NAME"),
+      version: requireEnv(env, "HYLO_WORKFLOW_VERSION"),
+    },
+  });
+  app.route(
+    "/api/workflow/integrations",
+    createOAuthHandoffRoutes({
+      workflowApp: app,
+      workflowBasePath: "/api/workflow",
+      brokerBaseUrl: `${backendApi.replace(/\/+$/, "")}/oauth`,
+      getAppToken: () =>
+        typeof env.HYLO_API_KEY === "string" ? env.HYLO_API_KEY : undefined,
+      providers: CURATED_OAUTH_PROVIDERS,
+    }),
+  );
+  workflowAppCache.set(backendApi, app);
+  return app;
+}
 
 function registryWithEnvSecrets(env: Env): Registry {
   const registry = new Registry();

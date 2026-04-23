@@ -1,7 +1,0 @@
-name = "hylo-cloudflare-worker-example"
-main = "src/index.ts"
-compatibility_date = "2026-04-19"
-compatibility_flags = ["global_fetch_strictly_public"]
-
-[vars]
-INCIDENT_PUBLISHER_TOKEN = "local-dev-incident-publisher-token"
