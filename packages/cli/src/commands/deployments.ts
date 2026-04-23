@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
+import { resolveHyloBackendUrl } from "../config.js";
 import { getHyloAccessToken } from "./auth.js";
 
 type DeploymentCommandOptions = {
@@ -144,10 +145,7 @@ async function deploymentApi(
   }
   return createHyloApiClient({
     bearerToken: adminApiKey ?? accessToken,
-    baseUrl: requireValue(
-      options.backendUrl ?? process.env.HYLO_BACKEND_URL?.trim(),
-      "HYLO_BACKEND_URL or --backend",
-    ),
+    baseUrl: resolveHyloBackendUrl(options.backendUrl),
   });
 }
 

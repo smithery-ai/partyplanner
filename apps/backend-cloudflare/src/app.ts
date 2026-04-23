@@ -75,6 +75,7 @@ export function createApp(
 
   const curatedProviders = collectCuratedProviders(env);
   const apiKey = resolveApiKey(env);
+  mountAuthApi(app, env, apiKey);
   app.route(
     "/oauth",
     createOAuthBrokerServer({
@@ -101,6 +102,10 @@ function createBackendOpenApiOptions(): RemoteRuntimeOpenApiOptions {
     runtimeBasePath: "/runtime",
     extraTags: [
       {
+        name: "Auth",
+        description: "Public auth bootstrap and authenticated identity.",
+      },
+      {
         name: "Deployments",
         description:
           "Provision and manage tenant Workers for Platforms scripts.",
@@ -119,7 +124,10 @@ function createBackendOpenApiOptions(): RemoteRuntimeOpenApiOptions {
         },
       },
     },
-    extraPaths: createDeploymentOpenApiPaths(),
+    extraPaths: {
+      ...createAuthOpenApiPaths(),
+      ...createDeploymentOpenApiPaths(),
+    },
   };
 }
 
@@ -185,6 +193,52 @@ type WorkOSAccessTokenClaims = JWTPayload & {
   permissions?: unknown;
   role?: unknown;
 };
+
+function mountAuthApi(app: Hono, env: BackendAppEnv, apiKey: string) {
+  app.get("/auth/client-config", (c) =>
+    c.json({
+      auth: authClientConfig(env),
+      api: {
+        baseUrl: resolveBackendPublicUrl(env, c),
+      },
+      features: {
+        cliAuth: Boolean(env.WORKOS_CLIENT_ID?.trim()),
+        deployments: true,
+      },
+    }),
+  );
+
+  app.get("/me", async (c) => {
+    try {
+      const auth = await authenticateRequest(c, env, apiKey);
+      if (!auth) {
+        throw new PlatformApiError(
+          401,
+          "unauthorized",
+          "Authentication is required.",
+        );
+      }
+      if (auth.kind === "admin") {
+        return c.json({
+          auth: { kind: "admin" },
+        });
+      }
+      return c.json({
+        auth: { kind: "workos" },
+        organization: {
+          id: auth.tenantId,
+        },
+        permissions: auth.permissions,
+        role: auth.role ?? null,
+        user: {
+          id: auth.userId,
+        },
+      });
+    } catch (e) {
+      return apiErrorResponse(c, e);
+    }
+  });
+}
 
 function mountDeploymentApi(
   app: Hono,
@@ -451,6 +505,101 @@ function mountDeploymentApi(
       return apiErrorResponse(c, e);
     }
   });
+}
+
+function createAuthOpenApiPaths(): Record<string, unknown> {
+  const errorResponse = jsonOpenApiResponse("Error response", {
+    type: "object",
+    properties: {
+      error: { type: "string" },
+      message: { type: "string" },
+      details: {},
+    },
+    required: ["error", "message"],
+  });
+
+  return {
+    "/auth/client-config": {
+      get: {
+        operationId: "getAuthClientConfig",
+        tags: ["Auth"],
+        summary: "Get public auth client configuration",
+        responses: {
+          200: jsonOpenApiResponse("Public auth client configuration", {
+            type: "object",
+            properties: {
+              auth: {
+                nullable: true,
+                type: "object",
+                properties: {
+                  provider: { type: "string", enum: ["workos"] },
+                  clientId: { type: "string" },
+                  apiHostname: { type: "string" },
+                },
+                required: ["provider", "clientId", "apiHostname"],
+              },
+              api: {
+                type: "object",
+                properties: {
+                  baseUrl: { type: "string" },
+                },
+                required: ["baseUrl"],
+              },
+              features: {
+                type: "object",
+                properties: {
+                  cliAuth: { type: "boolean" },
+                  deployments: { type: "boolean" },
+                },
+                required: ["cliAuth", "deployments"],
+              },
+            },
+            required: ["auth", "api", "features"],
+          }),
+        },
+      },
+    },
+    "/me": {
+      get: {
+        operationId: "getCurrentIdentity",
+        tags: ["Auth"],
+        summary: "Get the authenticated identity",
+        security: [{ bearerAuth: [] }],
+        responses: {
+          200: jsonOpenApiResponse("Authenticated identity", {
+            type: "object",
+            properties: {
+              auth: {
+                type: "object",
+                properties: {
+                  kind: { type: "string", enum: ["admin", "workos"] },
+                },
+                required: ["kind"],
+              },
+              organization: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                },
+                required: ["id"],
+              },
+              permissions: { type: "array", items: { type: "string" } },
+              role: { type: "string", nullable: true },
+              user: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                },
+                required: ["id"],
+              },
+            },
+            required: ["auth"],
+          }),
+          401: errorResponse,
+        },
+      },
+    },
+  };
 }
 
 function createDeploymentOpenApiPaths(): Record<string, unknown> {
@@ -1254,10 +1403,28 @@ function workOSJwks(jwksUrl: string): ReturnType<typeof createRemoteJWKSet> {
   return jwks;
 }
 
+function authClientConfig(env: BackendAppEnv): {
+  provider: "workos";
+  clientId: string;
+  apiHostname: string;
+} | null {
+  const clientId = env.WORKOS_CLIENT_ID?.trim();
+  if (!clientId) return null;
+  return {
+    provider: "workos",
+    clientId,
+    apiHostname: workOSApiHostname(env.WORKOS_API_HOSTNAME),
+  };
+}
+
 function workOSApiOrigin(hostname: string | undefined): string {
   const value = hostname?.trim() || "api.workos.com";
   if (/^https?:\/\//i.test(value)) return value.replace(/\/+$/, "");
   return `https://${value.replace(/^\/+|\/+$/g, "")}`;
+}
+
+function workOSApiHostname(hostname: string | undefined): string {
+  return new URL(workOSApiOrigin(hostname)).hostname;
 }
 
 function workOSIssuerCandidates(issuer: string): string[] {
@@ -1586,6 +1753,10 @@ function resolveBrokerBaseUrl(env: BackendAppEnv): string {
   const backendUrl = env.HYLO_BACKEND_PUBLIC_URL?.trim();
   if (backendUrl) return `${backendUrl.replace(/\/+$/, "")}/oauth`;
   return "https://api-worker.hylo.localhost/oauth";
+}
+
+function resolveBackendPublicUrl(env: BackendAppEnv, c: Context): string {
+  return env.HYLO_BACKEND_PUBLIC_URL?.trim() || new URL(c.req.url).origin;
 }
 
 export type AppType = ReturnType<typeof createApp>;

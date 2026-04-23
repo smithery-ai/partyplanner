@@ -10,6 +10,10 @@ export type {
 export type CreateDeploymentRequest = RequestJsonBody<
   paths["/deployments"]["post"]
 >;
+export type AuthClientConfig =
+  paths["/auth/client-config"]["get"]["responses"][200]["content"]["application/json"];
+export type CurrentIdentity =
+  paths["/me"]["get"]["responses"][200]["content"]["application/json"];
 export type WorkflowDeployment =
   paths["/tenants/{tenantId}/deployments"]["get"]["responses"][200]["content"]["application/json"]["deployments"][number];
 
@@ -46,6 +50,15 @@ export function createHyloApiClient(options: HyloApiClientOptions) {
 
   return {
     raw: client,
+    auth: {
+      clientConfig: () => unwrap(client.GET("/auth/client-config")),
+      me: () =>
+        unwrap(
+          client.GET("/me", {
+            headers: requestHeaders(options),
+          }),
+        ),
+    },
     deployments: {
       list: (filter?: DeploymentFilter) =>
         unwrap(

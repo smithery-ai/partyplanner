@@ -617,6 +617,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/auth/client-config": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get public auth client configuration */
+    get: operations["getAuthClientConfig"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/me": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get the authenticated identity */
+    get: operations["getCurrentIdentity"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/tenants/{tenantId}/deployments": {
     parameters: {
       query?: never;
@@ -792,6 +826,86 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  getAuthClientConfig: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Public auth client configuration */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            auth: {
+              /** @enum {string} */
+              provider: "workos";
+              clientId: string;
+              apiHostname: string;
+            } | null;
+            api: {
+              baseUrl: string;
+            };
+            features: {
+              cliAuth: boolean;
+              deployments: boolean;
+            };
+          };
+        };
+      };
+    };
+  };
+  getCurrentIdentity: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Authenticated identity */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            auth: {
+              /** @enum {string} */
+              kind: "admin" | "workos";
+            };
+            organization?: {
+              id: string;
+            };
+            permissions?: string[];
+            role?: string | null;
+            user?: {
+              id: string;
+            };
+          };
+        };
+      };
+      /** @description Error response */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: string;
+            message: string;
+            details?: unknown;
+          };
+        };
+      };
+    };
+  };
   listTenantDeployments: {
     parameters: {
       query?: never;

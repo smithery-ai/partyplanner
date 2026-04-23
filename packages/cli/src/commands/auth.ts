@@ -1,10 +1,17 @@
 import {
+  type AuthClientConfig,
+  createHyloApiClient,
+  HyloApiError,
+} from "@hylo/api-client";
+import {
   clearStoredAuth,
   readStoredAuth,
   writeStoredAuth,
 } from "../auth-store.js";
+import { resolveHyloBackendUrl } from "../config.js";
 
 type AuthOptions = {
+  backendUrl?: string;
   clientId?: string;
   workosApiHostname?: string;
   workosApiBaseUrl?: string;
@@ -35,6 +42,7 @@ Usage:
   hylo auth logout
 
 Options:
+  --backend <url>         Hylo backend API URL
   --client-id <id>        WorkOS AuthKit client ID
   --workos-api-hostname <host>
                           WorkOS Authentication API hostname
@@ -95,13 +103,27 @@ async function login(args: string[]): Promise<void> {
   if (options.rest.length > 0) {
     throw new Error(`Unexpected argument: ${options.rest[0]}`);
   }
-  const clientId = requireValue(
+  const backendUrl = resolveHyloBackendUrl(options.backendUrl);
+  const configuredClientId =
     options.clientId ??
-      process.env.WORKOS_CLIENT_ID ??
-      process.env.VITE_WORKOS_CLIENT_ID,
-    "WORKOS_CLIENT_ID or --client-id",
+    process.env.WORKOS_CLIENT_ID ??
+    process.env.VITE_WORKOS_CLIENT_ID;
+  const configuredApiHostname =
+    options.workosApiHostname ??
+    process.env.WORKOS_API_HOSTNAME ??
+    process.env.VITE_WORKOS_API_HOSTNAME;
+  const clientConfig: Partial<AuthClientConfig> =
+    configuredClientId && (configuredApiHostname || options.workosApiBaseUrl)
+      ? {}
+      : await fetchAuthClientConfig(backendUrl);
+  const clientId = requireValue(
+    configuredClientId ?? clientConfig.auth?.clientId,
+    "WorkOS client ID from /auth/client-config or --client-id",
   );
-  const workosApiBaseUrl = resolveWorkOSApiBaseUrl(options);
+  const workosApiBaseUrl = resolveWorkOSApiBaseUrl(
+    options,
+    clientConfig.auth?.apiHostname,
+  );
   const device = await requestDeviceAuthorization({
     clientId,
     workosApiBaseUrl,
@@ -155,6 +177,25 @@ async function requestDeviceAuthorization({
     },
   );
   return parseResponse<DeviceAuthorizationResponse>(response);
+}
+
+async function fetchAuthClientConfig(
+  backendUrl: string,
+): Promise<AuthClientConfig> {
+  try {
+    return await createHyloApiClient({
+      baseUrl: backendUrl,
+    }).auth.clientConfig();
+  } catch (e) {
+    if (e instanceof HyloApiError) {
+      const message =
+        isRecord(e.error) && typeof e.error.message === "string"
+          ? e.error.message
+          : `HTTP ${e.response.status}`;
+      throw new Error(`Hylo auth config request failed: ${message}`);
+    }
+    throw e;
+  }
 }
 
 async function pollDeviceToken({
@@ -247,6 +288,12 @@ function parseAuthOptions(args: string[]): AuthOptions & { rest: string[] } {
       options.clientId = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--client-id=")) {
       options.clientId = arg.slice("--client-id=".length);
+    } else if (arg === "--backend" || arg === "--backend-url") {
+      options.backendUrl = requireArgValue(args, ++index, arg);
+    } else if (arg.startsWith("--backend=")) {
+      options.backendUrl = arg.slice("--backend=".length);
+    } else if (arg.startsWith("--backend-url=")) {
+      options.backendUrl = arg.slice("--backend-url=".length);
     } else if (arg === "--workos-api-hostname") {
       options.workosApiHostname = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--workos-api-hostname=")) {
@@ -262,14 +309,18 @@ function parseAuthOptions(args: string[]): AuthOptions & { rest: string[] } {
   return options;
 }
 
-function resolveWorkOSApiBaseUrl(options: AuthOptions): string {
+function resolveWorkOSApiBaseUrl(
+  options: AuthOptions,
+  configuredApiHostname: string | undefined,
+): string {
   const explicitUrl =
     options.workosApiBaseUrl ?? process.env.WORKOS_API_BASE_URL;
   if (explicitUrl) return explicitUrl.replace(/\/+$/, "");
   const hostname =
     options.workosApiHostname ??
     process.env.WORKOS_API_HOSTNAME ??
-    process.env.VITE_WORKOS_API_HOSTNAME;
+    process.env.VITE_WORKOS_API_HOSTNAME ??
+    configuredApiHostname;
   if (!hostname) return DEFAULT_WORKOS_API_BASE_URL;
   if (/^https?:\/\//i.test(hostname)) return hostname.replace(/\/+$/, "");
   return `https://${hostname.replace(/^\/+|\/+$/g, "")}`;
