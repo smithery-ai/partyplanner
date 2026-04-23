@@ -32,7 +32,10 @@ export function StartWorkflowForm({
   error?: string;
 }) {
   const immediate = inputs.filter(
-    (input) => input.kind === "input" && !input.internal,
+    (input) =>
+      input.kind === "input" &&
+      !input.internal &&
+      !(input.secret && input.resolved),
   );
   const dataInputs = immediate.filter((input) => !input.secret);
   const secrets = immediate.filter((input) => input.secret);

@@ -416,7 +416,82 @@ function inputDefinition(
   return input ? { kind: input.kind, secret: input.secret } : undefined;
 }
 
-function isInternalNode(
+/**
+ * Build the set of node IDs that should be hidden from the graph.
+ *
+ * A node is internal if:
+ * 1. It has `internal: true` in the registry or manifest, OR
+ * 2. Its ID starts with `@workflow/integrations-` (package-internal atoms), OR
+ * 3. It is a resolved secret whose ONLY consumers are themselves internal
+ *    (transitive — covers infra secrets like HYLO_BACKEND_URL fed only into
+ *    integration atoms).
+ */
+function internalNodeIds(
+  registry: Registry,
+  manifest: WorkflowManifest | undefined,
+  runState: RunState | undefined,
+): Set<string> {
+  const result = new Set<string>();
+
+  // Collect all known node IDs.
+  const allIds = new Set<string>();
+  for (const id of registry.allIds()) allIds.add(id);
+  if (manifest) {
+    for (const i of manifest.inputs) allIds.add(i.id);
+    for (const a of manifest.atoms) allIds.add(a.id);
+    for (const a of manifest.actions) allIds.add(a.id);
+  }
+  if (runState) {
+    for (const id of Object.keys(runState.nodes)) allIds.add(id);
+  }
+
+  // Pass 1: flag nodes that are explicitly internal or match the
+  // @workflow/integrations-* convention.
+  for (const id of allIds) {
+    if (isExplicitlyInternal(registry, manifest, id)) {
+      result.add(id);
+    } else if (id.startsWith("@workflow/integrations-")) {
+      result.add(id);
+    }
+  }
+
+  // Pass 2: resolved secrets consumed *only* by already-internal nodes.
+  if (runState) {
+    // Build consumer map: nodeId → set of IDs that depend on it.
+    const consumers = new Map<string, string[]>();
+    for (const [nid, rec] of Object.entries(runState.nodes)) {
+      for (const dep of rec?.deps ?? []) {
+        let list = consumers.get(dep);
+        if (!list) {
+          list = [];
+          consumers.set(dep, list);
+        }
+        list.push(nid);
+      }
+    }
+
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const id of allIds) {
+        if (result.has(id)) continue;
+        const def = inputDefinition(registry, manifest, id);
+        if (!def?.secret) continue;
+        const rec = runState.nodes[id];
+        if (!rec || rec.status !== "resolved") continue;
+        const deps = consumers.get(id);
+        if (deps && deps.length > 0 && deps.every((c) => result.has(c))) {
+          result.add(id);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+function isExplicitlyInternal(
   registry: Registry,
   manifest: WorkflowManifest | undefined,
   id: string,
@@ -661,12 +736,13 @@ function visibleWorkflowNodeIds(
   queue: QueueSnapshot | undefined,
 ): string[] {
   if (!runState) return [];
+  const hidden = internalNodeIds(registry, manifest, runState);
   const queuedIds = new Set([
     ...(queue?.pending ?? []).map((item) => queueNodeId(item.event)),
     ...(queue?.running ?? []).map((item) => queueNodeId(item.event)),
   ]);
   return workflowNodeOrder(registry, manifest, runState, queue).filter((id) => {
-    if (isInternalNode(registry, manifest, id)) return false;
+    if (hidden.has(id)) return false;
     const rec = runState.nodes[id];
     if (rec && rec.status !== "not_reached") return true;
     if (queuedIds.has(id)) return true;
