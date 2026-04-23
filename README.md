@@ -15,20 +15,34 @@ const severity = atom(async (get) => {
   return t.body.includes("outage") ? "sev-1" : "sev-3";
 });
 
+const approval = atom(async (get, requestIntervention) => {
+  if ((await get(severity)) !== "sev-1") return { approved: false };
+  return requestIntervention(
+    "page-oncall",
+    z.object({ approved: z.boolean(), note: z.string().optional() }),
+    {
+      title: "Page on-call?",
+      description: `Ticket ${(await get(ticket)).id} looks like a sev-1.`,
+    },
+  );
+});
+
 const pagerDutyKey = secret("PAGERDUTY_KEY", process.env.PAGERDUTY_KEY);
 
 const pageOncall = action(async (get) => {
-  if ((await get(severity)) !== "sev-1") return;
+  if (!(await get(approval)).approved) return;
   await pd.page({ key: await get(pagerDutyKey), ticket: await get(ticket) });
 });
 ```
 
-Supplying a `ticket` value starts a run. `severity` is derived from it. When `severity` changes, anything that depends on it re-evaluates. `pageOncall` is a side effect that reads the current value of the graph when invoked.
+Supplying a `ticket` value starts a run. `severity` is derived from it. `approval` reads `severity` and, if the ticket is sev-1, calls `requestIntervention` — the run pauses there until a human submits the form. Once they do, `approval` resolves, and `pageOncall` (a side effect that reads the current graph) can fire.
 
 ```mermaid
 flowchart LR
   ticket([input: ticket]) --> severity[atom: severity]
-  severity --> pageOncall[[action: pageOncall]]
+  severity --> approval{{atom: approval}}
+  human((human)) -.->|intervention| approval
+  approval --> pageOncall[[action: pageOncall]]
   pagerDutyKey([secret: PAGERDUTY_KEY]) --> pageOncall
   ticket --> pageOncall
 ```
@@ -94,6 +108,24 @@ sequenceDiagram
 ```
 
 This is why the same code can pause for five days waiting on a human approval and resume. The graph isn't running — its state is at rest in the backend, and a mutation (the human's submission) kicks the scheduler back to life.
+
+## How enqueuing works
+
+Every unit of work flows through one durable queue on the backend. Items have two shapes:
+
+- **`input`** — a value arrived from outside (a `POST /runs/:runId/inputs`, a webhook, a form submission). The scheduler writes the payload into run state and marks every atom that reads that input as dirty.
+- **`step`** — re-run a specific atom or action. Emitted whenever a step's dependency just resolved, or whenever a human submitted the intervention a step was paused on.
+
+Each item moves through a fixed lifecycle: `pending → running → completed | failed`. A worker claims a `pending` item, runs the step, and reports the result back. Running an item can emit more events — resolving `severity` enqueues a `step` for `approval` because `approval` reads it — and that cascade continues until the queue drains.
+
+Pausing on user input works through the same queue:
+
+1. `approval` calls `requestIntervention("page-oncall", ...)`. There's no response in state yet, so the runtime throws a `WaitError`.
+2. The scheduler catches it, records `approval` as a waiter on the intervention id, and **does not** enqueue any dependents. The run goes idle.
+3. The human submits a response via `POST /runs/:runId/interventions/:id`. The scheduler writes the response into state, finds every waiter for that id, and enqueues a fresh `step` event for each.
+4. A worker dequeues the `step`, re-runs `approval`, finds the response already in state this time, and returns normally. `pageOncall`'s `step` then enqueues, and the cascade resumes.
+
+Because the queue is a database table (`workflow_queue_items`), the days between step 2 and step 3 cost nothing — no process is held open, and any worker can pick the run back up.
 
 ## Architecture
 
