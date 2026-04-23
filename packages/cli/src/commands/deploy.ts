@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
 import { parseBuildArgs } from "../args.js";
 import { resolveHyloBackendUrl } from "../config.js";
@@ -7,16 +8,18 @@ import { getHyloAccessToken } from "./auth.js";
 import { buildWorkerBundle } from "./build.js";
 
 const CLIENT_URL = "https://hylo-client.vercel.app";
-const WORKER_BASE_PATH = "/api/workflow";
 
 export async function runDeploy(args: string[]): Promise<number> {
   try {
     const { options, rest } = parseBuildArgs(args);
-    if (rest.length > 0) {
-      throw new Error(`Unexpected argument for deploy: ${rest[0]}`);
+    if (rest.length > 1) {
+      throw new Error(`Unexpected argument for deploy: ${rest[1]}`);
     }
 
-    const project = await loadProject(process.cwd());
+    const projectRoot = rest[0]
+      ? resolve(process.cwd(), rest[0])
+      : process.cwd();
+    const project = await loadProject(projectRoot);
     const backendUrl = resolveHyloBackendUrl(options.backendUrl);
     const accessToken = await getHyloAccessToken();
     if (!accessToken) {
@@ -38,42 +41,19 @@ export async function runDeploy(args: string[]): Promise<number> {
       label: project.workflowName,
       moduleCode: bundle.moduleCode,
       moduleName: bundle.moduleName,
-      bindings: workflowBindings(project, backendUrl),
+      workflowId: project.workflowId,
+      workflowName: project.workflowName,
+      workflowVersion: project.workflowVersion,
     });
 
-    const workflowApiUrl =
-      deployment.workflowApiUrl ??
-      `${backendUrl}/workers/${encodeURIComponent(
-        deployment.deploymentId,
-      )}${WORKER_BASE_PATH}`;
     info(``);
     info(`Deployment: ${deployment.deploymentId}`);
-    info(
-      `Interact with it at: ${CLIENT_URL}/?workflowApiUrl=${encodeURIComponent(
-        workflowApiUrl,
-      )}`,
-    );
+    info(`Open it at: ${CLIENT_URL}/?worker=${deployment.deploymentId}`);
     return 0;
   } catch (e) {
     process.stderr.write(`${deployErrorMessage(e)}\n`);
     return 1;
   }
-}
-
-function workflowBindings(
-  project: Awaited<ReturnType<typeof loadProject>>,
-  backendUrl: string,
-) {
-  return [
-    plainTextBinding("HYLO_WORKFLOW_ID", project.workflowId),
-    plainTextBinding("HYLO_WORKFLOW_NAME", project.workflowName),
-    plainTextBinding("HYLO_WORKFLOW_VERSION", project.workflowVersion),
-    plainTextBinding("HYLO_BACKEND_URL", backendUrl),
-  ];
-}
-
-function plainTextBinding(name: string, text: string): Record<string, unknown> {
-  return { name, text, type: "plain_text" };
 }
 
 function deployErrorMessage(e: unknown): string {

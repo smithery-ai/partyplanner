@@ -25,5 +25,8 @@ export type ProvisionDeploymentInput = {
   compatibilityDate: string;
   compatibilityFlags?: string[];
   bindings?: Record<string, unknown>[];
+  workflowId?: string;
+  workflowName?: string;
+  workflowVersion?: string;
   tags: string[];
 };

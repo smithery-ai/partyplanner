@@ -90,6 +90,9 @@ export function parseProvisionDeploymentInput(
   const tenantTag = tagForTenant(tenantId);
   const tags = uniqueStrings([tenantTag, ...requestedTags]);
   assertWorkerTags(tags);
+  const workflowId = optionalString(body, "workflowId");
+  const workflowName = optionalString(body, "workflowName");
+  const workflowVersion = optionalString(body, "workflowVersion");
 
   return {
     tenantId,
@@ -101,6 +104,9 @@ export function parseProvisionDeploymentInput(
     compatibilityDate,
     compatibilityFlags,
     bindings,
+    workflowId,
+    workflowName,
+    workflowVersion,
     tags,
   };
 }

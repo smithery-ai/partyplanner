@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
 import { resolveHyloBackendUrl } from "../config.js";
 import { getHyloAccessToken } from "./auth.js";
@@ -7,10 +6,7 @@ type DeploymentCommandOptions = {
   apiKey?: string;
   backendUrl?: string;
   deploymentId?: string;
-  label?: string;
-  modulePath?: string;
   tenantId?: string;
-  workflowApiUrl?: string;
 };
 
 const HELP = `hylo deployments
@@ -19,17 +15,13 @@ Usage:
   hylo deployments list [--tenant <id>]
   hylo deployments workflows [--tenant <id>]
   hylo deployments get <deploymentId>
-  hylo deployments create --deployment <id> --module <path> [--tenant <id>]
   hylo deployments delete <deploymentId>
 
 Options:
   --api-key <key>          API key for admin deployment APIs
   --backend <url>          Hylo backend API URL
   --deployment <id>        Deployment ID
-  --label <label>          Registry label
-  --module <path>          Worker module source file to upload
   --tenant <id>            Tenant ID
-  --workflow-api-url <url> Registry workflow API URL
 `;
 
 export async function runDeployments(args: string[]): Promise<number> {
@@ -49,9 +41,6 @@ export async function runDeployments(args: string[]): Promise<number> {
         return 0;
       case "get":
         await getDeployment(rest);
-        return 0;
-      case "create":
-        await createDeployment(rest);
         return 0;
       case "delete":
         await deleteDeployment(rest);
@@ -92,30 +81,6 @@ async function getDeployment(args: string[]): Promise<void> {
   const api = await deploymentApi(options, { requireApiKey: true });
   printJson(
     await api.deployments.get(requireValue(deploymentId, "deploymentId")),
-  );
-}
-
-async function createDeployment(args: string[]): Promise<void> {
-  const { options, rest } = parseDeploymentArgs(args);
-  requireNoRest(rest, "deployments create");
-  const api = await deploymentApi(options, { requireApiKey: true });
-  const deploymentId = requireValue(options.deploymentId, "--deployment");
-  const moduleCode = await readFile(
-    requireValue(options.modulePath, "--module"),
-    "utf8",
-  );
-
-  printJson(
-    await api.deployments.create({
-      ...(options.tenantId ? { tenantId: options.tenantId } : {}),
-      deploymentId,
-      label: options.label,
-      moduleName: `${deploymentId}.mjs`,
-      moduleCode,
-      ...(options.workflowApiUrl
-        ? { workflowApiUrl: options.workflowApiUrl }
-        : {}),
-    }),
   );
 }
 
@@ -173,24 +138,12 @@ function parseDeploymentArgs(args: string[]): {
       options.deploymentId = arg.slice("--deployment=".length);
     } else if (arg.startsWith("--deployment-id=")) {
       options.deploymentId = arg.slice("--deployment-id=".length);
-    } else if (arg === "--label") {
-      options.label = requireArgValue(args, ++index, arg);
-    } else if (arg.startsWith("--label=")) {
-      options.label = arg.slice("--label=".length);
-    } else if (arg === "--module") {
-      options.modulePath = requireArgValue(args, ++index, arg);
-    } else if (arg.startsWith("--module=")) {
-      options.modulePath = arg.slice("--module=".length);
     } else if (arg === "--tenant" || arg === "--tenant-id") {
       options.tenantId = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--tenant=")) {
       options.tenantId = arg.slice("--tenant=".length);
     } else if (arg.startsWith("--tenant-id=")) {
       options.tenantId = arg.slice("--tenant-id=".length);
-    } else if (arg === "--workflow-api-url") {
-      options.workflowApiUrl = requireArgValue(args, ++index, arg);
-    } else if (arg.startsWith("--workflow-api-url=")) {
-      options.workflowApiUrl = arg.slice("--workflow-api-url=".length);
     } else {
       rest.push(arg);
     }

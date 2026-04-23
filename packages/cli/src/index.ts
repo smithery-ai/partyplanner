@@ -11,7 +11,7 @@ Usage:
   hylo auth <command>                Sign in with WorkOS AuthKit
   hylo init [dir]                    Create a new workflow project
   hylo build [--backend <url>]       Bundle into a Cloudflare Worker
-  hylo deploy [--backend <url>]      Build and deploy via Hylo API
+  hylo deploy [dir] [--backend <url>] Build and deploy via Hylo API
   hylo deployments <command>         Call the deployment API
   hylo --help                        Show this help
 

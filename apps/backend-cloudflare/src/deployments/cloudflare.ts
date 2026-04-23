@@ -65,7 +65,10 @@ export function isCloudflarePlatformConfigured(env: BackendAppEnv): boolean {
   );
 }
 
-export function createDeploymentMetadata(input: ProvisionDeploymentInput) {
+export function createDeploymentMetadata(
+  input: ProvisionDeploymentInput,
+  backendUrl: string,
+) {
   const metadata: Record<string, unknown> = {
     main_module: input.moduleName,
     compatibility_date: input.compatibilityDate,
@@ -74,10 +77,36 @@ export function createDeploymentMetadata(input: ProvisionDeploymentInput) {
   if (input.compatibilityFlags && input.compatibilityFlags.length > 0) {
     metadata.compatibility_flags = input.compatibilityFlags;
   }
-  if (input.bindings && input.bindings.length > 0) {
-    metadata.bindings = input.bindings;
+  const bindings = [
+    ...(input.bindings ?? []),
+    ...workflowBindings(input, backendUrl),
+  ];
+  if (bindings.length > 0) {
+    metadata.bindings = bindings;
   }
   return metadata;
+}
+
+function workflowBindings(
+  input: ProvisionDeploymentInput,
+  backendUrl: string,
+): Record<string, unknown>[] {
+  return [
+    plainTextBinding(
+      "HYLO_WORKFLOW_ID",
+      input.workflowId ?? input.deploymentId,
+    ),
+    plainTextBinding(
+      "HYLO_WORKFLOW_NAME",
+      input.workflowName ?? input.label ?? input.deploymentId,
+    ),
+    plainTextBinding("HYLO_WORKFLOW_VERSION", input.workflowVersion ?? "0.0.0"),
+    plainTextBinding("HYLO_BACKEND_URL", backendUrl.replace(/\/+$/, "")),
+  ];
+}
+
+function plainTextBinding(name: string, text: string): Record<string, unknown> {
+  return { name, text, type: "plain_text" };
 }
 
 export async function cloudflareApiRequest<T>(

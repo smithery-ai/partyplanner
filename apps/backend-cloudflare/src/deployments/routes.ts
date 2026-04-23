@@ -102,6 +102,9 @@ const CreateDeploymentRequestSchema = z
     moduleCode: z.string().optional(),
     script: z.string().optional(),
     code: z.string().optional(),
+    workflowId: z.string().optional(),
+    workflowName: z.string().optional(),
+    workflowVersion: z.string().optional(),
     compatibilityDate: z.string().optional(),
     compatibilityFlags: z.array(z.string()).optional(),
     bindings: z.array(z.record(z.string(), z.unknown())).optional(),
@@ -416,16 +419,23 @@ export function mountDeploymentApi(
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
+      const requestConfig = {
+        ...config,
+        workerDispatchBaseUrl: `${new URL(c.req.url).origin}/workers`,
+      };
       const input = parseProvisionDeploymentInput(
         c.req.valid("json"),
-        config,
+        requestConfig,
         auth.kind === "workos" ? auth.tenantId : undefined,
         auth.kind === "admin",
       );
       if (auth.kind === "workos") {
         resolveAuthorizedTenant(c, auth, input.tenantId);
       }
-      const metadata = createDeploymentMetadata(input);
+      const metadata = createDeploymentMetadata(
+        input,
+        new URL(c.req.url).origin,
+      );
       const formData = new FormData();
       formData.append(
         "metadata",

@@ -5,7 +5,6 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
 
-type WorkflowChoice = string | "custom";
 type WorkflowRegistry = {
   defaultWorkflow?: string;
   workflows: Record<
@@ -15,10 +14,6 @@ type WorkflowRegistry = {
       url: string;
     }
   >;
-};
-type WorkflowApiOverride = {
-  worker: string;
-  url: string;
 };
 
 const root = document.getElementById("root");
@@ -45,37 +40,21 @@ function ClientApp({
   getAccessToken: () => Promise<string>;
   sidebarFooter: ReactNode;
 }) {
-  const fallbackRegistry = useMemo(() => workflowRegistry(), []);
-  const dynamicRegistryConfig = useMemo(
-    () => dynamicWorkflowRegistryConfig(),
-    [],
+  const registryConfig = useMemo(() => workflowRegistryConfig(), []);
+  const [registry, setRegistry] = useState<WorkflowRegistry>();
+  const [registryError, setRegistryError] = useState<string>();
+  const [worker, setWorker] = useState<string | undefined>(() =>
+    requestedWorker(),
   );
-  const [registry, setRegistry] = useState(fallbackRegistry);
-  const initialConfig = useMemo(
-    () => initialWorkflowConfig(registry),
-    [registry],
-  );
-  const [worker, setWorker] = useState<WorkflowChoice>(initialConfig.worker);
-  const [customWorkflowApiUrl, setCustomWorkflowApiUrl] = useState(
-    initialConfig.customWorkflowApiUrl,
-  );
-  const apiBaseUrl = workflowApiBaseUrl({
-    worker,
-    customWorkflowApiUrl,
-    workflowApiOverride: initialConfig.workflowApiOverride,
-    registry,
-  });
 
   useEffect(() => {
-    if (!dynamicRegistryConfig?.url) return;
     const abort = new AbortController();
+    setRegistryError(undefined);
+
     void getAccessToken()
       .then((accessToken) =>
-        fetch(dynamicRegistryConfig.url, {
-          headers: workflowRegistryHeaders(
-            dynamicRegistryConfig.url,
-            accessToken,
-          ),
+        fetch(registryConfig.url, {
+          headers: workflowRegistryHeaders(registryConfig.url, accessToken),
           signal: abort.signal,
         }),
       )
@@ -91,170 +70,112 @@ function ClientApp({
       .catch((error) => {
         if (!abort.signal.aborted) {
           console.warn("[hylo-client] failed to load workflow registry", error);
+          setRegistry(emptyWorkflowRegistry());
+          setRegistryError(
+            error instanceof Error
+              ? error.message
+              : "Workflow registry could not be loaded.",
+          );
         }
       });
+
     return () => abort.abort();
-  }, [dynamicRegistryConfig, getAccessToken]);
+  }, [getAccessToken, registryConfig]);
 
   useEffect(() => {
-    if (worker === "custom" || worker in registry.workflows) return;
+    if (!registry) return;
+    if (worker && worker in registry.workflows) return;
     setWorker(
-      registry.defaultWorkflow ??
-        Object.keys(registry.workflows)[0] ??
-        "custom",
+      parseWorkflowChoice(requestedWorker(), registry) ??
+        registry.defaultWorkflow ??
+        Object.keys(registry.workflows)[0],
     );
   }, [registry, worker]);
 
   useEffect(() => {
-    writeWorkflowConfigToUrl({
-      worker,
-      customWorkflowApiUrl,
-      workflowApiOverride: initialConfig.workflowApiOverride,
-    });
-  }, [customWorkflowApiUrl, initialConfig.workflowApiOverride, worker]);
+    if (worker) writeWorkflowConfigToUrl(worker);
+  }, [worker]);
+
+  if (!registry) {
+    return <ClientStateMessage>Loading your workers...</ClientStateMessage>;
+  }
+
+  const workflows = Object.entries(registry.workflows);
+  if (workflows.length === 0) {
+    return (
+      <TenantWorkersEmptyState
+        registryError={registryError}
+        sidebarFooter={sidebarFooter}
+      />
+    );
+  }
+
+  const selectedWorker =
+    worker && registry.workflows[worker] ? worker : workflows[0][0];
+  const workflow = registry.workflows[selectedWorker];
 
   return (
     <>
       <WorkflowSinglePage
-        apiBaseUrl={apiBaseUrl}
+        apiBaseUrl={workflow.url}
         sidebarFooter={sidebarFooter}
       />
       <form className="hylo-client-switcher" aria-label="Workflow routing">
         <label>
           <span>Worker</span>
           <select
-            value={worker}
-            onChange={(event) =>
-              setWorker(event.currentTarget.value as WorkflowChoice)
-            }
+            value={selectedWorker}
+            onChange={(event) => setWorker(event.currentTarget.value)}
           >
-            {Object.entries(registry.workflows).map(([id, workflow]) => (
+            {workflows.map(([id, workflow]) => (
               <option key={id} value={id}>
                 {workflow.label ?? labelFromId(id)}
               </option>
             ))}
-            <option value="custom">Custom URL</option>
           </select>
         </label>
-
-        {worker === "custom" ? (
-          <label className="hylo-client-switcher__wide">
-            <span>Workflow API</span>
-            <input
-              value={customWorkflowApiUrl}
-              onChange={(event) =>
-                setCustomWorkflowApiUrl(event.currentTarget.value)
-              }
-              placeholder="https://example.com/api/workflow"
-              type="url"
-            />
-          </label>
-        ) : null}
       </form>
     </>
   );
 }
 
-function initialWorkflowConfig(registry: WorkflowRegistry): {
-  worker: WorkflowChoice;
-  customWorkflowApiUrl: string;
-  workflowApiOverride?: WorkflowApiOverride;
-} {
-  const params = new URLSearchParams(window.location.search);
-  const explicitApiUrl = firstNonEmpty(params.get("workflowApiUrl"));
-  const requestedWorker = parseWorkflowChoice(
-    firstNonEmpty(params.get("worker"), import.meta.env.VITE_HYLO_WORKFLOW),
-    registry,
-  );
-
-  return {
-    worker:
-      explicitApiUrl && !requestedWorker
-        ? "custom"
-        : (requestedWorker ??
-          registry.defaultWorkflow ??
-          Object.keys(registry.workflows)[0] ??
-          "custom"),
-    customWorkflowApiUrl:
-      explicitApiUrl && !requestedWorker ? explicitApiUrl : "",
-    workflowApiOverride:
-      explicitApiUrl && requestedWorker
-        ? { worker: requestedWorker, url: explicitApiUrl }
-        : undefined,
-  };
-}
-
-function workflowApiBaseUrl(config: {
-  worker: WorkflowChoice;
-  customWorkflowApiUrl: string;
-  workflowApiOverride?: WorkflowApiOverride;
-  registry: WorkflowRegistry;
-}): string {
-  if (config.worker === "custom") {
-    return (
-      config.customWorkflowApiUrl.trim() || defaultWorkflowUrl(config.registry)
-    );
-  }
-  if (config.workflowApiOverride?.worker === config.worker) {
-    return config.workflowApiOverride.url;
-  }
+function ClientStateMessage({ children }: { children: ReactNode }) {
   return (
-    config.registry.workflows[config.worker]?.url ??
-    defaultWorkflowUrl(config.registry)
+    <div className="grid min-h-dvh place-items-center bg-background p-6 text-center text-sm text-foreground">
+      {children}
+    </div>
   );
 }
 
-function writeWorkflowConfigToUrl(config: {
-  worker: WorkflowChoice;
-  customWorkflowApiUrl: string;
-  workflowApiOverride?: WorkflowApiOverride;
+function TenantWorkersEmptyState({
+  registryError,
+  sidebarFooter,
+}: {
+  registryError?: string;
+  sidebarFooter: ReactNode;
 }) {
-  const url = new URL(window.location.href);
-
-  if (config.worker === "custom") {
-    url.searchParams.delete("worker");
-    setOrDeleteSearchParam(
-      url.searchParams,
-      "workflowApiUrl",
-      config.customWorkflowApiUrl.trim(),
-    );
-  } else {
-    url.searchParams.set("worker", config.worker);
-    if (config.workflowApiOverride?.worker === config.worker) {
-      url.searchParams.set("workflowApiUrl", config.workflowApiOverride.url);
-    } else {
-      url.searchParams.delete("workflowApiUrl");
-    }
-  }
-
-  window.history.replaceState(null, "", url);
-}
-
-function workflowRegistry(): WorkflowRegistry {
-  const registry = __HYLO_WORKFLOWS__;
-  const params = new URLSearchParams(window.location.search);
-  const workflowApiUrl = firstNonEmpty(params.get("workflowApiUrl"));
-  const worker = parseWorkflowChoice(
-    params.get("worker") ?? undefined,
-    registry,
+  return (
+    <div className="grid min-h-dvh grid-rows-[1fr_auto] bg-background p-6 text-foreground">
+      <div className="grid place-items-center">
+        <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-sm">
+          <h1 className="text-lg font-semibold">No workers deployed</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Deploy a worker for this account from a Hylo workflow project.
+          </p>
+          <pre className="mt-4 overflow-x-auto rounded-md bg-muted p-3 text-left text-xs">
+            <code>pnpm hylo deploy path/to/workflow-project</code>
+          </pre>
+          {registryError ? (
+            <p className="mt-3 text-xs text-destructive">{registryError}</p>
+          ) : null}
+        </div>
+      </div>
+      <div className="w-64 justify-self-start">{sidebarFooter}</div>
+    </div>
   );
-
-  if (!workflowApiUrl || !worker) return registry;
-
-  return {
-    ...registry,
-    defaultWorkflow: worker,
-    workflows: {
-      ...registry.workflows,
-      [worker]: {
-        ...registry.workflows[worker],
-        url: workflowApiUrl,
-      },
-    },
-  };
 }
 
-function dynamicWorkflowRegistryConfig(): { url: string } | undefined {
+function workflowRegistryConfig(): { url: string } {
   const params = new URLSearchParams(window.location.search);
   const tenantId = firstNonEmpty(
     params.get("tenantId"),
@@ -267,7 +188,9 @@ function dynamicWorkflowRegistryConfig(): { url: string } | undefined {
 
   if (explicitUrl) {
     return {
-      url: expandRegistryUrlTemplate(explicitUrl, tenantId),
+      url: tenantId
+        ? explicitUrl.replaceAll("{tenantId}", encodeURIComponent(tenantId))
+        : explicitUrl,
     };
   }
 
@@ -286,11 +209,6 @@ function hyloBackendUrl(): string | undefined {
     /\/+$/,
     "",
   );
-}
-
-function expandRegistryUrlTemplate(url: string, tenantId: string | undefined) {
-  if (!tenantId) return url;
-  return url.replaceAll("{tenantId}", encodeURIComponent(tenantId));
 }
 
 function workflowRegistryHeaders(
@@ -352,9 +270,6 @@ function normalizeWorkflowRegistry(value: unknown): WorkflowRegistry {
       ] satisfies [string, { label?: string; url: string }],
     ];
   });
-  if (entries.length === 0) {
-    throw new Error("Workflow registry must include at least one workflow");
-  }
 
   const defaultWorkflow = (value as { defaultWorkflow?: unknown })
     .defaultWorkflow;
@@ -363,9 +278,13 @@ function normalizeWorkflowRegistry(value: unknown): WorkflowRegistry {
       typeof defaultWorkflow === "string" &&
       entries.some(([id]) => id === defaultWorkflow)
         ? defaultWorkflow
-        : entries[0][0],
+        : entries[0]?.[0],
     workflows: Object.fromEntries(entries),
   };
+}
+
+function emptyWorkflowRegistry(): WorkflowRegistry {
+  return { workflows: {} };
 }
 
 function parseWorkflowChoice(
@@ -374,34 +293,23 @@ function parseWorkflowChoice(
 ): string | undefined {
   if (!value) return undefined;
   if (value in registry.workflows) return value;
-  if (value === "nextjs" && "workflow.nextjs" in registry.workflows) {
-    return "workflow.nextjs";
-  }
-  if (
-    value === "cloudflare" &&
-    "workflow.cloudflareWorker" in registry.workflows
-  ) {
-    return "workflow.cloudflareWorker";
-  }
   const pathId = value.replace(/^\.\//, "").split("/").at(-1);
   if (pathId && pathId in registry.workflows) return pathId;
-  if (pathId === "nextjs" && "workflow.nextjs" in registry.workflows) {
-    return "workflow.nextjs";
-  }
-  if (
-    pathId === "cloudflare-worker" &&
-    "workflow.cloudflareWorker" in registry.workflows
-  ) {
-    return "workflow.cloudflareWorker";
-  }
   return undefined;
 }
 
-function defaultWorkflowUrl(registry: WorkflowRegistry): string {
-  const workflow =
-    registry.workflows[registry.defaultWorkflow ?? ""] ??
-    Object.values(registry.workflows)[0];
-  return workflow?.url ?? "/api/nextjs";
+function requestedWorker(): string | undefined {
+  return firstNonEmpty(
+    new URLSearchParams(window.location.search).get("worker"),
+    import.meta.env.VITE_HYLO_WORKFLOW,
+  );
+}
+
+function writeWorkflowConfigToUrl(worker: string) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("worker", worker);
+  url.searchParams.delete("workflowApiUrl");
+  window.history.replaceState(null, "", url);
 }
 
 function labelFromId(id: string): string {
@@ -418,16 +326,4 @@ function firstNonEmpty(
   ...values: (string | null | undefined)[]
 ): string | undefined {
   return values.map((value) => value?.trim()).find(Boolean);
-}
-
-function setOrDeleteSearchParam(
-  params: URLSearchParams,
-  name: string,
-  value: string | undefined,
-) {
-  if (value) {
-    params.set(name, value);
-  } else {
-    params.delete(name);
-  }
 }
