@@ -1462,7 +1462,9 @@ function resolveWorkOSAuthConfig(
   const clientId = env.WORKOS_CLIENT_ID?.trim();
   if (!clientId) return undefined;
   const apiOrigin = workOSApiOrigin(env.WORKOS_API_HOSTNAME);
-  const issuer = env.WORKOS_ISSUER?.trim() || apiOrigin;
+  const issuer =
+    env.WORKOS_ISSUER?.trim() ||
+    `${apiOrigin}/user_management/${encodeURIComponent(clientId)}`;
   return {
     issuer: workOSIssuerCandidates(issuer),
     jwksUrl:
