@@ -15,8 +15,8 @@ generated migration files.
 
 ## Workers for Platforms provisioning
 
-This backend exposes bearer-protected Workers for Platforms routes under
-`/platform/workers`. Use `Authorization: Bearer $HYLO_API_KEY`.
+This backend exposes bearer-protected deployment routes under
+`/deployments`. Use `Authorization: Bearer $HYLO_API_KEY`.
 
 Required Cloudflare environment variables:
 
@@ -26,19 +26,32 @@ CLOUDFLARE_API_TOKEN=
 CLOUDFLARE_DISPATCH_NAMESPACE=
 ```
 
-Provision or update one tenant Worker:
+Provision or update one tenant workflow deployment:
 
 ```sh
-curl -X POST "$HYLO_BACKEND_URL/platform/workers" \
+curl -X POST "$HYLO_BACKEND_URL/deployments" \
   -H "Authorization: Bearer $HYLO_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"tenantId":"customer-123","moduleCode":"export default { async fetch() { return new Response(\"ok\"); } }"}'
+  -d '{"tenantId":"customer-123","deploymentId":"customer-123","label":"Customer 123","workflowApiUrl":"https://dispatch.example.com/customer-123/api/workflow","moduleCode":"export default { async fetch() { return new Response(\"ok\"); } }"}'
 ```
 
-List tenant Workers with
-`GET /platform/workers?tenantId=customer-123`, delete one Worker with
-`DELETE /platform/workers/:scriptName`, or delete all Workers for a tenant with
-`DELETE /platform/workers?tenantId=customer-123`.
+List tenant deployments with
+`GET /deployments?tenantId=customer-123`, delete one deployment with
+`DELETE /deployments/:deploymentId`, or delete all deployments for a tenant with
+`DELETE /deployments?tenantId=customer-123`.
+
+Provisioned deployments are also recorded in D1 for tenant-driven client routing:
+
+```sh
+GET /tenants/customer-123/deployments
+GET /tenants/customer-123/workflows
+```
+
+The `/workflows` response matches the client workflow registry shape. The
+client can load it by passing `?tenantId=customer-123` or by setting
+`VITE_HYLO_TENANT_ID`. For cross-origin deployments, set
+`VITE_HYLO_WORKFLOW_REGISTRY_URL` to a template such as
+`https://api.example.com/tenants/{tenantId}/workflows`.
 
 From the repo root, deploy this backend target with:
 

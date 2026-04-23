@@ -15,6 +15,7 @@ export {
   oauthHandoffs,
   oauthPending,
   oauthRefreshTokens,
+  workflowDeployments,
   workflowEvents,
   workflowQueueItems,
   workflowRunDocuments,

@@ -7,6 +7,11 @@ CLOUDFLARE_API_TOKEN=
 CLOUDFLARE_DISPATCH_NAMESPACE=
 CLOUDFLARE_WORKER_COMPATIBILITY_DATE=2026-04-19
 
+# Optional. When set, POST /deployments derives workflowApiUrl as
+# $HYLO_WORKER_DISPATCH_BASE_URL/:deploymentId/api/workflow unless the request
+# provides workflowApiUrl explicitly.
+HYLO_WORKER_DISPATCH_BASE_URL=
+
 # Used to build OAuth redirect_uri values. The default is the Hylo dev backend
 # URL, which is useful for providers like Notion that require HTTPS callbacks.
 HYLO_BACKEND_PUBLIC_URL=https://api-worker.hylo.localhost

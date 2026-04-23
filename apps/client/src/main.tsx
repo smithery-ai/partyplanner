@@ -34,7 +34,12 @@ createRoot(root).render(
 );
 
 function ClientApp({ sidebarFooter }: { sidebarFooter: ReactNode }) {
-  const registry = useMemo(() => workflowRegistry(), []);
+  const fallbackRegistry = useMemo(() => workflowRegistry(), []);
+  const dynamicRegistryConfig = useMemo(
+    () => dynamicWorkflowRegistryConfig(),
+    [],
+  );
+  const [registry, setRegistry] = useState(fallbackRegistry);
   const initialConfig = useMemo(
     () => initialWorkflowConfig(registry),
     [registry],
@@ -49,6 +54,39 @@ function ClientApp({ sidebarFooter }: { sidebarFooter: ReactNode }) {
     workflowApiOverride: initialConfig.workflowApiOverride,
     registry,
   });
+
+  useEffect(() => {
+    if (!dynamicRegistryConfig?.url) return;
+    const abort = new AbortController();
+    void fetch(dynamicRegistryConfig.url, {
+      headers: { Accept: "application/json" },
+      signal: abort.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Workflow registry failed with ${response.status}`);
+        }
+        return normalizeWorkflowRegistry(await response.json());
+      })
+      .then((nextRegistry) => {
+        if (!abort.signal.aborted) setRegistry(nextRegistry);
+      })
+      .catch((error) => {
+        if (!abort.signal.aborted) {
+          console.warn("[hylo-client] failed to load workflow registry", error);
+        }
+      });
+    return () => abort.abort();
+  }, [dynamicRegistryConfig]);
+
+  useEffect(() => {
+    if (worker === "custom" || worker in registry.workflows) return;
+    setWorker(
+      registry.defaultWorkflow ??
+        Object.keys(registry.workflows)[0] ??
+        "custom",
+    );
+  }, [registry, worker]);
 
   useEffect(() => {
     writeWorkflowConfigToUrl({
@@ -196,6 +234,75 @@ function workflowRegistry(): WorkflowRegistry {
         url: workflowApiUrl,
       },
     },
+  };
+}
+
+function dynamicWorkflowRegistryConfig(): { url: string } | undefined {
+  const params = new URLSearchParams(window.location.search);
+  const tenantId = firstNonEmpty(
+    params.get("tenantId"),
+    import.meta.env.VITE_HYLO_TENANT_ID,
+  );
+  const explicitUrl = firstNonEmpty(
+    params.get("workflowRegistryUrl"),
+    import.meta.env.VITE_HYLO_WORKFLOW_REGISTRY_URL,
+  );
+
+  if (explicitUrl) {
+    return {
+      url: expandRegistryUrlTemplate(explicitUrl, tenantId),
+    };
+  }
+  if (!tenantId) return undefined;
+  return {
+    url: `/tenants/${encodeURIComponent(tenantId)}/workflows`,
+  };
+}
+
+function expandRegistryUrlTemplate(url: string, tenantId: string | undefined) {
+  if (!tenantId) return url;
+  return url.replaceAll("{tenantId}", encodeURIComponent(tenantId));
+}
+
+function normalizeWorkflowRegistry(value: unknown): WorkflowRegistry {
+  if (!value || typeof value !== "object" || !("workflows" in value)) {
+    throw new Error("Workflow registry must define workflows");
+  }
+  const workflows = (value as { workflows?: unknown }).workflows;
+  if (!workflows || typeof workflows !== "object") {
+    throw new Error("Workflow registry workflows must be an object");
+  }
+
+  const entries = Object.entries(workflows).flatMap(([id, config]) => {
+    if (!config || typeof config !== "object" || !("url" in config)) {
+      return [];
+    }
+    const url = (config as { url?: unknown }).url;
+    if (typeof url !== "string" || !url.trim()) return [];
+    const label = (config as { label?: unknown }).label;
+    return [
+      [
+        id,
+        {
+          ...(typeof label === "string" && label.trim() ? { label } : {}),
+          url: url.trim(),
+        },
+      ] satisfies [string, { label?: string; url: string }],
+    ];
+  });
+  if (entries.length === 0) {
+    throw new Error("Workflow registry must include at least one workflow");
+  }
+
+  const defaultWorkflow = (value as { defaultWorkflow?: unknown })
+    .defaultWorkflow;
+  return {
+    defaultWorkflow:
+      typeof defaultWorkflow === "string" &&
+      entries.some(([id]) => id === defaultWorkflow)
+        ? defaultWorkflow
+        : entries[0][0],
+    workflows: Object.fromEntries(entries),
   };
 }
 

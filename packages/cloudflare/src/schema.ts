@@ -90,3 +90,23 @@ export const oauthRefreshTokens = sqliteTable("oauth_refresh_tokens", {
   valueJson: text("value_json").notNull(),
   createdAt: real("created_at").notNull(),
 });
+
+export const workflowDeployments = sqliteTable(
+  "workflow_deployments",
+  {
+    deploymentId: text("deployment_id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    label: text("label"),
+    workflowApiUrl: text("workflow_api_url"),
+    dispatchNamespace: text("dispatch_namespace").notNull(),
+    tagsJson: text("tags_json").notNull(),
+    createdAt: real("created_at").notNull(),
+    updatedAt: real("updated_at").notNull(),
+  },
+  (table) => [
+    index("workflow_deployments_tenant_id_updated_at_idx").on(
+      table.tenantId,
+      table.updatedAt,
+    ),
+  ],
+);

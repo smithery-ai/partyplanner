@@ -28,6 +28,7 @@ export type BackendAppEnv = {
   HYLO_API_KEY?: string;
   HYLO_BACKEND_PUBLIC_URL?: string;
   HYLO_BROKER_BASE_URL?: string;
+  HYLO_WORKER_DISPATCH_BASE_URL?: string;
   NODE_ENV?: string;
   NOTION_CLIENT_ID?: string;
   NOTION_CLIENT_SECRET?: string;
@@ -38,6 +39,7 @@ export type BackendAppEnv = {
 export function createApp(
   db: WorkflowCloudflareDbLike,
   env: BackendAppEnv = {},
+  deploymentDb?: WorkflowDeploymentRegistryDb,
 ) {
   const adapterOptions = { autoMigrate: false };
   const stateStore = createCloudflareWorkflowStateStore(db, adapterOptions);
@@ -80,7 +82,7 @@ export function createApp(
     }),
   );
 
-  mountWorkerProvisioningApi(app, env, apiKey);
+  mountDeploymentApi(app, env, apiKey, deploymentDb);
 
   return app;
 }
@@ -91,6 +93,7 @@ type CloudflarePlatformConfig = {
   apiToken: string;
   dispatchNamespace: string;
   defaultCompatibilityDate: string;
+  workerDispatchBaseUrl?: string;
 };
 
 type CloudflareEnvelope<T> = {
@@ -103,9 +106,26 @@ type CloudflareEnvelope<T> = {
 
 type PlatformErrorStatus = 400 | 401 | 500 | 502 | 503;
 
-type ProvisionWorkerInput = {
+type WorkflowDeploymentRegistryDb = {
+  prepare(query: string): D1PreparedStatement;
+};
+
+type WorkflowDeploymentRecord = {
   tenantId: string;
-  scriptName: string;
+  deploymentId: string;
+  label?: string;
+  workflowApiUrl?: string;
+  dispatchNamespace: string;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+type ProvisionDeploymentInput = {
+  tenantId: string;
+  deploymentId: string;
+  label?: string;
+  workflowApiUrl?: string;
   moduleName: string;
   moduleCode: string;
   compatibilityDate: string;
@@ -114,18 +134,59 @@ type ProvisionWorkerInput = {
   tags: string[];
 };
 
-function mountWorkerProvisioningApi(
+function mountDeploymentApi(
   app: Hono,
   env: BackendAppEnv,
   apiKey: string,
+  deploymentDb?: WorkflowDeploymentRegistryDb,
 ) {
-  app.get("/platform/workers", async (c) => {
+  app.get("/tenants/:tenantId/deployments", async (c) => {
+    try {
+      const tenantId = parseTenantIdParam(c.req.param("tenantId"));
+      const registry = requireWorkflowDeploymentRegistry(deploymentDb);
+      return c.json({
+        ok: true,
+        tenantId,
+        deployments: await registry.list(tenantId),
+      });
+    } catch (e) {
+      return apiErrorResponse(c, e);
+    }
+  });
+
+  app.get("/tenants/:tenantId/workflows", async (c) => {
+    try {
+      const tenantId = parseTenantIdParam(c.req.param("tenantId"));
+      const registry = requireWorkflowDeploymentRegistry(deploymentDb);
+      const deployments = await registry.list(tenantId);
+      const workflows = Object.fromEntries(
+        deployments
+          .filter((deployment) => deployment.workflowApiUrl)
+          .map((deployment) => [
+            deployment.deploymentId,
+            {
+              ...(deployment.label ? { label: deployment.label } : {}),
+              url: deployment.workflowApiUrl,
+            },
+          ]),
+      );
+      return c.json({
+        defaultWorkflow: Object.keys(workflows)[0],
+        tenantId,
+        workflows,
+      });
+    } catch (e) {
+      return apiErrorResponse(c, e);
+    }
+  });
+
+  app.get("/deployments", async (c) => {
     const unauthorized = requireBearerAuth(c, apiKey);
     if (unauthorized) return unauthorized;
 
     try {
       const config = resolveCloudflarePlatformConfig(env);
-      const tagFilter = parseWorkerTagFilter(c);
+      const tagFilter = parseDeploymentTagFilter(c);
       const suffix = tagFilter
         ? `?tags=${encodeURIComponent(`${tagFilter}:yes`)}`
         : "";
@@ -140,23 +201,23 @@ function mountWorkerProvisioningApi(
       return c.json({
         ok: true,
         namespace: config.dispatchNamespace,
-        workers: response.result ?? [],
+        deployments: response.result ?? [],
         resultInfo: response.result_info,
       });
     } catch (e) {
-      return platformErrorResponse(c, e);
+      return apiErrorResponse(c, e);
     }
   });
 
-  app.post("/platform/workers", async (c) => {
+  app.post("/deployments", async (c) => {
     const unauthorized = requireBearerAuth(c, apiKey);
     if (unauthorized) return unauthorized;
 
     try {
       const config = resolveCloudflarePlatformConfig(env);
       const body = await readJsonBody(c);
-      const input = parseProvisionWorkerInput(body, config);
-      const metadata = createWorkerMetadata(input);
+      const input = parseProvisionDeploymentInput(body, config);
+      const metadata = createDeploymentMetadata(input);
       const formData = new FormData();
       formData.append(
         "metadata",
@@ -176,41 +237,52 @@ function mountWorkerProvisioningApi(
           config.accountId,
         )}/workers/dispatch/namespaces/${encodeURIComponent(
           config.dispatchNamespace,
-        )}/scripts/${encodeURIComponent(input.scriptName)}`,
+        )}/scripts/${encodeURIComponent(input.deploymentId)}`,
         {
           method: "PUT",
           body: formData,
         },
       );
+      if (deploymentDb) {
+        await createWorkflowDeploymentRegistry(deploymentDb).upsert({
+          tenantId: input.tenantId,
+          deploymentId: input.deploymentId,
+          label: input.label,
+          workflowApiUrl: input.workflowApiUrl,
+          dispatchNamespace: config.dispatchNamespace,
+          tags: input.tags,
+        });
+      }
 
       return c.json(
         {
           ok: true,
           tenantId: input.tenantId,
-          scriptName: input.scriptName,
+          deploymentId: input.deploymentId,
           namespace: config.dispatchNamespace,
+          workflowApiUrl: input.workflowApiUrl,
           tags: input.tags,
           result: response.result ?? null,
         },
         201,
       );
     } catch (e) {
-      return platformErrorResponse(c, e);
+      return apiErrorResponse(c, e);
     }
   });
 
-  app.delete("/platform/workers", async (c) => {
+  app.delete("/deployments", async (c) => {
     const unauthorized = requireBearerAuth(c, apiKey);
     if (unauthorized) return unauthorized;
 
     try {
       const config = resolveCloudflarePlatformConfig(env);
-      const tagFilter = parseWorkerTagFilter(c);
+      const tagFilter = parseDeploymentTagFilter(c);
       if (!tagFilter) {
         throw new PlatformApiError(
           400,
           "missing_filter",
-          "Provide tenantId or tag to delete Workers in bulk.",
+          "Provide tenantId or tag to delete deployments in bulk.",
         );
       }
 
@@ -223,6 +295,15 @@ function mountWorkerProvisioningApi(
         )}/scripts?tags=${encodeURIComponent(`${tagFilter}:yes`)}`,
         { method: "DELETE" },
       );
+      if (deploymentDb) {
+        const registry = createWorkflowDeploymentRegistry(deploymentDb);
+        const tenantId = c.req.query("tenantId")?.trim();
+        if (tenantId) {
+          await registry.deleteByTenant(parseTenantIdParam(tenantId));
+        } else {
+          await registry.deleteByTag(tagFilter);
+        }
+      }
 
       return c.json({
         ok: true,
@@ -231,60 +312,65 @@ function mountWorkerProvisioningApi(
         result: response.result ?? null,
       });
     } catch (e) {
-      return platformErrorResponse(c, e);
+      return apiErrorResponse(c, e);
     }
   });
 
-  app.get("/platform/workers/:scriptName", async (c) => {
+  app.get("/deployments/:deploymentId", async (c) => {
     const unauthorized = requireBearerAuth(c, apiKey);
     if (unauthorized) return unauthorized;
 
     try {
       const config = resolveCloudflarePlatformConfig(env);
-      const scriptName = parseScriptNameParam(c.req.param("scriptName"));
+      const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
       const response = await cloudflareApiRequest<unknown>(
         config,
         `/accounts/${encodeURIComponent(
           config.accountId,
         )}/workers/dispatch/namespaces/${encodeURIComponent(
           config.dispatchNamespace,
-        )}/scripts/${encodeURIComponent(scriptName)}`,
+        )}/scripts/${encodeURIComponent(deploymentId)}`,
       );
       return c.json({
         ok: true,
         namespace: config.dispatchNamespace,
-        scriptName,
-        worker: response.result ?? null,
+        deploymentId,
+        deployment: response.result ?? null,
       });
     } catch (e) {
-      return platformErrorResponse(c, e);
+      return apiErrorResponse(c, e);
     }
   });
 
-  app.delete("/platform/workers/:scriptName", async (c) => {
+  app.delete("/deployments/:deploymentId", async (c) => {
     const unauthorized = requireBearerAuth(c, apiKey);
     if (unauthorized) return unauthorized;
 
     try {
       const config = resolveCloudflarePlatformConfig(env);
-      const scriptName = parseScriptNameParam(c.req.param("scriptName"));
+      const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
       const response = await cloudflareApiRequest<unknown>(
         config,
         `/accounts/${encodeURIComponent(
           config.accountId,
         )}/workers/dispatch/namespaces/${encodeURIComponent(
           config.dispatchNamespace,
-        )}/scripts/${encodeURIComponent(scriptName)}`,
+        )}/scripts/${encodeURIComponent(deploymentId)}`,
         { method: "DELETE" },
       );
+      if (deploymentDb) {
+        await createWorkflowDeploymentRegistry(deploymentDb).delete(
+          deploymentId,
+        );
+      }
       return c.json({
         ok: true,
         namespace: config.dispatchNamespace,
-        scriptName,
+        deploymentId,
         result: response.result ?? null,
       });
     } catch (e) {
-      return platformErrorResponse(c, e);
+      return apiErrorResponse(c, e);
     }
   });
 }
@@ -309,7 +395,7 @@ function resolveCloudflarePlatformConfig(
   if (missing.length > 0) {
     throw new PlatformApiError(
       503,
-      "platform_not_configured",
+      "deployments_not_configured",
       `Workers for Platforms provisioning is missing required environment variables: ${missing.join(
         ", ",
       )}.`,
@@ -328,13 +414,14 @@ function resolveCloudflarePlatformConfig(
       env.CLOUDFLARE_API_BASE_URL?.trim().replace(/\/+$/, "") ||
       "https://api.cloudflare.com/client/v4",
     defaultCompatibilityDate,
+    workerDispatchBaseUrl: env.HYLO_WORKER_DISPATCH_BASE_URL?.trim(),
   };
 }
 
-function parseProvisionWorkerInput(
+function parseProvisionDeploymentInput(
   body: unknown,
   config: CloudflarePlatformConfig,
-): ProvisionWorkerInput {
+): ProvisionDeploymentInput {
   if (!isRecord(body)) {
     throw new PlatformApiError(
       400,
@@ -344,11 +431,21 @@ function parseProvisionWorkerInput(
   }
 
   const tenantId = requiredString(body, "tenantId");
-  const scriptName =
-    optionalString(body, "scriptName") ?? scriptNameForTenant(tenantId);
-  assertScriptName(scriptName);
+  const deploymentId =
+    optionalString(body, "deploymentId") ??
+    optionalString(body, "scriptName") ??
+    deploymentIdForTenant(tenantId);
+  assertDeploymentId(deploymentId);
 
-  const moduleName = optionalString(body, "moduleName") ?? `${scriptName}.mjs`;
+  const label = optionalString(body, "label");
+  const workflowApiUrl =
+    optionalString(body, "workflowApiUrl") ??
+    optionalString(body, "url") ??
+    resolveDefaultWorkflowApiUrl(config, deploymentId);
+  if (workflowApiUrl) assertWorkflowApiUrl(workflowApiUrl);
+
+  const moduleName =
+    optionalString(body, "moduleName") ?? `${deploymentId}.mjs`;
   assertModuleName(moduleName);
 
   const moduleCode =
@@ -377,7 +474,9 @@ function parseProvisionWorkerInput(
 
   return {
     tenantId,
-    scriptName,
+    deploymentId,
+    label,
+    workflowApiUrl,
     moduleName,
     moduleCode,
     compatibilityDate,
@@ -387,7 +486,7 @@ function parseProvisionWorkerInput(
   };
 }
 
-function createWorkerMetadata(input: ProvisionWorkerInput) {
+function createDeploymentMetadata(input: ProvisionDeploymentInput) {
   const metadata: Record<string, unknown> = {
     main_module: input.moduleName,
     compatibility_date: input.compatibilityDate,
@@ -435,6 +534,115 @@ async function cloudflareApiRequest<T>(
   return envelope;
 }
 
+function createWorkflowDeploymentRegistry(db: WorkflowDeploymentRegistryDb) {
+  return {
+    async list(tenantId: string): Promise<WorkflowDeploymentRecord[]> {
+      const result = await db
+        .prepare(
+          `select tenant_id, deployment_id, label, workflow_api_url, dispatch_namespace, tags_json, created_at, updated_at
+           from workflow_deployments
+           where tenant_id = ?
+           order by updated_at desc, deployment_id asc`,
+        )
+        .bind(tenantId)
+        .all<WorkflowDeploymentRow>();
+      return (result.results ?? []).map(workflowDeploymentFromRow);
+    },
+
+    async upsert(
+      deployment: Omit<WorkflowDeploymentRecord, "createdAt" | "updatedAt">,
+    ): Promise<void> {
+      const now = Date.now();
+      await db
+        .prepare(
+          `insert into workflow_deployments (
+             deployment_id, tenant_id, label, workflow_api_url, dispatch_namespace, tags_json, created_at, updated_at
+           ) values (?, ?, ?, ?, ?, ?, ?, ?)
+           on conflict(deployment_id) do update set
+             tenant_id = excluded.tenant_id,
+             label = excluded.label,
+             workflow_api_url = excluded.workflow_api_url,
+             dispatch_namespace = excluded.dispatch_namespace,
+             tags_json = excluded.tags_json,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(
+          deployment.deploymentId,
+          deployment.tenantId,
+          deployment.label ?? null,
+          deployment.workflowApiUrl ?? null,
+          deployment.dispatchNamespace,
+          JSON.stringify(deployment.tags),
+          now,
+          now,
+        )
+        .run();
+    },
+
+    async delete(deploymentId: string): Promise<void> {
+      await db
+        .prepare("delete from workflow_deployments where deployment_id = ?")
+        .bind(deploymentId)
+        .run();
+    },
+
+    async deleteByTenant(tenantId: string): Promise<void> {
+      await db
+        .prepare("delete from workflow_deployments where tenant_id = ?")
+        .bind(tenantId)
+        .run();
+    },
+
+    async deleteByTag(tag: string): Promise<void> {
+      await db
+        .prepare(
+          "delete from workflow_deployments where tags_json like ? escape '\\'",
+        )
+        .bind(`%${escapeLikePattern(JSON.stringify(tag))}%`)
+        .run();
+    },
+  };
+}
+
+type WorkflowDeploymentRow = {
+  tenant_id: string;
+  deployment_id: string;
+  label: string | null;
+  workflow_api_url: string | null;
+  dispatch_namespace: string;
+  tags_json: string;
+  created_at: number;
+  updated_at: number;
+};
+
+function workflowDeploymentFromRow(
+  row: WorkflowDeploymentRow,
+): WorkflowDeploymentRecord {
+  return {
+    tenantId: row.tenant_id,
+    deploymentId: row.deployment_id,
+    ...(row.label ? { label: row.label } : {}),
+    ...(row.workflow_api_url ? { workflowApiUrl: row.workflow_api_url } : {}),
+    dispatchNamespace: row.dispatch_namespace,
+    tags: parseJsonArray(row.tags_json),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function requireWorkflowDeploymentRegistry(
+  db: WorkflowDeploymentRegistryDb | undefined,
+) {
+  if (!db) {
+    throw new PlatformApiError(
+      503,
+      "workflow_deployment_registry_unavailable",
+      "Workflow deployment registry storage is not configured.",
+    );
+  }
+  return createWorkflowDeploymentRegistry(db);
+}
+
 async function readJsonBody(c: Context): Promise<unknown> {
   try {
     return await c.req.json();
@@ -454,7 +662,7 @@ function requireBearerAuth(c: Context, apiKey: string): Response | undefined {
   return c.json({ error: "unauthorized" }, 401);
 }
 
-function parseWorkerTagFilter(c: Context): string | undefined {
+function parseDeploymentTagFilter(c: Context): string | undefined {
   const tenantId = c.req.query("tenantId")?.trim();
   const tag = c.req.query("tag")?.trim();
   if (tenantId && tag) {
@@ -470,16 +678,50 @@ function parseWorkerTagFilter(c: Context): string | undefined {
   return tag;
 }
 
-function parseScriptNameParam(scriptName: string | undefined): string {
-  if (!scriptName) {
+function parseDeploymentIdParam(deploymentId: string | undefined): string {
+  if (!deploymentId) {
     throw new PlatformApiError(
       400,
-      "missing_script_name",
-      "A Worker script name is required.",
+      "missing_deployment_id",
+      "A deployment ID is required.",
     );
   }
-  assertScriptName(scriptName);
-  return scriptName;
+  assertDeploymentId(deploymentId);
+  return deploymentId;
+}
+
+function parseTenantIdParam(tenantId: string | undefined): string {
+  const trimmed = tenantId?.trim();
+  if (!trimmed) {
+    throw new PlatformApiError(
+      400,
+      "missing_tenant_id",
+      "A tenant ID is required.",
+    );
+  }
+  return trimmed;
+}
+
+function resolveDefaultWorkflowApiUrl(
+  config: CloudflarePlatformConfig,
+  deploymentId: string,
+): string | undefined {
+  const baseUrl = config.workerDispatchBaseUrl?.replace(/\/+$/, "");
+  if (!baseUrl) return undefined;
+  return `${baseUrl}/${encodeURIComponent(deploymentId)}/api/workflow`;
+}
+
+function assertWorkflowApiUrl(value: string): void {
+  if (value.startsWith("/")) return;
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:" || url.protocol === "http:") return;
+  } catch {}
+  throw new PlatformApiError(
+    400,
+    "invalid_workflow_api_url",
+    "workflowApiUrl must be an absolute HTTP(S) URL or a root-relative path.",
+  );
 }
 
 class PlatformApiError extends Error {
@@ -500,7 +742,7 @@ class PlatformApiError extends Error {
   }
 }
 
-function platformErrorResponse(c: Context, e: unknown): Response {
+function apiErrorResponse(c: Context, e: unknown): Response {
   if (e instanceof PlatformApiError) {
     return c.json(
       {
@@ -617,7 +859,14 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
-function scriptNameForTenant(tenantId: string): string {
+function parseJsonArray(text: string): string[] {
+  const parsed = safeJsonParse(text);
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function deploymentIdForTenant(tenantId: string): string {
   const slug = tenantId
     .toLowerCase()
     .replace(/[^a-z0-9-_]+/g, "-")
@@ -652,12 +901,12 @@ function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values));
 }
 
-function assertScriptName(scriptName: string): void {
-  if (!/^[a-z0-9][a-z0-9-_]{0,62}$/.test(scriptName)) {
+function assertDeploymentId(deploymentId: string): void {
+  if (!/^[a-z0-9][a-z0-9-_]{0,62}$/.test(deploymentId)) {
     throw new PlatformApiError(
       400,
-      "invalid_script_name",
-      "scriptName must be 1-63 lowercase letters, numbers, dashes, or underscores, and start with a letter or number.",
+      "invalid_deployment_id",
+      "deploymentId must be 1-63 lowercase letters, numbers, dashes, or underscores, and start with a letter or number.",
     );
   }
 }
@@ -699,6 +948,10 @@ function assertWorkerTags(tags: string[]): void {
       );
     }
   }
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
 function collectCuratedProviders(

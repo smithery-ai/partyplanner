@@ -7,6 +7,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const hyloConfig = readHyloConfig();
+const backendCloudflareTarget = targetUrl("backend.cloudflare");
 const nextjsTarget = targetUrl("workflow.nextjs");
 const cloudflareWorkerTarget = targetUrl("workflow.cloudflareWorker");
 
@@ -34,6 +35,18 @@ export default defineConfig({
         /^\/api\/cloudflare(?=\/|$)/,
       ),
       "/api": workflowProxy(nextjsTarget, /^\/api(?=\/|$)/),
+      "/deployments": {
+        target: backendCloudflareTarget,
+        changeOrigin: true,
+        secure: false,
+        agent: hyloLocalAgent(backendCloudflareTarget),
+      },
+      "/tenants": {
+        target: backendCloudflareTarget,
+        changeOrigin: true,
+        secure: false,
+        agent: hyloLocalAgent(backendCloudflareTarget),
+      },
       "/user_management": {
         target: "https://api.workos.com",
         changeOrigin: true,
