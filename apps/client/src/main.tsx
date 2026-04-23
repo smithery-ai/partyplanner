@@ -16,6 +16,11 @@ type WorkflowRegistry = {
   >;
 };
 
+type BackendTarget = "local" | "hosted";
+
+const DEFAULT_HOSTED_BACKEND_URL = "https://hylo-backend.smithery.workers.dev";
+const BACKEND_TARGET_STORAGE_KEY = "hylo.client.backendTarget";
+
 const root = document.getElementById("root");
 
 if (!root) {
@@ -40,7 +45,15 @@ function ClientApp({
   getAccessToken: () => Promise<string>;
   sidebarFooter: ReactNode;
 }) {
-  const registryConfig = useMemo(() => workflowRegistryConfig(), []);
+  const showBackendSwitcher = shouldShowBackendSwitcher();
+  const [backendTarget, setBackendTarget] = useState<BackendTarget>(() =>
+    requestedBackendTarget(),
+  );
+  const registryBackendTarget = showBackendSwitcher ? backendTarget : undefined;
+  const registryConfig = useMemo(
+    () => workflowRegistryConfig(registryBackendTarget),
+    [registryBackendTarget],
+  );
   const [registry, setRegistry] = useState<WorkflowRegistry>();
   const [registryError, setRegistryError] = useState<string>();
   const [worker, setWorker] = useState<string | undefined>(() =>
@@ -49,12 +62,17 @@ function ClientApp({
 
   useEffect(() => {
     const abort = new AbortController();
+    setRegistry(undefined);
     setRegistryError(undefined);
 
     void getAccessToken()
       .then((accessToken) =>
         fetch(registryConfig.url, {
-          headers: workflowRegistryHeaders(registryConfig.url, accessToken),
+          headers: workflowRegistryHeaders(
+            registryConfig.url,
+            accessToken,
+            registryConfig.backendUrl,
+          ),
           signal: abort.signal,
         }),
       )
@@ -83,6 +101,21 @@ function ClientApp({
   }, [getAccessToken, registryConfig]);
 
   useEffect(() => {
+    if (showBackendSwitcher) writeBackendTargetConfig(backendTarget);
+  }, [backendTarget, showBackendSwitcher]);
+
+  const switcher = (
+    <ClientSwitcher
+      showBackendSwitcher={showBackendSwitcher}
+      backendTarget={backendTarget}
+      onBackendTargetChange={setBackendTarget}
+      selectedWorker={worker}
+      onWorkerChange={setWorker}
+      workflows={registry ? Object.entries(registry.workflows) : []}
+    />
+  );
+
+  useEffect(() => {
     if (!registry) return;
     if (worker && worker in registry.workflows) return;
     setWorker(
@@ -97,16 +130,24 @@ function ClientApp({
   }, [worker]);
 
   if (!registry) {
-    return <ClientStateMessage>Loading your workers...</ClientStateMessage>;
+    return (
+      <>
+        <ClientStateMessage>Loading your workers...</ClientStateMessage>
+        {switcher}
+      </>
+    );
   }
 
   const workflows = Object.entries(registry.workflows);
   if (workflows.length === 0) {
     return (
-      <TenantWorkersEmptyState
-        registryError={registryError}
-        sidebarFooter={sidebarFooter}
-      />
+      <>
+        <TenantWorkersEmptyState
+          registryError={registryError}
+          sidebarFooter={sidebarFooter}
+        />
+        {switcher}
+      </>
     );
   }
 
@@ -117,25 +158,68 @@ function ClientApp({
   return (
     <>
       <WorkflowSinglePage
-        apiBaseUrl={workflow.url}
+        apiBaseUrl={workflowApiUrl(workflow.url, registryConfig.backendUrl)}
         sidebarFooter={sidebarFooter}
       />
-      <form className="hylo-client-switcher" aria-label="Workflow routing">
+      {switcher}
+    </>
+  );
+}
+
+function ClientSwitcher({
+  showBackendSwitcher,
+  backendTarget,
+  onBackendTargetChange,
+  selectedWorker,
+  onWorkerChange,
+  workflows,
+}: {
+  showBackendSwitcher: boolean;
+  backendTarget: BackendTarget;
+  onBackendTargetChange: (target: BackendTarget) => void;
+  selectedWorker: string | undefined;
+  onWorkerChange: (worker: string) => void;
+  workflows: [string, { label?: string; url: string }][];
+}) {
+  const workerValue = workflows.some(([id]) => id === selectedWorker)
+    ? selectedWorker
+    : "";
+
+  return (
+    <form className="hylo-client-switcher" aria-label="Workflow routing">
+      {showBackendSwitcher ? (
         <label>
-          <span>Worker</span>
+          <span>Backend</span>
           <select
-            value={selectedWorker}
-            onChange={(event) => setWorker(event.currentTarget.value)}
+            value={backendTarget}
+            onChange={(event) =>
+              onBackendTargetChange(event.currentTarget.value as BackendTarget)
+            }
           >
-            {workflows.map(([id, workflow]) => (
+            <option value="local">Local D1</option>
+            <option value="hosted">Hosted</option>
+          </select>
+        </label>
+      ) : null}
+      <label>
+        <span>Worker</span>
+        <select
+          value={workerValue}
+          disabled={workflows.length === 0}
+          onChange={(event) => onWorkerChange(event.currentTarget.value)}
+        >
+          {workflows.length > 0 ? (
+            workflows.map(([id, workflow]) => (
               <option key={id} value={id}>
                 {workflow.label ?? labelFromId(id)}
               </option>
-            ))}
-          </select>
-        </label>
-      </form>
-    </>
+            ))
+          ) : (
+            <option value="">No workers</option>
+          )}
+        </select>
+      </label>
+    </form>
   );
 }
 
@@ -175,7 +259,10 @@ function TenantWorkersEmptyState({
   );
 }
 
-function workflowRegistryConfig(): { url: string } {
+function workflowRegistryConfig(backendTarget: BackendTarget | undefined): {
+  url: string;
+  backendUrl?: string;
+} {
   const params = new URLSearchParams(window.location.search);
   const tenantId = firstNonEmpty(
     params.get("tenantId"),
@@ -194,12 +281,18 @@ function workflowRegistryConfig(): { url: string } {
     };
   }
 
-  const backendUrl = hyloBackendUrl();
+  const backendUrl =
+    backendTarget === "local"
+      ? undefined
+      : backendTarget === "hosted"
+        ? hostedBackendUrl()
+        : hyloBackendUrl();
   const registryPath = tenantId
     ? `/tenants/${encodeURIComponent(tenantId)}/workflows`
     : "/tenants/me/workflows";
 
   return {
+    backendUrl,
     url: backendUrl ? `${backendUrl}${registryPath}` : registryPath,
   };
 }
@@ -211,12 +304,25 @@ function hyloBackendUrl(): string | undefined {
   );
 }
 
+function hostedBackendUrl(): string {
+  return (
+    firstNonEmpty(
+      import.meta.env.VITE_HYLO_HOSTED_BACKEND_URL,
+      DEFAULT_HOSTED_BACKEND_URL,
+    ) ?? DEFAULT_HOSTED_BACKEND_URL
+  ).replace(/\/+$/, "");
+}
+
 function workflowRegistryHeaders(
   url: string,
   accessToken: string,
+  backendUrl: string | undefined,
 ): HeadersInit {
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (isSameOriginUrl(url) || isHyloBackendUrl(url)) {
+  if (
+    isSameOriginUrl(url) ||
+    isBackendUrl(url, backendUrl ?? hyloBackendUrl())
+  ) {
     headers.Authorization = `Bearer ${accessToken}`;
   }
   return headers;
@@ -231,8 +337,7 @@ function isSameOriginUrl(value: string): boolean {
   }
 }
 
-function isHyloBackendUrl(value: string): boolean {
-  const backendUrl = hyloBackendUrl();
+function isBackendUrl(value: string, backendUrl: string | undefined): boolean {
   if (!backendUrl) return false;
   try {
     return (
@@ -242,6 +347,16 @@ function isHyloBackendUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function workflowApiUrl(apiBaseUrl: string, backendUrl: string | undefined) {
+  if (!backendUrl) return apiBaseUrl;
+
+  const url = new URL(apiBaseUrl, window.location.origin);
+  url.searchParams.set("backendUrl", backendUrl);
+  return url.origin === window.location.origin
+    ? `${url.pathname}${url.search}${url.hash}`
+    : url.toString();
 }
 
 function normalizeWorkflowRegistry(value: unknown): WorkflowRegistry {
@@ -305,10 +420,34 @@ function requestedWorker(): string | undefined {
   );
 }
 
+function requestedBackendTarget(): BackendTarget {
+  const requested = firstNonEmpty(
+    new URLSearchParams(window.location.search).get("backend"),
+    readLocalStorage(BACKEND_TARGET_STORAGE_KEY),
+  );
+  return requested === "hosted" ? "hosted" : "local";
+}
+
+function shouldShowBackendSwitcher(): boolean {
+  if (!import.meta.env.DEV) return false;
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
 function writeWorkflowConfigToUrl(worker: string) {
   const url = new URL(window.location.href);
   url.searchParams.set("worker", worker);
   url.searchParams.delete("workflowApiUrl");
+  window.history.replaceState(null, "", url);
+}
+
+function writeBackendTargetConfig(target: BackendTarget) {
+  writeLocalStorage(BACKEND_TARGET_STORAGE_KEY, target);
+  const url = new URL(window.location.href);
+  if (target === "hosted") {
+    url.searchParams.set("backend", target);
+  } else {
+    url.searchParams.delete("backend");
+  }
   window.history.replaceState(null, "", url);
 }
 
@@ -326,4 +465,20 @@ function firstNonEmpty(
   ...values: (string | null | undefined)[]
 ): string | undefined {
   return values.map((value) => value?.trim()).find(Boolean);
+}
+
+function readLocalStorage(key: string): string | undefined {
+  try {
+    return window.localStorage.getItem(key) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeLocalStorage(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Storage is best effort; the URL remains the source of truth.
+  }
 }

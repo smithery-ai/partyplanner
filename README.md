@@ -220,7 +220,10 @@ pnpm dev
 Open the Vite URL printed by `apps/client`.
 
 `pnpm dev` runs the Cloudflare backend, Cloudflare workflow example, and client
-through their package-owned `dev` scripts.
+through their package-owned `dev` scripts. It chooses available local ports for
+the Cloudflare services, starting from `8787` for the backend and `8788` for
+the workflow example. Set `HYLO_BACKEND_PORT` or
+`HYLO_CLOUDFLARE_WORKER_PORT` to force specific ports.
 
 ### Hylo CLI
 

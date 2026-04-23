@@ -33,6 +33,11 @@ In local dev, Vite proxies `/user_management/*` to `https://api.workos.com`.
 This keeps browser code-exchange requests same-origin while preserving WorkOS
 as the upstream API.
 
+In local dev, the bottom-right Backend switcher controls whether the workflow
+registry is loaded from the local D1-backed Worker or from the hosted backend.
+The hosted option defaults to `https://hylo-backend.smithery.workers.dev`; set
+`VITE_HYLO_HOSTED_BACKEND_URL` to point it at a different backend.
+
 For deployed environments, set the backend URL in Vercel:
 
 ```sh

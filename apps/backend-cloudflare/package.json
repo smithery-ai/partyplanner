@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --ip 127.0.0.1 --port 8787 --inspector-port 9230",
+    "dev": "wrangler dev --ip 127.0.0.1 --port ${HYLO_BACKEND_PORT:-8787} --inspector-port ${HYLO_BACKEND_INSPECTOR_PORT:-9230}",
     "deploy": "pnpm build && wrangler deploy",
     "db:generate": "pnpm -C ../../packages/cloudflare db:generate",
     "db:migrate": "pnpm -C ../../packages/cloudflare build && wrangler d1 migrations apply hylo-backend --local",
