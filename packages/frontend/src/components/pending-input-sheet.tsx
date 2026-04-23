@@ -67,10 +67,9 @@ export function PendingInputSheet({
   const actionLabel = action?.label;
   const label = workflowInputLabel(input);
   const title = formTitle ?? (isSecret ? "Pending secret" : label);
+  const rawSecretValue = inputValues[input.id];
   const secretValue =
-    isSecret && typeof inputValues[input.id] === "string"
-      ? inputValues[input.id]
-      : "";
+    isSecret && typeof rawSecretValue === "string" ? rawSecretValue : "";
 
   return (
     <>
