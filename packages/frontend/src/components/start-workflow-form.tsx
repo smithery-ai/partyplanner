@@ -31,7 +31,9 @@ export function StartWorkflowForm({
   onSubmitSeed: (inputId: string) => void;
   error?: string;
 }) {
-  const immediate = inputs.filter((input) => input.kind === "input");
+  const immediate = inputs.filter(
+    (input) => input.kind === "input" && !input.internal,
+  );
   const dataInputs = immediate.filter((input) => !input.secret);
   const secrets = immediate.filter((input) => input.secret);
 

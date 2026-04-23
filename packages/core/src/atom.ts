@@ -6,6 +6,7 @@ import type { AtomRuntimeContext, Get, RequestIntervention } from "./types";
 export type AtomOpts = {
   name?: string;
   description?: string;
+  internal?: boolean;
 };
 
 export function atom<T>(
@@ -26,6 +27,7 @@ export function atom<T>(
       context: AtomRuntimeContext,
     ) => unknown,
     description: opts?.description,
+    internal: opts?.internal,
   });
   return makeHandle<T>("atom", id) as Atom<T>;
 }

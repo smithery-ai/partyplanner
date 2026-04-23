@@ -12,12 +12,14 @@ export type WorkflowInputManifest = {
   schema: JsonSchema;
   resolved?: boolean;
   errorMessage?: string;
+  internal?: boolean;
 };
 
 export type WorkflowStepManifest = {
   id: string;
   kind: "atom" | "action";
   description?: string;
+  internal?: boolean;
 };
 
 export type WorkflowManifest = {
@@ -63,16 +65,19 @@ export function buildWorkflowManifest(args: {
             errorMessage: input.errorMessage,
           }
         : {}),
+      ...(input.internal ? { internal: true } : {}),
     })),
     atoms: args.registry.allAtoms().map((a) => ({
       id: a.id,
       kind: "atom",
       description: a.description,
+      ...(a.internal ? { internal: true } : {}),
     })),
     actions: args.registry.allActions().map((a) => ({
       id: a.id,
       kind: "action",
       description: a.description,
+      ...(a.internal ? { internal: true } : {}),
     })),
   };
 }

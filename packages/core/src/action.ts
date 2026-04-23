@@ -6,6 +6,7 @@ import type { AtomRuntimeContext, Get, RequestIntervention } from "./types";
 export type ActionOpts = {
   name?: string;
   description?: string;
+  internal?: boolean;
 };
 
 // Actions are non-idempotent side effects (POST/PUT/DELETE-shaped work). Unlike
@@ -30,6 +31,7 @@ export function action<T>(
       context: AtomRuntimeContext,
     ) => unknown,
     description: opts?.description,
+    internal: opts?.internal,
   });
   return makeHandle<T>("action", id) as Action<T>;
 }

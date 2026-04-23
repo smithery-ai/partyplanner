@@ -416,6 +416,26 @@ function inputDefinition(
   return input ? { kind: input.kind, secret: input.secret } : undefined;
 }
 
+function isInternalNode(
+  registry: Registry,
+  manifest: WorkflowManifest | undefined,
+  id: string,
+): boolean {
+  const regInput = registry.getInput(id);
+  if (regInput) return Boolean(regInput.internal);
+  const regAtom = registry.getAtom(id);
+  if (regAtom) return Boolean(regAtom.internal);
+  const regAction = registry.getAction(id);
+  if (regAction) return Boolean(regAction.internal);
+  const mInput = manifest?.inputs.find((item) => item.id === id);
+  if (mInput) return Boolean(mInput.internal);
+  const mAtom = manifest?.atoms.find((item) => item.id === id);
+  if (mAtom) return Boolean(mAtom.internal);
+  const mAction = manifest?.actions.find((item) => item.id === id);
+  if (mAction) return Boolean(mAction.internal);
+  return false;
+}
+
 function flowTopology(
   nodeIds: readonly string[],
   edges: readonly { source: string; target: string }[],
@@ -646,6 +666,7 @@ function visibleWorkflowNodeIds(
     ...(queue?.running ?? []).map((item) => queueNodeId(item.event)),
   ]);
   return workflowNodeOrder(registry, manifest, runState, queue).filter((id) => {
+    if (isInternalNode(registry, manifest, id)) return false;
     const rec = runState.nodes[id];
     if (rec && rec.status !== "not_reached") return true;
     if (queuedIds.has(id)) return true;

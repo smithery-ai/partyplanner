@@ -10,6 +10,7 @@ export type InputDef = {
   secret?: boolean;
   secretValue?: string;
   errorMessage?: string;
+  internal?: boolean;
 };
 
 type StepFn = (
@@ -23,6 +24,7 @@ export type AtomDef = {
   id: string;
   fn: StepFn;
   description?: string;
+  internal?: boolean;
 };
 
 export type ActionDef = {
@@ -30,6 +32,7 @@ export type ActionDef = {
   id: string;
   fn: StepFn;
   description?: string;
+  internal?: boolean;
 };
 
 export type StepDef = AtomDef | ActionDef;
