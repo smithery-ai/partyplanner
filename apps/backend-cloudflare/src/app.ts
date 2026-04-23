@@ -1,14 +1,25 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import {
   createCloudflareBrokerStore,
+  createCloudflareWebhookSubscriptionStore,
   createCloudflareWorkflowQueue,
   createCloudflareWorkflowStateStore,
   type WorkflowCloudflareDbLike,
 } from "@workflow/cloudflare";
 import { notionProvider } from "@workflow/integrations-notion";
+import {
+  slackProvider,
+  slackWebhookProvider,
+} from "@workflow/integrations-slack";
 import { spotifyProvider } from "@workflow/integrations-spotify";
-import type { BrokerProviderRegistration } from "@workflow/oauth-broker";
-import { createOAuthBrokerServer } from "@workflow/oauth-broker";
+import type {
+  BrokerProviderRegistration,
+  WebhookProviderRegistration,
+} from "@workflow/oauth-broker";
+import {
+  createOAuthBrokerServer,
+  createWebhookIngressServer,
+} from "@workflow/oauth-broker";
 import {
   createRemoteRuntimeOpenApiDocument,
   createRemoteRuntimeServer,
@@ -70,6 +81,33 @@ export function createApp(
       authenticateAppToken: (token) =>
         token === apiKey ? { appId: "shared" } : undefined,
       providers: curatedProviders,
+    }),
+  );
+
+  const webhookProviders = collectWebhookProviders(env);
+  app.route(
+    "/webhooks",
+    createWebhookIngressServer({
+      store: createCloudflareWebhookSubscriptionStore(db, adapterOptions),
+      authenticateAppToken: (token) =>
+        token === apiKey ? { appId: "shared" } : undefined,
+      providers: webhookProviders,
+      dispatch: async (deploymentId, body) => {
+        if (!env.DISPATCHER) {
+          return new Response(
+            JSON.stringify({
+              error: "worker_dispatch_not_configured",
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        const workerRequest = new Request("https://worker/runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        return env.DISPATCHER.get(deploymentId).fetch(workerRequest);
+      },
     }),
   );
 
@@ -172,6 +210,7 @@ function collectCuratedProviders(
   const catalog = [
     { spec: spotifyProvider, envPrefix: "SPOTIFY" },
     { spec: notionProvider, envPrefix: "NOTION" },
+    { spec: slackProvider, envPrefix: "SLACK" },
   ];
   for (const { spec, envPrefix } of catalog) {
     const rawClientId = env[`${envPrefix}_CLIENT_ID` as keyof BackendAppEnv];
@@ -182,6 +221,23 @@ function collectCuratedProviders(
       typeof rawClientSecret === "string" ? rawClientSecret : undefined;
     if (clientId && clientSecret) {
       registrations.push({ spec, clientId, clientSecret });
+    }
+  }
+  return registrations;
+}
+
+function collectWebhookProviders(
+  env: BackendAppEnv,
+): WebhookProviderRegistration[] {
+  const registrations: WebhookProviderRegistration[] = [];
+  const catalog = [
+    { spec: slackWebhookProvider, envKey: "SLACK_SIGNING_SECRET" },
+  ];
+  for (const { spec, envKey } of catalog) {
+    const raw = env[envKey as keyof BackendAppEnv];
+    const signingSecret = typeof raw === "string" ? raw : undefined;
+    if (signingSecret) {
+      registrations.push({ spec, signingSecret });
     }
   }
   return registrations;

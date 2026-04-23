@@ -1,5 +1,5 @@
 {
-  "name": "@workflow/oauth-broker",
+  "name": "@workflow/integrations-webhook",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -15,17 +15,8 @@
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
-  "dependencies": {
-    "@workflow/integrations-oauth": "workspace:*",
-    "@workflow/integrations-webhook": "workspace:*",
-    "hono": "^4.12.14",
-    "zod": "^4.3.6"
-  },
   "devDependencies": {
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"
-  },
-  "peerDependencies": {
-    "zod": "^4.3.6"
   }
 }

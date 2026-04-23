@@ -2,11 +2,18 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { notionProvider } from "@workflow/integrations-notion";
+import {
+  slackProvider,
+  slackWebhookProvider,
+} from "@workflow/integrations-slack";
 import { spotifyProvider } from "@workflow/integrations-spotify";
 import {
   type BrokerProviderRegistration,
   createInMemoryBrokerStore,
+  createInMemoryWebhookSubscriptionStore,
   createOAuthBrokerServer,
+  createWebhookIngressServer,
+  type WebhookProviderRegistration,
 } from "@workflow/oauth-broker";
 import {
   createPostgresWorkflowQueue,
@@ -71,6 +78,25 @@ export function createApp(options: BackendNodeAppOptions = {}) {
     }),
   );
 
+  const webhookProviders = collectWebhookProviders();
+  const workerUrl = resolveWorkerUrl();
+  app.route(
+    "/webhooks",
+    createWebhookIngressServer({
+      store: createInMemoryWebhookSubscriptionStore(),
+      authenticateAppToken: (token) =>
+        token === apiKey ? { appId: "shared" } : undefined,
+      providers: webhookProviders,
+      dispatch: async (_deploymentId, body) => {
+        return fetch(`${workerUrl}/runs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      },
+    }),
+  );
+
   return app;
 }
 
@@ -88,6 +114,7 @@ function collectCuratedProviders(): BrokerProviderRegistration[] {
   const catalog = [
     { spec: spotifyProvider, envPrefix: "SPOTIFY" },
     { spec: notionProvider, envPrefix: "NOTION" },
+    { spec: slackProvider, envPrefix: "SLACK" },
   ];
   for (const { spec, envPrefix } of catalog) {
     const clientId = process.env[`${envPrefix}_CLIENT_ID`];
@@ -97,6 +124,26 @@ function collectCuratedProviders(): BrokerProviderRegistration[] {
     }
   }
   return registrations;
+}
+
+function collectWebhookProviders(): WebhookProviderRegistration[] {
+  const registrations: WebhookProviderRegistration[] = [];
+  const catalog = [
+    { spec: slackWebhookProvider, envKey: "SLACK_SIGNING_SECRET" },
+  ];
+  for (const { spec, envKey } of catalog) {
+    const signingSecret = process.env[envKey];
+    if (signingSecret) {
+      registrations.push({ spec, signingSecret });
+    }
+  }
+  return registrations;
+}
+
+function resolveWorkerUrl(): string {
+  const explicit = process.env.HYLO_WORKER_URL?.trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+  return `http://localhost:${process.env.HYLO_CLOUDFLARE_WORKER_PORT ?? 8686}`;
 }
 
 // Stable dev default — matches the worker-side default in
