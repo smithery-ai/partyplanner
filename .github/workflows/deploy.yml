@@ -53,7 +53,7 @@ jobs:
           exit "$missing"
 
       - name: Deploy backend worker
-        run: pnpm --filter backend-cloudflare run deploy
+        run: pnpm turbo run deploy --filter=backend-cloudflare
 
       - name: Deploy client app
         working-directory: apps/client
