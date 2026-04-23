@@ -12,10 +12,16 @@
   },
   "scripts": {
     "build": "tsc",
+    "spec:check": "quint typecheck specs/core-runtime.qnt",
+    "spec:test": "quint test specs/core-runtime.qnt --verbosity=0",
+    "spec:run": "quint run specs/core-runtime.qnt --max-samples=2000 --max-steps=30 --verbosity=0 --invariants typeOK terminalStepsAreNotQueued waitersAreRunnable blockedStepsAreWakeable waitingStepsAreWakeable deferredInputsDoNotSkip secretsStayRedacted actionsArePullOnly actionsDoNotReexecute atomErrorsPropagate startedRunsHavePayloads processedEventsStayValid sourceInputChangesDirtyDerivedAtoms promptCallbacksOnlyResumeFreshRequests webhookReentryIsIdempotentByEventId",
+    "spec:verify": "JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@17} PATH=\"${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}/bin:$PATH\" quint verify specs/core-runtime.qnt --max-steps=1 --invariants typeOK terminalStepsAreNotQueued waitersAreRunnable blockedStepsAreWakeable waitingStepsAreWakeable deferredInputsDoNotSkip secretsStayRedacted actionsArePullOnly actionsDoNotReexecute atomErrorsPropagate startedRunsHavePayloads processedEventsStayValid sourceInputChangesDirtyDerivedAtoms promptCallbacksOnlyResumeFreshRequests webhookReentryIsIdempotentByEventId",
+    "spec:verify:deep": "JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@17} PATH=\"${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}/bin:$PATH\" quint verify specs/core-runtime.qnt --max-steps=14 --invariants typeOK terminalStepsAreNotQueued waitersAreRunnable blockedStepsAreWakeable waitingStepsAreWakeable deferredInputsDoNotSkip secretsStayRedacted actionsArePullOnly actionsDoNotReexecute atomErrorsPropagate startedRunsHavePayloads processedEventsStayValid sourceInputChangesDirtyDerivedAtoms promptCallbacksOnlyResumeFreshRequests webhookReentryIsIdempotentByEventId",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@informalsystems/quint": "^0.32.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0",
     "zod": "^4.3.6"
