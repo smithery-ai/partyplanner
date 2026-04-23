@@ -1,5 +1,12 @@
 HYLO_API_KEY=local-dev-hylo-api-key
 
+# Workers for Platforms provisioning API. The API token needs Workers Scripts
+# Write for the account that owns the dispatch namespace.
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_DISPATCH_NAMESPACE=
+CLOUDFLARE_WORKER_COMPATIBILITY_DATE=2026-04-19
+
 # Used to build OAuth redirect_uri values. The default is the Hylo dev backend
 # URL, which is useful for providers like Notion that require HTTPS callbacks.
 HYLO_BACKEND_PUBLIC_URL=https://api-worker.hylo.localhost

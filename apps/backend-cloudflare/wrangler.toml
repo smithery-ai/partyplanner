@@ -2,6 +2,11 @@ name = "hylo-backend"
 main = "src/index.ts"
 compatibility_date = "2026-04-19"
 
+[vars]
+CLOUDFLARE_ACCOUNT_ID = "c4cf21d8a5e8878bc3c92708b1f80193"
+CLOUDFLARE_DISPATCH_NAMESPACE = "hylo-tenants"
+CLOUDFLARE_WORKER_COMPATIBILITY_DATE = "2026-04-19"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "hylo-backend"
