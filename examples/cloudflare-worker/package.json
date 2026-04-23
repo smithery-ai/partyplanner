@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "hylo-dev dev workflow.cloudflareWorker",
-    "deploy": "hylo-dev deploy remote workflow.cloudflareWorker",
+    "dev": "wrangler dev --ip 127.0.0.1 --port 8788 --inspector-port 9231 --var HYLO_BACKEND_URL:${HYLO_BACKEND_URL:-http://127.0.0.1:8787}",
+    "deploy": "hylo deploy",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
-    "hylo": "workspace:*",
+    "@hylo/cli": "workspace:*",
     "typescript": "~6.0.2",
     "wrangler": "^4.53.0"
   }

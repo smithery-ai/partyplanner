@@ -1,6 +1,6 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import type { Hono } from "hono";
+import type { Env, Hono, Schema } from "hono";
 
 export type RemoteRuntimeOpenApiOptions = {
   title?: string;
@@ -10,9 +10,17 @@ export type RemoteRuntimeOpenApiOptions = {
   swaggerPath?: string;
   servers?: { url: string; description?: string }[];
   includeRootHealth?: boolean;
+  extraTags?: { name: string; description?: string }[];
+  extraComponents?: Record<string, unknown>;
+  extraPaths?: Record<string, unknown>;
 };
 
 export type RemoteRuntimeRoutes = ReturnType<typeof createRemoteRuntimeRoutes>;
+
+type OpenApiDocument = {
+  tags?: { name: string; description?: string }[];
+  paths?: Record<string, unknown>;
+} & Record<string, unknown>;
 
 const JsonContentType = "application/json";
 
@@ -353,7 +361,7 @@ export function createRemoteRuntimeOpenApiDocument(
 ): object {
   const app = createRemoteRuntimeOpenApiApp(options);
 
-  return app.getOpenAPIDocument({
+  const document = app.getOpenAPIDocument({
     openapi: "3.0.3",
     info: {
       title: options.title ?? "Hylo Backend API",
@@ -368,14 +376,63 @@ export function createRemoteRuntimeOpenApiDocument(
       { name: "Events" },
       { name: "Documents" },
       { name: "Queue" },
+      ...(options.extraTags ?? []),
     ],
-  });
+  }) as unknown as OpenApiDocument;
+
+  const hasExtraComponents =
+    options.extraComponents && Object.keys(options.extraComponents).length > 0;
+  const hasExtraPaths =
+    options.extraPaths && Object.keys(options.extraPaths).length > 0;
+
+  if (!hasExtraComponents && !hasExtraPaths) {
+    return document;
+  }
+
+  return {
+    ...document,
+    ...(hasExtraComponents
+      ? {
+          components: mergeOpenApiComponents(
+            (document.components as Record<string, unknown>) ?? {},
+            options.extraComponents ?? {},
+          ),
+        }
+      : {}),
+    ...(hasExtraPaths
+      ? {
+          paths: {
+            ...(document.paths ?? {}),
+            ...options.extraPaths,
+          },
+        }
+      : {}),
+  };
+}
+
+function mergeOpenApiComponents(
+  base: Record<string, unknown>,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(extra)) {
+    if (isRecord(merged[key]) && isRecord(value)) {
+      merged[key] = { ...merged[key], ...value };
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function mountRemoteRuntimeOpenApi(
-  app: Hono,
+  app: Hono<Env, Schema, string>,
   options: RemoteRuntimeOpenApiOptions = {},
-): Hono {
+): Hono<Env, Schema, string> {
   const openApiPath = normalizePath(options.openApiPath ?? "/openapi.json");
   const swaggerPath = normalizePath(options.swaggerPath ?? "/swagger");
 

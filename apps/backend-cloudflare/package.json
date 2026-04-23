@@ -4,12 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "hylo-dev dev backend.cloudflare",
-    "deploy": "hylo-dev deploy remote backend.cloudflare",
+    "dev": "wrangler dev --ip 127.0.0.1 --port 8787 --inspector-port 9230",
+    "deploy": "pnpm build && wrangler deploy",
     "db:generate": "pnpm -C ../../packages/cloudflare db:generate",
-    "db:migrate": "pnpm -C ../../packages/cloudflare build && hylo-dev exec -- wrangler d1 migrations apply hylo-backend --local",
-    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && hylo-dev exec remote -- wrangler d1 migrations apply hylo-backend --remote",
-    "db:studio": "pnpm -C ../../packages/cloudflare build && hylo-dev exec -- pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
+    "db:migrate": "pnpm -C ../../packages/cloudflare build && wrangler d1 migrations apply hylo-backend --local",
+    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && wrangler d1 migrations apply hylo-backend --remote",
+    "db:studio": "pnpm -C ../../packages/cloudflare build && pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
     "build": "tsc --noEmit"
   },
   "dependencies": {
@@ -21,11 +21,12 @@
     "@workflow/remote": "workspace:*",
     "@workflow/runtime": "workspace:*",
     "@workflow/server": "workspace:*",
-    "hono": "^4.12.14"
+    "@hono/zod-openapi": "^1.3.0",
+    "hono": "^4.12.14",
+    "jose": "^6.2.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",
-    "hylo": "workspace:*",
     "typescript": "~6.0.2",
     "wrangler": "^4.0.0"
   }

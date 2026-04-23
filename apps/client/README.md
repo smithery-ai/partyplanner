@@ -8,23 +8,14 @@ Use the root quickstart for the full local experience:
 pnpm dev
 ```
 
-To inspect the local profile environment:
-
-```sh
-pnpm hylo env
-```
-
-From this directory, `pnpm dev` starts the client with the local profile
-dependencies it needs. The client talks to a worker; the worker reads and
-writes durable state through the selected backend.
+From this directory, `pnpm dev` starts only the Vite client. Start the backend
+and workflow servers separately, or use the root `pnpm dev` Turbo task.
 
 ## WorkOS AuthKit
 
-Set the WorkOS client ID before starting the app:
-
-```sh
-VITE_WORKOS_CLIENT_ID=client_... pnpm --filter client dev
-```
+The client loads public AuthKit configuration from the Hylo backend
+`/auth/client-config` endpoint at runtime. In local dev, Vite proxies that route
+to the backend worker started by the root `pnpm dev` task.
 
 Optional AuthKit settings:
 
@@ -42,12 +33,35 @@ In local dev, Vite proxies `/user_management/*` to `https://api.workos.com`.
 This keeps browser code-exchange requests same-origin while preserving WorkOS
 as the upstream API.
 
-From the repo root, deploy the browser app after the workflow service:
+For deployed environments, set the backend URL in Vercel:
 
 ```sh
-pnpm hylo deploy remote workflow.cloudflareWorker
-pnpm hylo deploy remote app.client
+VITE_HYLO_BACKEND_URL=https://hylo-backend.smithery.workers.dev
 ```
 
-Hylo injects the workflow URL during the Vite build. This app deploys to
-Vercel using the package-owned deploy script.
+The app loads the signed-in user’s workflow registry from
+`$VITE_HYLO_BACKEND_URL/tenants/me/workflows`. Deploy the app with Vercel using
+the package-owned deploy script.
+
+## Preview Deployments
+
+Use Vercel's Git integration for branch and pull-request previews. Configure
+the Vercel project with:
+
+- Root directory: `apps/client`
+- Framework preset: Vite
+- Build command: from `vercel.json`
+- Output directory: `dist`
+- Preview environment variable:
+  `VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE=https://{branch}-hylo-backend.smithery.workers.dev`
+
+For Preview deployments, the Vite build derives `VITE_HYLO_BACKEND_URL` from
+`VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE` and Vercel's `VERCEL_GIT_COMMIT_REF`.
+The `{branch}` token is replaced with the same sanitized branch alias used by
+the Cloudflare backend preview command.
+
+Set `VITE_HYLO_BACKEND_URL` directly for Production:
+
+```sh
+VITE_HYLO_BACKEND_URL=https://hylo-backend.smithery.workers.dev
+```

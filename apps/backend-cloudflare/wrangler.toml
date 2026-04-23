@@ -1,9 +1,21 @@
 name = "hylo-backend"
 main = "src/index.ts"
 compatibility_date = "2026-04-19"
+preview_urls = true
+
+[vars]
+CLOUDFLARE_ACCOUNT_ID = "c4cf21d8a5e8878bc3c92708b1f80193"
+CLOUDFLARE_DISPATCH_NAMESPACE = "hylo-tenants"
+CLOUDFLARE_WORKER_COMPATIBILITY_DATE = "2026-04-19"
+WORKOS_CLIENT_ID = "client_01KD3FTW7R2QD0NW6QB7QP6Q0B"
+WORKOS_API_HOSTNAME = "api.workos.com"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "hylo-backend"
 database_id = "3bafe290-ce7b-4195-9548-d2cf7772da1d"
 migrations_dir = "../../packages/cloudflare/drizzle"
+
+[[dispatch_namespaces]]
+binding = "DISPATCHER"
+namespace = "hylo-tenants"

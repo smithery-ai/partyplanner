@@ -1,18 +1,22 @@
 #!/usr/bin/env node
+import { runAuth } from "./commands/auth.js";
 import { runBuild } from "./commands/build.js";
 import { runDeploy } from "./commands/deploy.js";
+import { runDeployments } from "./commands/deployments.js";
 import { runInit } from "./commands/init.js";
 
 const HELP = `hylo — workflow CLI
 
 Usage:
+  hylo auth <command>                Sign in with WorkOS AuthKit
   hylo init [dir]                    Create a new workflow project
   hylo build [--backend <url>]       Bundle into a Cloudflare Worker
-  hylo deploy [--backend <url>] ...  Build and deploy via wrangler
+  hylo deploy [dir] [--backend <url>] Build and deploy via Hylo API
+  hylo deployments <command>         Call the deployment API
   hylo --help                        Show this help
 
 Options:
-  --backend <url>   Bake HYLO_BACKEND_URL into the worker's [vars]
+  --backend <url>          Hylo backend API URL
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -24,12 +28,16 @@ async function main(argv: string[]): Promise<number> {
   }
 
   switch (command) {
+    case "auth":
+      return runAuth(rest);
     case "init":
       return runInit(rest);
     case "build":
       return runBuild(rest);
     case "deploy":
       return runDeploy(rest);
+    case "deployments":
+      return runDeployments(rest);
     default:
       process.stderr.write(`Unknown command: ${command}\n\n${HELP}`);
       return 1;

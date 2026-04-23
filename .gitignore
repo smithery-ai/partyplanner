@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .wrangler/
+.hylo/
 .turbo/
 *.tsbuildinfo
 .env
@@ -11,3 +12,4 @@ dist/
 !.dev.vars.example
 examples/sample/
 .vercel
+packages/api-client/src/generated/

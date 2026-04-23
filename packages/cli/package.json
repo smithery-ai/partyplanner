@@ -10,10 +10,11 @@
     "templates"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "pnpm --filter @hylo/api-client generate && tsc",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@hylo/api-client": "workspace:*",
     "wrangler": "^4.53.0"
   },
   "devDependencies": {

@@ -11,13 +11,7 @@ export type ProjectInfo = {
   workerName: string;
 };
 
-const FORBIDDEN_FILES = [
-  "wrangler.toml",
-  "wrangler.json",
-  "wrangler.jsonc",
-  ".env",
-  ".dev.vars",
-];
+const FORBIDDEN_FILES = [".env", ".dev.vars"];
 
 export async function loadProject(cwd: string): Promise<ProjectInfo> {
   const root = cwd;
@@ -57,12 +51,6 @@ export async function loadProject(cwd: string): Promise<ProjectInfo> {
 
 function forbiddenError(file: string): Error {
   switch (file) {
-    case "wrangler.toml":
-    case "wrangler.json":
-    case "wrangler.jsonc":
-      return new Error(
-        `${file} found in project root. Hylo manages wrangler config — remove this file.`,
-      );
     case ".env":
     case ".dev.vars":
       return new Error(

@@ -1,18 +1,33 @@
 import dns from "node:dns";
-import { readFileSync } from "node:fs";
 import https from "node:https";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const hyloConfig = readHyloConfig();
-const nextjsTarget = targetUrl("workflow.nextjs");
-const cloudflareWorkerTarget = targetUrl("workflow.cloudflareWorker");
+const resolvedHyloBackendUrl = hyloBackendUrl();
+if (isVercelBuild() && !resolvedHyloBackendUrl) {
+  throw new Error(
+    "Vercel client builds require VITE_HYLO_BACKEND_URL or VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE.",
+  );
+}
+const backendCloudflareTarget =
+  resolvedHyloBackendUrl || "http://127.0.0.1:8787";
+const nextjsTarget = envUrl(
+  ["VITE_HYLO_NEXTJS_WORKFLOW_URL", "HYLO_NEXTJS_WORKFLOW_URL"],
+  "http://127.0.0.1:3000",
+);
+const cloudflareWorkerTarget = envUrl(
+  ["VITE_HYLO_CLOUDFLARE_WORKFLOW_URL", "HYLO_CLOUDFLARE_WORKFLOW_URL"],
+  "http://127.0.0.1:8788",
+);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
+    "import.meta.env.VITE_HYLO_BACKEND_URL": JSON.stringify(
+      resolvedHyloBackendUrl,
+    ),
     "import.meta.env.VITE_HYLO_WORKFLOW": JSON.stringify(
       process.env.VITE_HYLO_WORKFLOW ?? process.env.HYLO_WORKFLOW ?? "",
     ),
@@ -34,6 +49,24 @@ export default defineConfig({
         /^\/api\/cloudflare(?=\/|$)/,
       ),
       "/api": workflowProxy(nextjsTarget, /^\/api(?=\/|$)/),
+      "/auth": {
+        target: backendCloudflareTarget,
+        changeOrigin: true,
+        secure: false,
+        agent: hyloLocalAgent(backendCloudflareTarget),
+      },
+      "/deployments": {
+        target: backendCloudflareTarget,
+        changeOrigin: true,
+        secure: false,
+        agent: hyloLocalAgent(backendCloudflareTarget),
+      },
+      "/tenants": {
+        target: backendCloudflareTarget,
+        changeOrigin: true,
+        secure: false,
+        agent: hyloLocalAgent(backendCloudflareTarget),
+      },
       "/user_management": {
         target: "https://api.workos.com",
         changeOrigin: true,
@@ -94,18 +127,61 @@ function hyloLocalAgent(target: string): https.Agent | undefined {
   }
 }
 
-function readHyloConfig() {
-  return JSON.parse(
-    readFileSync(path.resolve(__dirname, "../../hylo.json"), "utf8"),
+function envUrl(names: string[], fallback: string): string {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value.replace(/\/+$/, "");
+  }
+  return fallback;
+}
+
+function hyloBackendUrl(): string {
+  return (explicitHyloBackendUrl() ?? previewHyloBackendUrl() ?? "").replace(
+    /\/+$/,
+    "",
   );
 }
 
-function targetUrl(target: string): string {
-  const devUrl = hyloConfig.targets?.[target]?.url;
-  if (typeof devUrl === "string" && devUrl.trim()) {
-    return devUrl.trim().replace(/\/$/, "");
+function explicitHyloBackendUrl(): string | undefined {
+  return firstEnv(["VITE_HYLO_BACKEND_URL", "HYLO_BACKEND_URL"]);
+}
+
+function previewHyloBackendUrl(): string | undefined {
+  const template = firstEnv([
+    "VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE",
+    "HYLO_BACKEND_PREVIEW_URL_TEMPLATE",
+  ]);
+  const branch = firstEnv([
+    "VITE_VERCEL_GIT_COMMIT_REF",
+    "VERCEL_GIT_COMMIT_REF",
+    "GITHUB_HEAD_REF",
+  ]);
+  if (!template || !branch) return undefined;
+  return template.replaceAll("{branch}", previewAlias(branch));
+}
+
+function isVercelBuild(): boolean {
+  return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV);
+}
+
+function firstEnv(names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
   }
-  throw new Error(`hylo.json must define targets.${target}.url`);
+  return undefined;
+}
+
+function previewAlias(branch: string): string {
+  const normalized = branch
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-+/g, "-")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+  return normalized || "preview";
 }
 
 function workflowRegistry() {

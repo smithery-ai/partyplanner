@@ -1,5 +1,24 @@
 HYLO_API_KEY=local-dev-hylo-api-key
 
+# WorkOS AuthKit. When WORKOS_CLIENT_ID is set, tenant-scoped routes accept
+# WorkOS access tokens and derive tenant IDs from the selected org_id claim.
+WORKOS_CLIENT_ID=
+WORKOS_API_HOSTNAME=api.workos.com
+WORKOS_ISSUER=
+WORKOS_JWKS_URL=
+
+# Workers for Platforms provisioning API. The API token needs Workers Scripts
+# Write for the account that owns the dispatch namespace.
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_API_TOKEN=
+CLOUDFLARE_DISPATCH_NAMESPACE=
+CLOUDFLARE_WORKER_COMPATIBILITY_DATE=2026-04-19
+
+# Optional. When set, POST /deployments derives workflowApiUrl as
+# $HYLO_WORKER_DISPATCH_BASE_URL/:deploymentId/api/workflow unless the request
+# provides workflowApiUrl explicitly.
+HYLO_WORKER_DISPATCH_BASE_URL=
+
 # Used to build OAuth redirect_uri values. The default is the Hylo dev backend
 # URL, which is useful for providers like Notion that require HTTPS callbacks.
 HYLO_BACKEND_PUBLIC_URL=https://api-worker.hylo.localhost

@@ -1,3 +1,4 @@
+import { OpenAPIHono } from "@hono/zod-openapi";
 import {
   createCloudflareBrokerStore,
   createCloudflareWorkflowQueue,
@@ -9,45 +10,45 @@ import { spotifyProvider } from "@workflow/integrations-spotify";
 import type { BrokerProviderRegistration } from "@workflow/oauth-broker";
 import { createOAuthBrokerServer } from "@workflow/oauth-broker";
 import {
+  createRemoteRuntimeOpenApiDocument,
   createRemoteRuntimeServer,
   mountRemoteRuntimeOpenApi,
+  type RemoteRuntimeOpenApiOptions,
 } from "@workflow/remote";
-import { Hono } from "hono";
+import type { Context } from "hono";
 import { cors } from "hono/cors";
+import { mountAuthApi, registerAuthOpenApiRoutes } from "./auth/routes";
+import {
+  mountDeploymentApi,
+  registerDeploymentOpenApiRoutes,
+} from "./deployments/routes";
+import { parseDeploymentIdParam } from "./deployments/validators";
+import { apiErrorResponse, PlatformApiError } from "./errors";
+import type { BackendAppEnv, WorkflowDeploymentRegistryDb } from "./types";
 
-export type BackendAppEnv = {
-  HYLO_API_KEY?: string;
-  HYLO_BACKEND_PUBLIC_URL?: string;
-  HYLO_BROKER_BASE_URL?: string;
-  NODE_ENV?: string;
-  NOTION_CLIENT_ID?: string;
-  NOTION_CLIENT_SECRET?: string;
-  SPOTIFY_CLIENT_ID?: string;
-  SPOTIFY_CLIENT_SECRET?: string;
-};
+export type { BackendAppEnv } from "./types";
 
 export function createApp(
   db: WorkflowCloudflareDbLike,
   env: BackendAppEnv = {},
+  deploymentDb?: WorkflowDeploymentRegistryDb,
 ) {
   const adapterOptions = { autoMigrate: false };
   const stateStore = createCloudflareWorkflowStateStore(db, adapterOptions);
   const queue = createCloudflareWorkflowQueue(db, adapterOptions);
-  const app = new Hono();
+  const app = new OpenAPIHono();
 
   app.use(
     "/*",
     cors({
       origin: "*",
       allowHeaders: ["Content-Type", "Authorization"],
-      allowMethods: ["GET", "PUT", "POST", "OPTIONS"],
+      allowMethods: ["GET", "PUT", "POST", "DELETE", "OPTIONS"],
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
-  mountRemoteRuntimeOpenApi(app, {
-    title: "Hylo Backend Worker API",
-    runtimeBasePath: "/runtime",
-  });
+  mountWorkerDispatchApi(app, env);
+  mountRemoteRuntimeOpenApi(app, createBackendOpenApiOptions());
   app.route(
     "/runtime",
     createRemoteRuntimeServer({
@@ -60,6 +61,7 @@ export function createApp(
 
   const curatedProviders = collectCuratedProviders(env);
   const apiKey = resolveApiKey(env);
+  mountAuthApi(app, env, apiKey);
   app.route(
     "/oauth",
     createOAuthBrokerServer({
@@ -71,7 +73,96 @@ export function createApp(
     }),
   );
 
+  mountDeploymentApi(app, env, apiKey, deploymentDb);
+
   return app;
+}
+
+export function createBackendOpenApiDocument(): object {
+  return createRemoteRuntimeOpenApiDocument(createBackendOpenApiOptions());
+}
+
+function createBackendOpenApiOptions(): RemoteRuntimeOpenApiOptions {
+  const routeDocument = createBackendRouteOpenApiDocument();
+  return {
+    title: "Hylo Backend Worker API",
+    runtimeBasePath: "/runtime",
+    extraTags: [
+      {
+        name: "Auth",
+        description: "Public auth bootstrap and authenticated identity.",
+      },
+      {
+        name: "Deployments",
+        description:
+          "Provision and manage tenant Workers for Platforms scripts.",
+      },
+      {
+        name: "Tenants",
+        description: "Read tenant-specific workflow deployment registry data.",
+      },
+    ],
+    extraComponents: {
+      ...((routeDocument.components as Record<string, unknown>) ?? {}),
+      securitySchemes: {
+        ...(((routeDocument.components as Record<string, unknown> | undefined)
+          ?.securitySchemes as Record<string, unknown> | undefined) ?? {}),
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          description: "WorkOS access token or admin API key.",
+        },
+      },
+    },
+    extraPaths: (routeDocument.paths as Record<string, unknown>) ?? {},
+  };
+}
+
+function createBackendRouteOpenApiDocument(): Record<string, unknown> {
+  const app = new OpenAPIHono();
+  mountBackendOpenApiRoutes(app);
+  return app.getOpenAPIDocument({
+    openapi: "3.0.3",
+    info: {
+      title: "Hylo Backend Worker API",
+      version: "0.0.0",
+    },
+  }) as unknown as Record<string, unknown>;
+}
+
+function mountBackendOpenApiRoutes(app: OpenAPIHono): void {
+  registerAuthOpenApiRoutes(app);
+  registerDeploymentOpenApiRoutes(app);
+}
+
+function mountWorkerDispatchApi(app: OpenAPIHono, env: BackendAppEnv): void {
+  const dispatch = async (c: Context) => {
+    try {
+      const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
+      if (!env.DISPATCHER) {
+        throw new PlatformApiError(
+          503,
+          "worker_dispatch_not_configured",
+          "Worker dispatch namespace binding is not configured.",
+        );
+      }
+      return await env.DISPATCHER.get(deploymentId).fetch(
+        rewriteDispatchRequest(c.req.raw),
+      );
+    } catch (e) {
+      return apiErrorResponse(c, e);
+    }
+  };
+
+  app.all("/workers/:deploymentId", dispatch);
+  app.all("/workers/:deploymentId/*", dispatch);
+}
+
+function rewriteDispatchRequest(request: Request): Request {
+  const url = new URL(request.url);
+  const path = url.pathname.split("/").slice(3).join("/");
+  url.pathname = path ? `/${path}` : "/";
+  return new Request(url, request);
 }
 
 function collectCuratedProviders(
@@ -83,9 +174,12 @@ function collectCuratedProviders(
     { spec: notionProvider, envPrefix: "NOTION" },
   ];
   for (const { spec, envPrefix } of catalog) {
-    const clientId = env[`${envPrefix}_CLIENT_ID` as keyof BackendAppEnv];
-    const clientSecret =
+    const rawClientId = env[`${envPrefix}_CLIENT_ID` as keyof BackendAppEnv];
+    const rawClientSecret =
       env[`${envPrefix}_CLIENT_SECRET` as keyof BackendAppEnv];
+    const clientId = typeof rawClientId === "string" ? rawClientId : undefined;
+    const clientSecret =
+      typeof rawClientSecret === "string" ? rawClientSecret : undefined;
     if (clientId && clientSecret) {
       registrations.push({ spec, clientId, clientSecret });
     }
