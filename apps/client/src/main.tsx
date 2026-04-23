@@ -29,11 +29,22 @@ if (!root) {
 
 createRoot(root).render(
   <App>
-    {({ sidebarFooter }) => <ClientApp sidebarFooter={sidebarFooter} />}
+    {({ getAccessToken, sidebarFooter }) => (
+      <ClientApp
+        getAccessToken={getAccessToken}
+        sidebarFooter={sidebarFooter}
+      />
+    )}
   </App>,
 );
 
-function ClientApp({ sidebarFooter }: { sidebarFooter: ReactNode }) {
+function ClientApp({
+  getAccessToken,
+  sidebarFooter,
+}: {
+  getAccessToken: () => Promise<string>;
+  sidebarFooter: ReactNode;
+}) {
   const fallbackRegistry = useMemo(() => workflowRegistry(), []);
   const dynamicRegistryConfig = useMemo(
     () => dynamicWorkflowRegistryConfig(),
@@ -58,10 +69,16 @@ function ClientApp({ sidebarFooter }: { sidebarFooter: ReactNode }) {
   useEffect(() => {
     if (!dynamicRegistryConfig?.url) return;
     const abort = new AbortController();
-    void fetch(dynamicRegistryConfig.url, {
-      headers: { Accept: "application/json" },
-      signal: abort.signal,
-    })
+    void getAccessToken()
+      .then((accessToken) =>
+        fetch(dynamicRegistryConfig.url, {
+          headers: workflowRegistryHeaders(
+            dynamicRegistryConfig.url,
+            accessToken,
+          ),
+          signal: abort.signal,
+        }),
+      )
       .then(async (response) => {
         if (!response.ok) {
           throw new Error(`Workflow registry failed with ${response.status}`);
@@ -77,7 +94,7 @@ function ClientApp({ sidebarFooter }: { sidebarFooter: ReactNode }) {
         }
       });
     return () => abort.abort();
-  }, [dynamicRegistryConfig]);
+  }, [dynamicRegistryConfig, getAccessToken]);
 
   useEffect(() => {
     if (worker === "custom" || worker in registry.workflows) return;
@@ -253,7 +270,11 @@ function dynamicWorkflowRegistryConfig(): { url: string } | undefined {
       url: expandRegistryUrlTemplate(explicitUrl, tenantId),
     };
   }
-  if (!tenantId) return undefined;
+  if (!tenantId) {
+    return {
+      url: "/tenants/me/workflows",
+    };
+  }
   return {
     url: `/tenants/${encodeURIComponent(tenantId)}/workflows`,
   };
@@ -262,6 +283,26 @@ function dynamicWorkflowRegistryConfig(): { url: string } | undefined {
 function expandRegistryUrlTemplate(url: string, tenantId: string | undefined) {
   if (!tenantId) return url;
   return url.replaceAll("{tenantId}", encodeURIComponent(tenantId));
+}
+
+function workflowRegistryHeaders(
+  url: string,
+  accessToken: string,
+): HeadersInit {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (isSameOriginUrl(url)) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+  return headers;
+}
+
+function isSameOriginUrl(value: string): boolean {
+  if (value.startsWith("/")) return true;
+  try {
+    return new URL(value).origin === window.location.origin;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeWorkflowRegistry(value: unknown): WorkflowRegistry {

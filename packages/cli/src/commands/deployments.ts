@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
+import { getHyloAccessToken } from "./auth.js";
 
 type DeploymentCommandOptions = {
   apiKey?: string;
@@ -14,10 +15,10 @@ type DeploymentCommandOptions = {
 const HELP = `hylo deployments
 
 Usage:
-  hylo deployments list --tenant <id>
-  hylo deployments workflows --tenant <id>
+  hylo deployments list [--tenant <id>]
+  hylo deployments workflows [--tenant <id>]
   hylo deployments get <deploymentId>
-  hylo deployments create --tenant <id> --deployment <id> --module <path>
+  hylo deployments create --deployment <id> --module <path> [--tenant <id>]
   hylo deployments delete <deploymentId>
 
 Options:
@@ -69,15 +70,15 @@ export async function runDeployments(args: string[]): Promise<number> {
 async function listTenantDeployments(args: string[]): Promise<void> {
   const { options, rest } = parseDeploymentArgs(args);
   requireNoRest(rest, "deployments list");
-  const api = deploymentApi(options);
-  printJson(await api.tenants.listDeployments(requireTenantId(options)));
+  const api = await deploymentApi(options);
+  printJson(await api.tenants.listDeployments(options.tenantId ?? "me"));
 }
 
 async function getTenantWorkflows(args: string[]): Promise<void> {
   const { options, rest } = parseDeploymentArgs(args);
   requireNoRest(rest, "deployments workflows");
-  const api = deploymentApi(options);
-  printJson(await api.tenants.getWorkflows(requireTenantId(options)));
+  const api = await deploymentApi(options);
+  printJson(await api.tenants.getWorkflows(options.tenantId ?? "me"));
 }
 
 async function getDeployment(args: string[]): Promise<void> {
@@ -87,7 +88,7 @@ async function getDeployment(args: string[]): Promise<void> {
     rest.slice(deploymentId === rest[0] ? 1 : 0),
     "deployments get",
   );
-  const api = deploymentApi(options, { requireApiKey: true });
+  const api = await deploymentApi(options, { requireApiKey: true });
   printJson(
     await api.deployments.get(requireValue(deploymentId, "deploymentId")),
   );
@@ -96,7 +97,7 @@ async function getDeployment(args: string[]): Promise<void> {
 async function createDeployment(args: string[]): Promise<void> {
   const { options, rest } = parseDeploymentArgs(args);
   requireNoRest(rest, "deployments create");
-  const api = deploymentApi(options, { requireApiKey: true });
+  const api = await deploymentApi(options, { requireApiKey: true });
   const deploymentId = requireValue(options.deploymentId, "--deployment");
   const moduleCode = await readFile(
     requireValue(options.modulePath, "--module"),
@@ -105,7 +106,7 @@ async function createDeployment(args: string[]): Promise<void> {
 
   printJson(
     await api.deployments.create({
-      tenantId: requireTenantId(options),
+      ...(options.tenantId ? { tenantId: options.tenantId } : {}),
       deploymentId,
       label: options.label,
       moduleName: `${deploymentId}.mjs`,
@@ -124,22 +125,25 @@ async function deleteDeployment(args: string[]): Promise<void> {
     rest.slice(deploymentId === rest[0] ? 1 : 0),
     "deployments delete",
   );
-  const api = deploymentApi(options, { requireApiKey: true });
+  const api = await deploymentApi(options, { requireApiKey: true });
   printJson(
     await api.deployments.delete(requireValue(deploymentId, "deploymentId")),
   );
 }
 
-function deploymentApi(
+async function deploymentApi(
   options: DeploymentCommandOptions,
   apiOptions: { requireApiKey?: boolean } = {},
 ) {
-  const apiKey = options.apiKey ?? process.env.HYLO_API_KEY?.trim();
-  if (apiOptions.requireApiKey && !apiKey) {
-    throw new Error("HYLO_API_KEY or --api-key is required.");
+  const adminApiKey = options.apiKey ?? process.env.HYLO_API_KEY?.trim();
+  const accessToken = adminApiKey ? undefined : await getHyloAccessToken();
+  if (apiOptions.requireApiKey && !adminApiKey && !accessToken) {
+    throw new Error(
+      "Sign in with `hylo auth login` or provide HYLO_API_KEY/--api-key.",
+    );
   }
   return createHyloApiClient({
-    apiKey,
+    bearerToken: adminApiKey ?? accessToken,
     baseUrl: requireValue(
       options.backendUrl ?? process.env.HYLO_BACKEND_URL?.trim(),
       "HYLO_BACKEND_URL or --backend",
@@ -194,10 +198,6 @@ function parseDeploymentArgs(args: string[]): {
     }
   }
   return { options, rest };
-}
-
-function requireTenantId(options: DeploymentCommandOptions): string {
-  return requireValue(options.tenantId, "--tenant");
 }
 
 function requireValue(value: string | undefined, name: string): string {

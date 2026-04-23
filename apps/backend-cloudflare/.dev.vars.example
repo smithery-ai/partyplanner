@@ -1,5 +1,12 @@
 HYLO_API_KEY=local-dev-hylo-api-key
 
+# WorkOS AuthKit. When WORKOS_CLIENT_ID is set, tenant-scoped routes accept
+# WorkOS access tokens and derive tenant IDs from the selected org_id claim.
+WORKOS_CLIENT_ID=
+WORKOS_API_HOSTNAME=api.workos.com
+WORKOS_ISSUER=
+WORKOS_JWKS_URL=
+
 # Workers for Platforms provisioning API. The API token needs Workers Scripts
 # Write for the account that owns the dispatch namespace.
 CLOUDFLARE_ACCOUNT_ID=

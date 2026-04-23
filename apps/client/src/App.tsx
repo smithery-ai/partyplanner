@@ -3,7 +3,10 @@ import { LogOut } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 
 type AppProps = {
-  children: (props: { sidebarFooter: ReactNode }) => ReactNode;
+  children: (props: {
+    getAccessToken: () => Promise<string>;
+    sidebarFooter: ReactNode;
+  }) => ReactNode;
 };
 
 type WorkOSConfig = {
@@ -41,7 +44,7 @@ export function App({ children }: AppProps) {
 }
 
 function AuthenticatedApp({ children }: AppProps) {
-  const { isLoading, user, signIn, signOut } = useAuth();
+  const { getAccessToken, isLoading, user, signIn, signOut } = useAuth();
   const isLoginRoute = window.location.pathname === "/login";
 
   useEffect(() => {
@@ -60,6 +63,7 @@ function AuthenticatedApp({ children }: AppProps) {
   if (!user) return null;
 
   return children({
+    getAccessToken,
     sidebarFooter: (
       <UserFooter
         user={user}

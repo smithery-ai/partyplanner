@@ -21,7 +21,8 @@
     "@workflow/remote": "workspace:*",
     "@workflow/runtime": "workspace:*",
     "@workflow/server": "workspace:*",
-    "hono": "^4.12.14"
+    "hono": "^4.12.14",
+    "jose": "^6.2.2"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

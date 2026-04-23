@@ -1,5 +1,5 @@
 import createClient, { type Client } from "openapi-fetch";
-import type { components, paths } from "./generated/schema.js";
+import type { paths } from "./generated/schema.js";
 
 export type {
   components,
@@ -7,13 +7,17 @@ export type {
   paths,
 } from "./generated/schema.js";
 
-export type CreateDeploymentRequest =
-  components["schemas"]["CreateDeploymentRequest"];
-export type WorkflowDeployment = components["schemas"]["WorkflowDeployment"];
+export type CreateDeploymentRequest = RequestJsonBody<
+  paths["/deployments"]["post"]
+>;
+export type WorkflowDeployment =
+  paths["/tenants/{tenantId}/deployments"]["get"]["responses"][200]["content"]["application/json"]["deployments"][number];
 
 export type HyloApiClientOptions = {
   apiKey?: string;
+  accessToken?: string;
   baseUrl: string;
+  bearerToken?: string;
   fetch?: typeof globalThis.fetch;
   headers?: HeadersInit;
 };
@@ -83,12 +87,14 @@ export function createHyloApiClient(options: HyloApiClientOptions) {
       listDeployments: (tenantId: string) =>
         unwrap(
           client.GET("/tenants/{tenantId}/deployments", {
+            headers: requestHeaders(options),
             params: { path: { tenantId } },
           }),
         ),
       getWorkflows: (tenantId: string) =>
         unwrap(
           client.GET("/tenants/{tenantId}/workflows", {
+            headers: requestHeaders(options),
             params: { path: { tenantId } },
           }),
         ),
@@ -96,10 +102,17 @@ export function createHyloApiClient(options: HyloApiClientOptions) {
   };
 }
 
+type RequestJsonBody<Operation> = Operation extends {
+  requestBody: { content: { "application/json": infer Body } };
+}
+  ? Body
+  : never;
+
 function requestHeaders(options: HyloApiClientOptions): HeadersInit {
+  const token = options.bearerToken ?? options.accessToken ?? options.apiKey;
   return {
     ...headersToObject(options.headers),
-    ...(options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
 

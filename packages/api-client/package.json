@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "generate": "openapi-typescript openapi/hylo-backend.openapi.json -o src/generated/schema.d.ts && biome format --write src/generated/schema.d.ts",
+    "generate": "tsx scripts/generate-schema.ts && biome format --write src/generated/schema.d.ts",
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "openapi-typescript": "^7.10.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0"
   }

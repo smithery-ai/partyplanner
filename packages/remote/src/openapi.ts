@@ -11,6 +11,7 @@ export type RemoteRuntimeOpenApiOptions = {
   servers?: { url: string; description?: string }[];
   includeRootHealth?: boolean;
   extraTags?: { name: string; description?: string }[];
+  extraComponents?: Record<string, unknown>;
   extraPaths?: Record<string, unknown>;
 };
 
@@ -379,16 +380,33 @@ export function createRemoteRuntimeOpenApiDocument(
     ],
   }) as unknown as OpenApiDocument;
 
-  if (!options.extraPaths || Object.keys(options.extraPaths).length === 0) {
+  const hasExtraComponents =
+    options.extraComponents && Object.keys(options.extraComponents).length > 0;
+  const hasExtraPaths =
+    options.extraPaths && Object.keys(options.extraPaths).length > 0;
+
+  if (!hasExtraComponents && !hasExtraPaths) {
     return document;
   }
 
   return {
     ...document,
-    paths: {
-      ...(document.paths ?? {}),
-      ...options.extraPaths,
-    },
+    ...(hasExtraComponents
+      ? {
+          components: {
+            ...((document.components as Record<string, unknown>) ?? {}),
+            ...options.extraComponents,
+          },
+        }
+      : {}),
+    ...(hasExtraPaths
+      ? {
+          paths: {
+            ...(document.paths ?? {}),
+            ...options.extraPaths,
+          },
+        }
+      : {}),
   };
 }
 

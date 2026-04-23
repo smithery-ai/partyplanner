@@ -9,12 +9,15 @@ import { spotifyProvider } from "@workflow/integrations-spotify";
 import type { BrokerProviderRegistration } from "@workflow/oauth-broker";
 import { createOAuthBrokerServer } from "@workflow/oauth-broker";
 import {
+  createRemoteRuntimeOpenApiDocument,
   createRemoteRuntimeServer,
   mountRemoteRuntimeOpenApi,
+  type RemoteRuntimeOpenApiOptions,
 } from "@workflow/remote";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { createRemoteJWKSet, type JWTPayload, jwtVerify } from "jose";
 
 export type BackendAppEnv = {
   CLOUDFLARE_ACCOUNT_ID?: string;
@@ -34,6 +37,10 @@ export type BackendAppEnv = {
   NOTION_CLIENT_SECRET?: string;
   SPOTIFY_CLIENT_ID?: string;
   SPOTIFY_CLIENT_SECRET?: string;
+  WORKOS_API_HOSTNAME?: string;
+  WORKOS_CLIENT_ID?: string;
+  WORKOS_ISSUER?: string;
+  WORKOS_JWKS_URL?: string;
 };
 
 export function createApp(
@@ -55,22 +62,7 @@ export function createApp(
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
-  mountRemoteRuntimeOpenApi(app, {
-    title: "Hylo Backend Worker API",
-    runtimeBasePath: "/runtime",
-    extraTags: [
-      {
-        name: "Deployments",
-        description:
-          "Provision and manage tenant Workers for Platforms scripts.",
-      },
-      {
-        name: "Tenants",
-        description: "Read tenant-specific workflow deployment registry data.",
-      },
-    ],
-    extraPaths: createDeploymentOpenApiPaths(),
-  });
+  mountRemoteRuntimeOpenApi(app, createBackendOpenApiOptions());
   app.route(
     "/runtime",
     createRemoteRuntimeServer({
@@ -99,6 +91,38 @@ export function createApp(
   return app;
 }
 
+export function createBackendOpenApiDocument(): object {
+  return createRemoteRuntimeOpenApiDocument(createBackendOpenApiOptions());
+}
+
+function createBackendOpenApiOptions(): RemoteRuntimeOpenApiOptions {
+  return {
+    title: "Hylo Backend Worker API",
+    runtimeBasePath: "/runtime",
+    extraTags: [
+      {
+        name: "Deployments",
+        description:
+          "Provision and manage tenant Workers for Platforms scripts.",
+      },
+      {
+        name: "Tenants",
+        description: "Read tenant-specific workflow deployment registry data.",
+      },
+    ],
+    extraComponents: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          description: "WorkOS access token or admin API key.",
+        },
+      },
+    },
+    extraPaths: createDeploymentOpenApiPaths(),
+  };
+}
+
 type CloudflarePlatformConfig = {
   accountId: string;
   apiBaseUrl: string;
@@ -116,7 +140,7 @@ type CloudflareEnvelope<T> = {
   result_info?: unknown;
 };
 
-type PlatformErrorStatus = 400 | 401 | 500 | 502 | 503;
+type PlatformErrorStatus = 400 | 401 | 403 | 500 | 502 | 503;
 
 type WorkflowDeploymentRegistryDb = {
   prepare(query: string): D1PreparedStatement;
@@ -146,6 +170,22 @@ type ProvisionDeploymentInput = {
   tags: string[];
 };
 
+type AuthContext =
+  | { kind: "admin" }
+  | {
+      kind: "workos";
+      tenantId: string;
+      userId: string;
+      role?: string;
+      permissions: string[];
+    };
+
+type WorkOSAccessTokenClaims = JWTPayload & {
+  org_id?: string;
+  permissions?: unknown;
+  role?: unknown;
+};
+
 function mountDeploymentApi(
   app: Hono,
   env: BackendAppEnv,
@@ -154,7 +194,12 @@ function mountDeploymentApi(
 ) {
   app.get("/tenants/:tenantId/deployments", async (c) => {
     try {
-      const tenantId = parseTenantIdParam(c.req.param("tenantId"));
+      const tenantId = await resolveTenantAccess(
+        c,
+        env,
+        apiKey,
+        c.req.param("tenantId"),
+      );
       const registry = requireWorkflowDeploymentRegistry(deploymentDb);
       return c.json({
         ok: true,
@@ -168,7 +213,12 @@ function mountDeploymentApi(
 
   app.get("/tenants/:tenantId/workflows", async (c) => {
     try {
-      const tenantId = parseTenantIdParam(c.req.param("tenantId"));
+      const tenantId = await resolveTenantAccess(
+        c,
+        env,
+        apiKey,
+        c.req.param("tenantId"),
+      );
       const registry = requireWorkflowDeploymentRegistry(deploymentDb);
       const deployments = await registry.list(tenantId);
       const workflows = Object.fromEntries(
@@ -193,12 +243,15 @@ function mountDeploymentApi(
   });
 
   app.get("/deployments", async (c) => {
-    const unauthorized = requireBearerAuth(c, apiKey);
-    if (unauthorized) return unauthorized;
-
     try {
+      const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
-      const tagFilter = parseDeploymentTagFilter(c);
+      const tagFilter =
+        auth.kind === "workos"
+          ? tagForTenant(
+              resolveAuthorizedTenant(c, auth, c.req.query("tenantId")),
+            )
+          : parseDeploymentTagFilter(c);
       const suffix = tagFilter
         ? `?tags=${encodeURIComponent(`${tagFilter}:yes`)}`
         : "";
@@ -222,13 +275,18 @@ function mountDeploymentApi(
   });
 
   app.post("/deployments", async (c) => {
-    const unauthorized = requireBearerAuth(c, apiKey);
-    if (unauthorized) return unauthorized;
-
     try {
+      const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
       const body = await readJsonBody(c);
-      const input = parseProvisionDeploymentInput(body, config);
+      const input = parseProvisionDeploymentInput(
+        body,
+        config,
+        auth.kind === "workos" ? auth.tenantId : undefined,
+      );
+      if (auth.kind === "workos") {
+        resolveAuthorizedTenant(c, auth, input.tenantId);
+      }
       const metadata = createDeploymentMetadata(input);
       const formData = new FormData();
       formData.append(
@@ -284,12 +342,15 @@ function mountDeploymentApi(
   });
 
   app.delete("/deployments", async (c) => {
-    const unauthorized = requireBearerAuth(c, apiKey);
-    if (unauthorized) return unauthorized;
-
     try {
+      const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
-      const tagFilter = parseDeploymentTagFilter(c);
+      const tagFilter =
+        auth.kind === "workos"
+          ? tagForTenant(
+              resolveAuthorizedTenant(c, auth, c.req.query("tenantId")),
+            )
+          : parseDeploymentTagFilter(c);
       if (!tagFilter) {
         throw new PlatformApiError(
           400,
@@ -309,7 +370,10 @@ function mountDeploymentApi(
       );
       if (deploymentDb) {
         const registry = createWorkflowDeploymentRegistry(deploymentDb);
-        const tenantId = c.req.query("tenantId")?.trim();
+        const tenantId =
+          auth.kind === "workos"
+            ? auth.tenantId
+            : c.req.query("tenantId")?.trim();
         if (tenantId) {
           await registry.deleteByTenant(parseTenantIdParam(tenantId));
         } else {
@@ -329,12 +393,13 @@ function mountDeploymentApi(
   });
 
   app.get("/deployments/:deploymentId", async (c) => {
-    const unauthorized = requireBearerAuth(c, apiKey);
-    if (unauthorized) return unauthorized;
-
     try {
+      const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
       const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
+      if (auth.kind === "workos") {
+        await requireDeploymentAccess(deploymentDb, deploymentId, auth);
+      }
       const response = await cloudflareApiRequest<unknown>(
         config,
         `/accounts/${encodeURIComponent(
@@ -355,12 +420,13 @@ function mountDeploymentApi(
   });
 
   app.delete("/deployments/:deploymentId", async (c) => {
-    const unauthorized = requireBearerAuth(c, apiKey);
-    if (unauthorized) return unauthorized;
-
     try {
+      const auth = await requireDeploymentAuth(c, env, apiKey);
       const config = resolveCloudflarePlatformConfig(env);
       const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
+      if (auth.kind === "workos") {
+        await requireDeploymentAccess(deploymentDb, deploymentId, auth);
+      }
       const response = await cloudflareApiRequest<unknown>(
         config,
         `/accounts/${encodeURIComponent(
@@ -388,13 +454,7 @@ function mountDeploymentApi(
 }
 
 function createDeploymentOpenApiPaths(): Record<string, unknown> {
-  const authHeader = {
-    schema: { type: "string" },
-    required: true,
-    name: "Authorization",
-    in: "header",
-    description: "Bearer admin API key.",
-  };
+  const bearerSecurity = [{ bearerAuth: [] }];
   const tenantIdParam = {
     schema: { type: "string" },
     required: true,
@@ -463,6 +523,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         operationId: "listTenantDeployments",
         tags: ["Tenants"],
         summary: "List workflow deployments for a tenant",
+        security: bearerSecurity,
         parameters: [tenantIdParam],
         responses: {
           200: jsonOpenApiResponse("Tenant deployment registry entries", {
@@ -487,6 +548,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         operationId: "getTenantWorkflows",
         tags: ["Tenants"],
         summary: "Get the client workflow map for a tenant",
+        security: bearerSecurity,
         parameters: [tenantIdParam],
         responses: {
           200: jsonOpenApiResponse("Tenant workflow registry", {
@@ -518,7 +580,8 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         operationId: "listDeployments",
         tags: ["Deployments"],
         summary: "List Workers for Platforms deployments",
-        parameters: [authHeader, tenantIdQuery, tagQuery],
+        security: bearerSecurity,
+        parameters: [tenantIdQuery, tagQuery],
         responses: {
           200: jsonOpenApiResponse("Cloudflare dispatch namespace scripts", {
             type: "object",
@@ -539,7 +602,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         operationId: "createDeployment",
         tags: ["Deployments"],
         summary: "Create or update a tenant Worker deployment",
-        parameters: [authHeader],
+        security: bearerSecurity,
         requestBody: {
           required: true,
           content: {
@@ -574,7 +637,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
                   },
                   tags: { type: "array", items: { type: "string" } },
                 },
-                required: ["tenantId"],
+                required: [],
               },
             },
           },
@@ -603,7 +666,8 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         operationId: "deleteDeployments",
         tags: ["Deployments"],
         summary: "Delete deployments by tenant or tag",
-        parameters: [authHeader, tenantIdQuery, tagQuery],
+        security: bearerSecurity,
+        parameters: [tenantIdQuery, tagQuery],
         responses: {
           200: okResponse,
           400: errorResponse,
@@ -618,7 +682,8 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         operationId: "getDeployment",
         tags: ["Deployments"],
         summary: "Get a Workers for Platforms deployment",
-        parameters: [authHeader, deploymentIdParam],
+        security: bearerSecurity,
+        parameters: [deploymentIdParam],
         responses: {
           200: jsonOpenApiResponse("Cloudflare dispatch namespace script", {
             type: "object",
@@ -640,7 +705,8 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         operationId: "deleteDeployment",
         tags: ["Deployments"],
         summary: "Delete a Workers for Platforms deployment",
-        parameters: [authHeader, deploymentIdParam],
+        security: bearerSecurity,
+        parameters: [deploymentIdParam],
         responses: {
           200: jsonOpenApiResponse("Deployment deleted", {
             type: "object",
@@ -720,6 +786,7 @@ function resolveCloudflarePlatformConfig(
 function parseProvisionDeploymentInput(
   body: unknown,
   config: CloudflarePlatformConfig,
+  defaultTenantId?: string,
 ): ProvisionDeploymentInput {
   if (!isRecord(body)) {
     throw new PlatformApiError(
@@ -729,7 +796,14 @@ function parseProvisionDeploymentInput(
     );
   }
 
-  const tenantId = requiredString(body, "tenantId");
+  const tenantId = optionalString(body, "tenantId") ?? defaultTenantId;
+  if (!tenantId) {
+    throw new PlatformApiError(
+      400,
+      "missing_field",
+      'Missing required field "tenantId".',
+    );
+  }
   const deploymentId =
     optionalString(body, "deploymentId") ??
     optionalString(body, "scriptName") ??
@@ -835,6 +909,20 @@ async function cloudflareApiRequest<T>(
 
 function createWorkflowDeploymentRegistry(db: WorkflowDeploymentRegistryDb) {
   return {
+    async get(
+      deploymentId: string,
+    ): Promise<WorkflowDeploymentRecord | undefined> {
+      const result = await db
+        .prepare(
+          `select tenant_id, deployment_id, label, workflow_api_url, dispatch_namespace, tags_json, created_at, updated_at
+           from workflow_deployments
+           where deployment_id = ?`,
+        )
+        .bind(deploymentId)
+        .first<WorkflowDeploymentRow>();
+      return result ? workflowDeploymentFromRow(result) : undefined;
+    },
+
     async list(tenantId: string): Promise<WorkflowDeploymentRecord[]> {
       const result = await db
         .prepare(
@@ -954,11 +1042,227 @@ async function readJsonBody(c: Context): Promise<unknown> {
   }
 }
 
-function requireBearerAuth(c: Context, apiKey: string): Response | undefined {
+async function resolveTenantAccess(
+  c: Context,
+  env: BackendAppEnv,
+  apiKey: string,
+  requestedTenantId: string | undefined,
+): Promise<string> {
+  const isCurrentTenantAlias = requestedTenantId?.trim() === "me";
+  const tenantId = isCurrentTenantAlias
+    ? undefined
+    : parseTenantIdParam(requestedTenantId);
+  const auth = await authenticateRequest(c, env, apiKey);
+  if (!auth) {
+    if (isWorkOSConfigured(env)) {
+      throw new PlatformApiError(
+        401,
+        "unauthorized",
+        "Authentication is required.",
+      );
+    }
+    if (!tenantId) {
+      throw new PlatformApiError(
+        401,
+        "unauthorized",
+        "Authentication is required.",
+      );
+    }
+    return tenantId;
+  }
+  if (auth.kind === "admin") {
+    if (tenantId) return tenantId;
+    throw new PlatformApiError(
+      400,
+      "missing_tenant_id",
+      'The "me" tenant alias requires WorkOS user authentication.',
+    );
+  }
+  return resolveAuthorizedTenant(c, auth, tenantId);
+}
+
+async function requireDeploymentAuth(
+  c: Context,
+  env: BackendAppEnv,
+  apiKey: string,
+): Promise<AuthContext> {
+  const auth = await authenticateRequest(c, env, apiKey);
+  if (!auth) {
+    throw new PlatformApiError(
+      401,
+      "unauthorized",
+      "Authentication is required.",
+    );
+  }
+  if (auth.kind === "workos" && c.req.query("tag")) {
+    throw new PlatformApiError(
+      403,
+      "forbidden",
+      "Tag filters require admin authentication.",
+    );
+  }
+  return auth;
+}
+
+async function authenticateRequest(
+  c: Context,
+  env: BackendAppEnv,
+  apiKey: string,
+): Promise<AuthContext | undefined> {
+  const token = bearerToken(c);
+  if (!token) return undefined;
+  if (token === apiKey) return { kind: "admin" };
+  return authenticateWorkOSToken(env, token);
+}
+
+function bearerToken(c: Context): string | undefined {
   const header = c.req.header("Authorization");
   const match = header?.match(/^Bearer\s+(.+)$/i);
-  if (match?.[1]?.trim() === apiKey) return undefined;
-  return c.json({ error: "unauthorized" }, 401);
+  return match?.[1]?.trim() || undefined;
+}
+
+function resolveAuthorizedTenant(
+  _c: Context,
+  auth: Extract<AuthContext, { kind: "workos" }>,
+  requestedTenantId: string | undefined,
+): string {
+  const tenantId = requestedTenantId?.trim() || auth.tenantId;
+  if (tenantId !== auth.tenantId) {
+    throw new PlatformApiError(
+      403,
+      "forbidden",
+      "Authenticated users can only access their selected WorkOS organization.",
+    );
+  }
+  return tenantId;
+}
+
+async function requireDeploymentAccess(
+  db: WorkflowDeploymentRegistryDb | undefined,
+  deploymentId: string,
+  auth: Extract<AuthContext, { kind: "workos" }>,
+): Promise<void> {
+  const registry = requireWorkflowDeploymentRegistry(db);
+  const deployment = await registry.get(deploymentId);
+  if (!deployment) {
+    throw new PlatformApiError(
+      403,
+      "forbidden",
+      "Deployment is not registered for the authenticated tenant.",
+    );
+  }
+  if (deployment.tenantId !== auth.tenantId) {
+    throw new PlatformApiError(
+      403,
+      "forbidden",
+      "Authenticated users can only access their selected WorkOS organization.",
+    );
+  }
+}
+
+const workOSJwksCache = new Map<
+  string,
+  ReturnType<typeof createRemoteJWKSet>
+>();
+
+type WorkOSAuthConfig = {
+  issuer?: string | string[];
+  jwksUrl: string;
+};
+
+async function authenticateWorkOSToken(
+  env: BackendAppEnv,
+  token: string,
+): Promise<AuthContext> {
+  const config = resolveWorkOSAuthConfig(env);
+  if (!config) {
+    throw new PlatformApiError(
+      401,
+      "unauthorized",
+      "WorkOS authentication is not configured.",
+    );
+  }
+
+  let payload: WorkOSAccessTokenClaims;
+  try {
+    const verified = await jwtVerify(token, workOSJwks(config.jwksUrl), {
+      ...(config.issuer ? { issuer: config.issuer } : {}),
+    });
+    payload = verified.payload as WorkOSAccessTokenClaims;
+  } catch {
+    throw new PlatformApiError(
+      401,
+      "unauthorized",
+      "Invalid WorkOS access token.",
+    );
+  }
+
+  const userId = payload.sub;
+  const tenantId = payload.org_id;
+  if (!userId) {
+    throw new PlatformApiError(
+      401,
+      "unauthorized",
+      "WorkOS access token is missing a subject.",
+    );
+  }
+  if (!tenantId) {
+    throw new PlatformApiError(
+      403,
+      "missing_organization",
+      "Select a WorkOS organization before using tenant deployment APIs.",
+    );
+  }
+
+  return {
+    kind: "workos",
+    userId,
+    tenantId,
+    ...(typeof payload.role === "string" ? { role: payload.role } : {}),
+    permissions: Array.isArray(payload.permissions)
+      ? payload.permissions.filter(
+          (permission): permission is string => typeof permission === "string",
+        )
+      : [],
+  };
+}
+
+function resolveWorkOSAuthConfig(
+  env: BackendAppEnv,
+): WorkOSAuthConfig | undefined {
+  const clientId = env.WORKOS_CLIENT_ID?.trim();
+  if (!clientId) return undefined;
+  const apiOrigin = workOSApiOrigin(env.WORKOS_API_HOSTNAME);
+  const issuer = env.WORKOS_ISSUER?.trim() || apiOrigin;
+  return {
+    issuer: workOSIssuerCandidates(issuer),
+    jwksUrl:
+      env.WORKOS_JWKS_URL?.trim() ||
+      `${apiOrigin}/sso/jwks/${encodeURIComponent(clientId)}`,
+  };
+}
+
+function isWorkOSConfigured(env: BackendAppEnv): boolean {
+  return Boolean(env.WORKOS_CLIENT_ID?.trim());
+}
+
+function workOSJwks(jwksUrl: string): ReturnType<typeof createRemoteJWKSet> {
+  const cached = workOSJwksCache.get(jwksUrl);
+  if (cached) return cached;
+  const jwks = createRemoteJWKSet(new URL(jwksUrl));
+  workOSJwksCache.set(jwksUrl, jwks);
+  return jwks;
+}
+
+function workOSApiOrigin(hostname: string | undefined): string {
+  const value = hostname?.trim() || "api.workos.com";
+  if (/^https?:\/\//i.test(value)) return value.replace(/\/+$/, "");
+  return `https://${value.replace(/^\/+|\/+$/g, "")}`;
+}
+
+function workOSIssuerCandidates(issuer: string): string[] {
+  const withoutSlash = issuer.replace(/\/+$/, "");
+  return [withoutSlash, `${withoutSlash}/`];
 }
 
 function parseDeploymentTagFilter(c: Context): string | undefined {
@@ -1067,18 +1371,6 @@ function firstNonEmpty(...values: (string | undefined)[]): string {
     if (trimmed) return trimmed;
   }
   return "";
-}
-
-function requiredString(body: Record<string, unknown>, key: string): string {
-  const value = optionalString(body, key);
-  if (!value) {
-    throw new PlatformApiError(
-      400,
-      "missing_field",
-      `Missing required field "${key}".`,
-    );
-  }
-  return value;
 }
 
 function optionalString(

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { runAuth } from "./commands/auth.js";
 import { runBuild } from "./commands/build.js";
 import { runDeploy } from "./commands/deploy.js";
 import { runDeployments } from "./commands/deployments.js";
@@ -7,6 +8,7 @@ import { runInit } from "./commands/init.js";
 const HELP = `hylo — workflow CLI
 
 Usage:
+  hylo auth <command>                Sign in with WorkOS AuthKit
   hylo init [dir]                    Create a new workflow project
   hylo build [--backend <url>]       Bundle into a Cloudflare Worker
   hylo deploy [--backend <url>] ...  Build and deploy via wrangler
@@ -26,6 +28,8 @@ async function main(argv: string[]): Promise<number> {
   }
 
   switch (command) {
+    case "auth":
+      return runAuth(rest);
     case "init":
       return runInit(rest);
     case "build":
