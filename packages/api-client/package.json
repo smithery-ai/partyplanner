@@ -1,0 +1,26 @@
+{
+  "name": "@hylo/api-client",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "generate": "openapi-typescript openapi/hylo-backend.openapi.json -o src/generated/schema.d.ts && biome format --write src/generated/schema.d.ts",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.15.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.10.1",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  }
+}

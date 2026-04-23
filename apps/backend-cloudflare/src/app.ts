@@ -460,6 +460,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
   return {
     "/tenants/{tenantId}/deployments": {
       get: {
+        operationId: "listTenantDeployments",
         tags: ["Tenants"],
         summary: "List workflow deployments for a tenant",
         parameters: [tenantIdParam],
@@ -483,6 +484,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
     },
     "/tenants/{tenantId}/workflows": {
       get: {
+        operationId: "getTenantWorkflows",
         tags: ["Tenants"],
         summary: "Get the client workflow map for a tenant",
         parameters: [tenantIdParam],
@@ -513,6 +515,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
     },
     "/deployments": {
       get: {
+        operationId: "listDeployments",
         tags: ["Deployments"],
         summary: "List Workers for Platforms deployments",
         parameters: [authHeader, tenantIdQuery, tagQuery],
@@ -533,6 +536,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         },
       },
       post: {
+        operationId: "createDeployment",
         tags: ["Deployments"],
         summary: "Create or update a tenant Worker deployment",
         parameters: [authHeader],
@@ -564,7 +568,10 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
                     type: "array",
                     items: { type: "string" },
                   },
-                  bindings: { type: "array", items: { type: "object" } },
+                  bindings: {
+                    type: "array",
+                    items: { type: "object", additionalProperties: true },
+                  },
                   tags: { type: "array", items: { type: "string" } },
                 },
                 required: ["tenantId"],
@@ -593,6 +600,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         },
       },
       delete: {
+        operationId: "deleteDeployments",
         tags: ["Deployments"],
         summary: "Delete deployments by tenant or tag",
         parameters: [authHeader, tenantIdQuery, tagQuery],
@@ -607,6 +615,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
     },
     "/deployments/{deploymentId}": {
       get: {
+        operationId: "getDeployment",
         tags: ["Deployments"],
         summary: "Get a Workers for Platforms deployment",
         parameters: [authHeader, deploymentIdParam],
@@ -628,6 +637,7 @@ function createDeploymentOpenApiPaths(): Record<string, unknown> {
         },
       },
       delete: {
+        operationId: "deleteDeployment",
         tags: ["Deployments"],
         summary: "Delete a Workers for Platforms deployment",
         parameters: [authHeader, deploymentIdParam],
