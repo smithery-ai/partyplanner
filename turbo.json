@@ -1,6 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalPassThroughEnv": [
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CLOUDFLARE_API_TOKEN",
     "HYLO_BACKEND_NODE_DATA_DIR",
     "HYLO_BACKEND",
     "HYLO_APP_URL",
