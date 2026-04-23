@@ -5,10 +5,9 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const backendCloudflareTarget = envUrl(
-  ["VITE_HYLO_BACKEND_URL", "HYLO_BACKEND_URL"],
-  "http://127.0.0.1:8787",
-);
+const resolvedHyloBackendUrl = hyloBackendUrl();
+const backendCloudflareTarget =
+  resolvedHyloBackendUrl || "http://127.0.0.1:8787";
 const nextjsTarget = envUrl(
   ["VITE_HYLO_NEXTJS_WORKFLOW_URL", "HYLO_NEXTJS_WORKFLOW_URL"],
   "http://127.0.0.1:3000",
@@ -22,7 +21,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   define: {
     "import.meta.env.VITE_HYLO_BACKEND_URL": JSON.stringify(
-      process.env.VITE_HYLO_BACKEND_URL ?? process.env.HYLO_BACKEND_URL ?? "",
+      resolvedHyloBackendUrl,
     ),
     "import.meta.env.VITE_HYLO_WORKFLOW": JSON.stringify(
       process.env.VITE_HYLO_WORKFLOW ?? process.env.HYLO_WORKFLOW ?? "",
@@ -123,6 +122,47 @@ function envUrl(names: string[], fallback: string): string {
     if (value) return value.replace(/\/+$/, "");
   }
   return fallback;
+}
+
+function hyloBackendUrl(): string {
+  return (explicitHyloBackendUrl() ?? previewHyloBackendUrl() ?? "").replace(
+    /\/+$/,
+    "",
+  );
+}
+
+function explicitHyloBackendUrl(): string | undefined {
+  return firstEnv(["VITE_HYLO_BACKEND_URL", "HYLO_BACKEND_URL"]);
+}
+
+function previewHyloBackendUrl(): string | undefined {
+  const template = firstEnv([
+    "VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE",
+    "HYLO_BACKEND_PREVIEW_URL_TEMPLATE",
+  ]);
+  const branch = firstEnv(["VERCEL_GIT_COMMIT_REF", "GITHUB_HEAD_REF"]);
+  if (!template || !branch) return undefined;
+  return template.replaceAll("{branch}", previewAlias(branch));
+}
+
+function firstEnv(names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name]?.trim();
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function previewAlias(branch: string): string {
+  const normalized = branch
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-+/g, "-")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+  return normalized || "preview";
 }
 
 function workflowRegistry() {

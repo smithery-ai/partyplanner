@@ -54,8 +54,16 @@ the Vercel project with:
 - Framework preset: Vite
 - Build command: from `vercel.json`
 - Output directory: `dist`
-- Preview environment variable: `VITE_HYLO_BACKEND_URL`
+- Preview environment variable:
+  `VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE=https://{branch}-hylo-backend.smithery.workers.dev`
 
-Set `VITE_HYLO_BACKEND_URL` in Vercel's Preview environment to the backend
-preview origin you want the app to use. Vercel automatically creates preview
-deployments for non-production branches and pull requests.
+For Preview deployments, the Vite build derives `VITE_HYLO_BACKEND_URL` from
+`VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE` and Vercel's `VERCEL_GIT_COMMIT_REF`.
+The `{branch}` token is replaced with the same sanitized branch alias used by
+the Cloudflare backend preview command.
+
+Set `VITE_HYLO_BACKEND_URL` directly for Production:
+
+```sh
+VITE_HYLO_BACKEND_URL=https://hylo-backend.smithery.workers.dev
+```

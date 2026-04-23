@@ -68,7 +68,17 @@ the Workers project with:
 - Build command: `pnpm --filter backend-cloudflare build`
 - Deploy command: `pnpm --filter backend-cloudflare deploy`
 - Non-production branch deploy command:
-  `pnpm --filter backend-cloudflare exec wrangler versions upload`
+  ```sh
+  ALIAS="$(echo "$WORKERS_CI_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/^-*//; s/-*$//; s/--*/-/g' | cut -c1-40 | sed 's/-*$//')" && pnpm --filter backend-cloudflare exec wrangler versions upload --preview-alias "${ALIAS:-preview}"
+  ```
 
 `wrangler.toml` enables Worker preview URLs, so Cloudflare non-production
 branch builds produce preview URLs without promoting the Worker to production.
+The aliased preview URL format is:
+
+```txt
+https://{branch}-hylo-backend.smithery.workers.dev
+```
+
+where `{branch}` is the sanitized branch alias from the non-production deploy
+command.
