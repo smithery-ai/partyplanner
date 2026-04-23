@@ -305,6 +305,9 @@ importers:
         specifier: ^0.15.0
         version: 0.15.2
     devDependencies:
+      backend-cloudflare:
+        specifier: workspace:*
+        version: link:../../apps/backend-cloudflare
       openapi-typescript:
         specifier: ^7.10.1
         version: 7.13.0(typescript@5.9.3)
