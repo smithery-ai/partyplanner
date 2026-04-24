@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { execSync, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import net from "node:net";
 
 const host = "127.0.0.1";
+const portlessCaPath = "/tmp/portless/ca.pem";
 const portSpecs = [
   ["HYLO_BACKEND_PORT", 8787],
   ["HYLO_BACKEND_INSPECTOR_PORT", 9230],
@@ -11,6 +13,11 @@ const portSpecs = [
 
 const reserved = new Set();
 const env = { ...process.env };
+
+if (!env.NODE_EXTRA_CA_CERTS && existsSync(portlessCaPath)) {
+  env.NODE_EXTRA_CA_CERTS = portlessCaPath;
+}
+env.NODE_TLS_REJECT_UNAUTHORIZED ??= "0";
 
 for (const [name, fallback] of portSpecs) {
   env[name] = String(await resolvePort(name, fallback));

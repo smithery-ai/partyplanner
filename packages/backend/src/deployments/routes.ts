@@ -404,15 +404,9 @@ export function mountDeploymentApi(
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
       const requestUrl = new URL(c.req.url);
-      const requestConfig = {
-        ...deploymentBackend.config,
-        workerDispatchBaseUrl:
-          deploymentBackend.config.workerDispatchBaseUrl ??
-          `${requestUrl.origin}/workers`,
-      };
       const input = parseProvisionDeploymentInput(
         c.req.valid("json"),
-        requestConfig,
+        deploymentBackend.config,
         auth.kind === "workos" ? auth.tenantId : undefined,
         auth.kind === "admin",
       );
@@ -421,21 +415,33 @@ export function mountDeploymentApi(
       }
 
       const registry = deploymentRegistry;
-      const workflowApiUrl = deploymentBackend.resolveWorkflowApiUrl(input);
+      const workflowApiUrl = deploymentBackend.resolveWorkflowApiUrl(
+        input,
+        requestUrl.origin,
+      );
+      const workflowTargetUrl = deploymentBackend.resolveWorkflowTargetUrl?.(
+        input,
+        requestUrl.origin,
+      );
+      const deploymentInput = { ...input, workflowApiUrl };
       if (registry) {
         await registry.upsert({
-          tenantId: input.tenantId,
-          deploymentId: input.deploymentId,
-          label: input.label,
+          tenantId: deploymentInput.tenantId,
+          deploymentId: deploymentInput.deploymentId,
+          label: deploymentInput.label,
           workflowApiUrl,
+          workflowTargetUrl,
           dispatchNamespace: deploymentBackend.namespace,
-          tags: input.tags,
+          tags: deploymentInput.tags,
         });
       }
 
       let result: unknown;
       try {
-        result = await deploymentBackend.create(input, requestUrl.origin);
+        result = await deploymentBackend.create(
+          deploymentInput,
+          requestUrl.origin,
+        );
       } catch (error) {
         if (registry) {
           await registry.delete(input.deploymentId);

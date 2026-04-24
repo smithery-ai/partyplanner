@@ -16,8 +16,17 @@ export function createCloudflareDeploymentBackend(
     namespace: config.dispatchNamespace,
     configured: isCloudflarePlatformConfigured(env),
     config,
-    resolveWorkflowApiUrl(input) {
-      return input.workflowApiUrl;
+    resolveWorkflowApiUrl(input, requestOrigin) {
+      return (
+        input.workflowApiUrl ??
+        defaultWorkflowApiUrl(
+          config.workerDispatchBaseUrl ?? `${requestOrigin}/workers`,
+          input.deploymentId,
+        )
+      );
+    },
+    resolveWorkflowTargetUrl() {
+      return undefined;
     },
     async create(input, requestOrigin) {
       const formData = new FormData();
@@ -134,6 +143,9 @@ export function createUnavailableCloudflareDeploymentBackend(
     resolveWorkflowApiUrl() {
       return undefined;
     },
+    resolveWorkflowTargetUrl() {
+      return undefined;
+    },
     create: unavailable,
     list: unavailable,
     get: unavailable,
@@ -176,6 +188,12 @@ function missingCloudflareConfig(env: BackendAppEnv): string[] {
     missing.push("CLOUDFLARE_DISPATCH_NAMESPACE");
   }
   return missing;
+}
+
+function defaultWorkflowApiUrl(baseUrl: string, deploymentId: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/${encodeURIComponent(
+    deploymentId,
+  )}/api/workflow`;
 }
 
 function rewriteDispatchRequest(request: Request): Request {

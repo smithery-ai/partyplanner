@@ -13,6 +13,8 @@ type AppProps = {
 type WorkOSConfig = {
   clientId: string;
   apiHostname?: string;
+  https?: boolean;
+  port?: number;
   redirectUri?: string;
   devMode?: boolean;
 };
@@ -54,6 +56,8 @@ export function App({ children }: AppProps) {
     <AuthKitProvider
       clientId={workos.clientId}
       apiHostname={workos.apiHostname}
+      https={workos.https}
+      port={workos.port}
       redirectUri={workos.redirectUri}
       devMode={workos.devMode}
       onRedirectCallback={handleRedirectCallback}
@@ -151,13 +155,33 @@ async function getApiWorkOSConfig(
 
   return {
     clientId: config.auth.clientId,
-    apiHostname:
-      optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ??
-      config.auth.apiHostname,
-    redirectUri: optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI),
+    ...workOSApiConfig(config.auth.apiHostname),
+    redirectUri:
+      optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI) ??
+      (import.meta.env.DEV ? window.location.origin : undefined),
     devMode:
       optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ??
       (import.meta.env.DEV ? true : undefined),
+  };
+}
+
+function workOSApiConfig(apiHostname: string): {
+  apiHostname: string;
+  https?: boolean;
+  port?: number;
+} {
+  if (!import.meta.env.DEV) {
+    return {
+      apiHostname:
+        optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ?? apiHostname,
+    };
+  }
+
+  const port = Number(window.location.port);
+  return {
+    apiHostname: window.location.hostname,
+    https: window.location.protocol === "https:",
+    ...(Number.isInteger(port) && port > 0 ? { port } : {}),
   };
 }
 

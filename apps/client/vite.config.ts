@@ -13,14 +13,6 @@ if (isVercelBuild() && !resolvedHyloBackendUrl) {
 }
 const backendCloudflareTarget =
   resolvedHyloBackendUrl || "https://api-worker.hylo.localhost";
-const nextjsTarget = envUrl(
-  ["VITE_HYLO_NEXTJS_WORKFLOW_URL", "HYLO_NEXTJS_WORKFLOW_URL"],
-  "http://127.0.0.1:3000",
-);
-const cloudflareWorkerTarget = envUrl(
-  ["VITE_HYLO_CLOUDFLARE_WORKFLOW_URL", "HYLO_CLOUDFLARE_WORKFLOW_URL"],
-  "https://workflow-cloudflare-worker-example.localhost",
-);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -31,7 +23,6 @@ export default defineConfig({
     "import.meta.env.VITE_HYLO_WORKFLOW": JSON.stringify(
       process.env.VITE_HYLO_WORKFLOW ?? process.env.HYLO_WORKFLOW ?? "",
     ),
-    __HYLO_WORKFLOWS__: JSON.stringify(workflowRegistry()),
   },
   resolve: {
     alias: {
@@ -43,12 +34,6 @@ export default defineConfig({
     port: process.env.PORT ? Number(process.env.PORT) : 5173,
     strictPort: Boolean(process.env.PORT),
     proxy: {
-      "/api/nextjs": workflowProxy(nextjsTarget, /^\/api\/nextjs(?=\/|$)/),
-      "/api/cloudflare": workflowProxy(
-        cloudflareWorkerTarget,
-        /^\/api\/cloudflare(?=\/|$)/,
-      ),
-      "/api": workflowProxy(nextjsTarget, /^\/api(?=\/|$)/),
       "/auth": {
         target: backendCloudflareTarget,
         changeOrigin: true,
@@ -67,6 +52,12 @@ export default defineConfig({
         secure: false,
         agent: hyloLocalAgent(backendCloudflareTarget),
       },
+      "/workers": {
+        target: backendCloudflareTarget,
+        changeOrigin: true,
+        secure: false,
+        agent: hyloLocalAgent(backendCloudflareTarget),
+      },
       "/user_management": {
         target: "https://api.workos.com",
         changeOrigin: true,
@@ -74,17 +65,6 @@ export default defineConfig({
     },
   },
 });
-
-function workflowProxy(target: string, prefix: RegExp) {
-  return {
-    target,
-    changeOrigin: true,
-    secure: false,
-    agent: hyloLocalAgent(target),
-    rewrite: (proxyPath: string) =>
-      proxyPath.replace(prefix, "/api/workflow") || "/api/workflow",
-  };
-}
 
 function hyloLocalAgent(target: string): https.Agent | undefined {
   try {
@@ -125,14 +105,6 @@ function hyloLocalAgent(target: string): https.Agent | undefined {
   } catch {
     return undefined;
   }
-}
-
-function envUrl(names: string[], fallback: string): string {
-  for (const name of names) {
-    const value = process.env[name]?.trim();
-    if (value) return value.replace(/\/+$/, "");
-  }
-  return fallback;
 }
 
 function hyloBackendUrl(): string {
@@ -182,69 +154,4 @@ function previewAlias(branch: string): string {
     .slice(0, 40)
     .replace(/-+$/g, "");
   return normalized || "preview";
-}
-
-function workflowRegistry() {
-  const raw =
-    process.env.VITE_HYLO_WORKFLOWS ?? process.env.HYLO_WORKFLOWS ?? "";
-  if (raw.trim()) {
-    try {
-      return normalizeWorkflowRegistry(JSON.parse(raw));
-    } catch {
-      throw new Error("HYLO_WORKFLOWS must be valid JSON");
-    }
-  }
-
-  return {
-    defaultWorkflow: "workflow.cloudflareWorker",
-    workflows: {
-      "workflow.cloudflareWorker": {
-        label: "Cloudflare Worker",
-        url: "/api/cloudflare",
-      },
-    },
-  };
-}
-
-function normalizeWorkflowRegistry(value: unknown) {
-  if (!value || typeof value !== "object" || !("workflows" in value)) {
-    throw new Error("HYLO_WORKFLOWS must define workflows");
-  }
-
-  const workflows = (value as { workflows?: unknown }).workflows;
-  if (!workflows || typeof workflows !== "object") {
-    throw new Error("HYLO_WORKFLOWS workflows must be an object");
-  }
-
-  const entries = Object.entries(workflows).map(([id, config]) => {
-    if (!config || typeof config !== "object" || !("url" in config)) {
-      throw new Error(`HYLO_WORKFLOWS ${id} must define url`);
-    }
-    const url = (config as { url?: unknown }).url;
-    if (typeof url !== "string" || !url.trim()) {
-      throw new Error(`HYLO_WORKFLOWS ${id}.url must be a string`);
-    }
-    const label = (config as { label?: unknown }).label;
-    return [
-      id,
-      {
-        ...(typeof label === "string" && label.trim() ? { label } : {}),
-        url: url.trim(),
-      },
-    ];
-  });
-  if (entries.length === 0) {
-    throw new Error("HYLO_WORKFLOWS must include at least one workflow");
-  }
-
-  const defaultWorkflow = (value as { defaultWorkflow?: unknown })
-    .defaultWorkflow;
-  return {
-    defaultWorkflow:
-      typeof defaultWorkflow === "string" &&
-      entries.some(([id]) => id === defaultWorkflow)
-        ? defaultWorkflow
-        : entries[0][0],
-    workflows: Object.fromEntries(entries),
-  };
 }

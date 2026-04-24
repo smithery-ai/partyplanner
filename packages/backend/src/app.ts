@@ -167,7 +167,9 @@ function mountWorkerDispatchApi(
   const dispatch = async (c: Context) => {
     try {
       const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
-      return await deploymentBackend.fetchWorkflow(deploymentId, c.req.raw);
+      return mutableResponse(
+        await deploymentBackend.fetchWorkflow(deploymentId, c.req.raw),
+      );
     } catch (e) {
       return apiErrorResponse(c, e);
     }
@@ -175,6 +177,14 @@ function mountWorkerDispatchApi(
 
   app.all("/workers/:deploymentId", dispatch);
   app.all("/workers/:deploymentId/*", dispatch);
+}
+
+function mutableResponse(response: Response): Response {
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 function collectCuratedProviders(

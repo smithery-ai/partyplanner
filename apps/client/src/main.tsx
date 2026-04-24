@@ -18,7 +18,6 @@ type WorkflowRegistry = {
 
 type WorkflowRegistryConfig = {
   backendUrl?: string;
-  registry?: WorkflowRegistry;
   url?: string;
 };
 
@@ -58,11 +57,6 @@ function ClientApp({
     setRegistry(undefined);
     setRegistryError(undefined);
 
-    if (registryConfig.registry) {
-      setRegistry(registryConfig.registry);
-      return () => abort.abort();
-    }
-
     if (!registryConfig.url) {
       setRegistry(emptyWorkflowRegistry());
       setRegistryError("Workflow registry could not be loaded.");
@@ -88,28 +82,17 @@ function ClientApp({
         return normalizeWorkflowRegistry(await response.json());
       })
       .then((nextRegistry) => {
-        if (!abort.signal.aborted)
-          setRegistry(
-            mergeWorkflowRegistries(nextRegistry, localWorkflowRegistry()),
-          );
+        if (!abort.signal.aborted) setRegistry(nextRegistry);
       })
       .catch((error) => {
         if (!abort.signal.aborted) {
-          const fallback = localWorkflowRegistry();
-          if (fallback && Object.keys(fallback.workflows).length > 0) {
-            setRegistry(fallback);
-          } else {
-            console.warn(
-              "[hylo-client] failed to load workflow registry",
-              error,
-            );
-            setRegistry(emptyWorkflowRegistry());
-            setRegistryError(
-              error instanceof Error
-                ? error.message
-                : "Workflow registry could not be loaded.",
-            );
-          }
+          console.warn("[hylo-client] failed to load workflow registry", error);
+          setRegistry(emptyWorkflowRegistry());
+          setRegistryError(
+            error instanceof Error
+              ? error.message
+              : "Workflow registry could not be loaded.",
+          );
         }
       });
 
@@ -374,26 +357,6 @@ function emptyWorkflowRegistry(): WorkflowRegistry {
   return { workflows: {} };
 }
 
-function localWorkflowRegistry(): WorkflowRegistry | undefined {
-  if (!isLocalDev()) return undefined;
-  return __HYLO_WORKFLOWS__;
-}
-
-function mergeWorkflowRegistries(
-  base: WorkflowRegistry,
-  overlay: WorkflowRegistry | undefined,
-): WorkflowRegistry {
-  if (!overlay) return base;
-  const workflows = { ...overlay.workflows, ...base.workflows };
-  return {
-    defaultWorkflow:
-      base.defaultWorkflow ??
-      overlay.defaultWorkflow ??
-      Object.keys(workflows)[0],
-    workflows,
-  };
-}
-
 function parseWorkflowChoice(
   value: string | undefined,
   registry: WorkflowRegistry,
@@ -409,15 +372,6 @@ function requestedWorker(): string | undefined {
   return firstNonEmpty(
     new URLSearchParams(window.location.search).get("worker"),
     import.meta.env.VITE_HYLO_WORKFLOW,
-  );
-}
-
-function isLocalDev(): boolean {
-  if (!import.meta.env.DEV) return false;
-  const hostname = window.location.hostname;
-  return (
-    ["localhost", "127.0.0.1", "::1"].includes(hostname) ||
-    hostname.endsWith(".localhost")
   );
 }
 
