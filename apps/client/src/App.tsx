@@ -177,35 +177,22 @@ function SignedOutScreen({
   );
 }
 
+type BackendAuthConfig = Awaited<
+  ReturnType<ReturnType<typeof createHyloApiClient>["auth"]["clientConfig"]>
+>;
+
 async function getWorkOSConfig(
   signal: AbortSignal,
 ): Promise<WorkOSConfig | null> {
   const clientId = optionalEnv(import.meta.env.VITE_WORKOS_CLIENT_ID);
-  if (clientId) {
-    return {
-      clientId,
-      apiHostname: optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME),
-      redirectUri: optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI),
-      devMode:
-        optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ??
-        (import.meta.env.DEV ? true : undefined),
-    };
-  }
+  const config = await getBackendAuthConfig(signal, Boolean(clientId));
+  const backendAuth = config?.auth;
+  const resolvedClientId = clientId ?? backendAuth?.clientId;
+  if (!resolvedClientId) return null;
 
-  const client = createHyloApiClient({
-    baseUrl: authConfigBackendUrl(),
-    fetch: (input, init) =>
-      fetch(input, {
-        ...init,
-        signal,
-      }),
-  });
-  const config = await client.auth.clientConfig();
-  if (!config.auth) return null;
-
-  const apiConfig = workOSApiConfig(config.auth.apiHostname);
+  const apiConfig = workOSApiConfig(backendAuth?.apiHostname);
   return {
-    clientId: config.auth.clientId,
+    clientId: resolvedClientId,
     ...apiConfig,
     redirectUri:
       optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI) ??
@@ -217,7 +204,28 @@ async function getWorkOSConfig(
   };
 }
 
-function workOSApiConfig(apiHostname: string): {
+async function getBackendAuthConfig(
+  signal: AbortSignal,
+  optional: boolean,
+): Promise<BackendAuthConfig | null> {
+  const client = createHyloApiClient({
+    baseUrl: authConfigBackendUrl(),
+    fetch: (input, init) =>
+      fetch(input, {
+        ...init,
+        signal,
+      }),
+  });
+  try {
+    return await client.auth.clientConfig();
+  } catch (error) {
+    if (!optional) throw error;
+    console.warn("[hylo-client] failed to load backend auth config", error);
+    return null;
+  }
+}
+
+function workOSApiConfig(apiHostname: string | undefined): {
   apiHostname: string;
   https?: boolean;
   port?: number;
@@ -225,7 +233,9 @@ function workOSApiConfig(apiHostname: string): {
 } {
   if (!import.meta.env.DEV) {
     const hostname =
-      optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ?? apiHostname;
+      optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ??
+      apiHostname ??
+      "api.workos.com";
     return {
       apiHostname: hostname,
       devMode: hostname === "api.workos.com" ? true : undefined,
