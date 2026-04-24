@@ -13,6 +13,8 @@ const portSpecs = [
 
 const reserved = new Set();
 const env = { ...process.env };
+const enableBackendTunnel =
+  process.argv.includes("--tunnel") || env.HYLO_BACKEND_TUNNEL === "1";
 
 if (!env.NODE_EXTRA_CA_CERTS && existsSync(portlessCaPath)) {
   env.NODE_EXTRA_CA_CERTS = portlessCaPath;
@@ -27,6 +29,16 @@ execSync(`portless alias api-worker.hylo ${env.HYLO_BACKEND_PORT}`, {
   stdio: "ignore",
 });
 
+let backendTunnel;
+if (enableBackendTunnel) {
+  console.log("Starting Cloudflare tunnel for the local backend...");
+  backendTunnel = await startBackendTunnel(env.HYLO_BACKEND_PORT);
+  env.HYLO_BACKEND_TUNNEL_URL = backendTunnel.url;
+  env.HYLO_BACKEND_PUBLIC_URL = backendTunnel.url;
+  console.log(`  public backend: ${backendTunnel.url}`);
+  console.log(`  public webhooks: ${backendTunnel.url}/webhooks`);
+}
+
 console.log("Applying local backend database migrations...");
 execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
   env,
@@ -38,6 +50,9 @@ console.log("  client: https://hylo-client.localhost");
 console.log(
   `  backend-node: https://api-worker.hylo.localhost (port ${env.HYLO_BACKEND_PORT})`,
 );
+if (env.HYLO_BACKEND_TUNNEL_URL) {
+  console.log(`  backend tunnel: ${env.HYLO_BACKEND_TUNNEL_URL}`);
+}
 console.log(
   "  workflow-cloudflare-worker-example: https://workflow-cloudflare-worker-example.localhost",
 );
@@ -66,6 +81,7 @@ const child = spawn(
 );
 
 child.on("exit", (code, signal) => {
+  stopBackendTunnel(backendTunnel);
   if (signal) {
     process.exit(1);
     return;
@@ -74,14 +90,79 @@ child.on("exit", (code, signal) => {
 });
 
 child.on("error", (error) => {
+  stopBackendTunnel(backendTunnel);
   console.error(`Failed to start pnpm dev: ${error.message}`);
   process.exit(1);
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
+    stopBackendTunnel(backendTunnel);
     child.kill(signal);
   });
+}
+
+function startBackendTunnel(port) {
+  return new Promise((resolve, reject) => {
+    const target = `http://${host}:${port}`;
+    const child = spawn(
+      "cloudflared",
+      ["--no-autoupdate", "tunnel", "--url", target],
+      {
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill("SIGTERM");
+      reject(
+        new Error(
+          "Timed out waiting for cloudflared to report a public tunnel URL.",
+        ),
+      );
+    }, 30_000);
+
+    const handleOutput = (chunk) => {
+      const text = chunk.toString();
+      process.stderr.write(text);
+      const match = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
+      if (!match || settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve({ process: child, url: match[0] });
+    };
+
+    child.stdout.on("data", handleOutput);
+    child.stderr.on("data", handleOutput);
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(
+        new Error(
+          `Failed to start cloudflared. Install it or run without --tunnel. ${error.message}`,
+        ),
+      );
+    });
+    child.on("exit", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(
+        new Error(
+          `cloudflared exited before a tunnel URL was available (${signal ?? code}).`,
+        ),
+      );
+    });
+  });
+}
+
+function stopBackendTunnel(tunnel) {
+  if (!tunnel || tunnel.process.killed) return;
+  tunnel.process.kill("SIGTERM");
 }
 
 async function resolvePort(name, fallback) {

@@ -13,6 +13,7 @@ import {
   openApiJsonResponse,
   typedRouteResponse,
 } from "../openapi";
+import { resolveBackendPublicUrl as resolveConfiguredBackendPublicUrl } from "../public-url";
 import type { BackendAppEnv } from "../types";
 
 const AuthClientConfigSchema = z
@@ -143,5 +144,5 @@ function currentIdentity(auth: AuthContext) {
 }
 
 function resolveBackendPublicUrl(env: BackendAppEnv, c: Context): string {
-  return env.HYLO_BACKEND_PUBLIC_URL?.trim() || new URL(c.req.url).origin;
+  return resolveConfiguredBackendPublicUrl(env, new URL(c.req.url).origin);
 }

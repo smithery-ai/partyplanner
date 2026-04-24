@@ -28,6 +28,7 @@ import {
 } from "./deployments/routes";
 import { parseDeploymentIdParam } from "./deployments/validators";
 import { apiErrorResponse } from "./errors";
+import { resolveBrokerBaseUrl } from "./public-url";
 import type { BackendAppEnv } from "./types";
 
 export type { BackendAppEnv } from "./types";
@@ -225,14 +226,6 @@ function resolveApiKey(env: BackendAppEnv): string {
     `[oauth-broker] HYLO_API_KEY is not set; using dev default "${DEV_API_KEY}". Set HYLO_API_KEY in both backend and worker env to override.`,
   );
   return DEV_API_KEY;
-}
-
-function resolveBrokerBaseUrl(env: BackendAppEnv): string {
-  const explicit = env.HYLO_BROKER_BASE_URL?.trim();
-  if (explicit) return explicit;
-  const backendUrl = env.HYLO_BACKEND_PUBLIC_URL?.trim();
-  if (backendUrl) return `${backendUrl.replace(/\/+$/, "")}/oauth`;
-  return "https://api-worker.hylo.localhost/oauth";
 }
 
 export type AppType = ReturnType<typeof createApp>;

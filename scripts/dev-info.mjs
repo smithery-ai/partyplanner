@@ -5,6 +5,11 @@ const urls = [
   ["Backend", "https://api-worker.hylo.localhost"],
   ["Workflow", "https://workflow-cloudflare-worker-example.localhost"],
 ];
+const backendTunnelUrl = process.env.HYLO_BACKEND_TUNNEL_URL?.trim();
+if (backendTunnelUrl) {
+  urls.push(["Public", backendTunnelUrl]);
+  urls.push(["Webhooks", `${backendTunnelUrl.replace(/\/+$/, "")}/webhooks`]);
+}
 
 printBanner();
 
