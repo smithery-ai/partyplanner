@@ -1,6 +1,26 @@
-import { WorkflowSinglePage } from "@workflow/frontend";
+/* eslint-disable react-refresh/only-export-components */
+
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+  useNavigate,
+  useParams,
+  useSearch,
+} from "@tanstack/react-router";
+import {
+  type WorkflowNavigation,
+  WorkflowSinglePage,
+} from "@workflow/frontend";
 import "@workflow/frontend/styles.css";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
@@ -21,8 +41,64 @@ type WorkflowRegistryConfig = {
   url?: string;
 };
 
+type ClientSearch = {
+  tenantId?: string;
+  workflowRegistryUrl?: string;
+  worker?: string;
+};
+
+type ClientEnvironment = {
+  getAccessToken: () => Promise<string>;
+  sidebarFooter: ReactNode;
+};
+
 const LOCAL_BACKEND_URL = "http://127.0.0.1:8787";
 const DEFAULT_LOCAL_WORKFLOW_ID = "workflow-cloudflare-worker-example";
+
+const ClientEnvironmentContext = createContext<ClientEnvironment | null>(null);
+const clientQueryClient = new QueryClient();
+
+const rootRoute = createRootRoute({
+  validateSearch: (search): ClientSearch => ({
+    tenantId: searchParam(search.tenantId),
+    workflowRegistryUrl: searchParam(search.workflowRegistryUrl),
+    worker: searchParam(search.worker),
+  }),
+  component: RootRouteComponent,
+});
+
+const homeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  component: HomeRouteComponent,
+});
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  component: HomeRouteComponent,
+});
+
+const runRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/runs/$runId",
+  component: RunRouteComponent,
+});
+
+const routeTree = rootRoute.addChildren([homeRoute, loginRoute, runRoute]);
+
+const router = createRouter({
+  routeTree,
+  defaultNotFoundComponent: () => (
+    <ClientStateMessage>Page not found.</ClientStateMessage>
+  ),
+});
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: typeof router;
+  }
+}
 
 const root = document.getElementById("root");
 
@@ -33,101 +109,104 @@ if (!root) {
 createRoot(root).render(
   <App>
     {({ getAccessToken, sidebarFooter }) => (
-      <ClientApp
-        getAccessToken={getAccessToken}
-        sidebarFooter={sidebarFooter}
-      />
+      <ClientEnvironmentContext.Provider
+        value={{ getAccessToken, sidebarFooter }}
+      >
+        <QueryClientProvider client={clientQueryClient}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      </ClientEnvironmentContext.Provider>
     )}
   </App>,
 );
 
-function ClientApp({
-  getAccessToken,
-  sidebarFooter,
-}: {
-  getAccessToken: () => Promise<string>;
-  sidebarFooter: ReactNode;
-}) {
-  const registryConfig = useMemo(() => workflowRegistryConfig(), []);
-  const [registry, setRegistry] = useState<WorkflowRegistry>();
-  const [registryError, setRegistryError] = useState<string>();
-  const [worker, setWorker] = useState<string | undefined>(() =>
-    requestedWorker(),
-  );
+function RootRouteComponent() {
+  return <Outlet />;
+}
+
+function HomeRouteComponent() {
+  return <ClientApp />;
+}
+
+function RunRouteComponent() {
+  const { runId } = useParams({ from: runRoute.id });
+  return <ClientApp routeRunId={runId} />;
+}
+
+function ClientApp({ routeRunId }: { routeRunId?: string }) {
+  const { getAccessToken, sidebarFooter } = useClientEnvironment();
+  const navigate = useNavigate();
+  const search = useSearch({ from: rootRoute.id });
+  const registryConfig = workflowRegistryConfig(search);
+  const registryQuery = useQuery({
+    queryKey: ["hylo-client", "workflow-registry", registryConfig.url],
+    enabled: Boolean(registryConfig.url),
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const registryUrl = registryConfig.url;
+      if (!registryUrl) {
+        throw new Error("Workflow registry could not be loaded.");
+      }
+      const accessToken = await getAccessToken();
+      const response = await fetch(registryUrl, {
+        headers: workflowRegistryHeaders(
+          registryUrl,
+          accessToken,
+          registryConfig.backendUrl,
+        ),
+        signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Workflow registry failed with ${response.status}`);
+      }
+      return normalizeWorkflowRegistry(await response.json());
+    },
+  });
 
   useEffect(() => {
-    const abort = new AbortController();
-    setRegistry(undefined);
-    setRegistryError(undefined);
+    if (!registryQuery.error) return;
+    console.warn(
+      "[hylo-client] failed to load workflow registry",
+      registryQuery.error,
+    );
+  }, [registryQuery.error]);
 
-    if (!registryConfig.url) {
-      setRegistry(emptyWorkflowRegistry());
-      setRegistryError("Workflow registry could not be loaded.");
-      return () => abort.abort();
-    }
-    const registryUrl = registryConfig.url;
+  const registry = resolvedWorkflowRegistry(registryConfig.url, registryQuery);
+  const registryError = workflowRegistryError(
+    registryConfig.url,
+    registryQuery,
+  );
 
-    void getAccessToken()
-      .then((accessToken) =>
-        fetch(registryUrl, {
-          headers: workflowRegistryHeaders(
-            registryUrl,
-            accessToken,
-            registryConfig.backendUrl,
-          ),
-          signal: abort.signal,
-        }),
-      )
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Workflow registry failed with ${response.status}`);
-        }
-        return normalizeWorkflowRegistry(await response.json());
-      })
-      .then((nextRegistry) => {
-        if (abort.signal.aborted) return;
-        const fallback =
-          Object.keys(nextRegistry.workflows).length === 0
-            ? localWorkflowRegistry()
-            : undefined;
-        setRegistry(fallback ?? nextRegistry);
-      })
-      .catch((error) => {
-        if (!abort.signal.aborted) {
-          console.warn("[hylo-client] failed to load workflow registry", error);
-          setRegistry(emptyWorkflowRegistry());
-          setRegistryError(
-            error instanceof Error
-              ? error.message
-              : "Workflow registry could not be loaded.",
-          );
-        }
-      });
+  const workflows = registry ? Object.entries(registry.workflows) : [];
+  const selectedWorker =
+    registry &&
+    (parseWorkflowChoice(requestedWorker(search), registry) ??
+      registry.defaultWorkflow ??
+      workflows[0]?.[0]);
 
-    return () => abort.abort();
-  }, [getAccessToken, registryConfig]);
+  useEffect(() => {
+    if (!registry || !selectedWorker || search.worker === selectedWorker)
+      return;
+    void navigate({
+      to: routeRunId ? "/runs/$runId" : "/",
+      params: routeRunId ? { runId: routeRunId } : undefined,
+      search: (previous: ClientSearch) => withWorker(previous, selectedWorker),
+      replace: true,
+    });
+  }, [navigate, registry, routeRunId, search.worker, selectedWorker]);
 
   const switcher = (
     <ClientSwitcher
-      selectedWorker={worker}
-      onWorkerChange={setWorker}
-      workflows={registry ? Object.entries(registry.workflows) : []}
+      selectedWorker={selectedWorker}
+      onWorkerChange={(worker) => {
+        void navigate({
+          to: "/",
+          search: (previous: ClientSearch) => withWorker(previous, worker),
+        });
+      }}
+      workflows={workflows}
     />
   );
-
-  useEffect(() => {
-    if (!registry) return;
-    if (worker && worker in registry.workflows) return;
-    setWorker(
-      parseWorkflowChoice(requestedWorker(), registry) ??
-        registry.defaultWorkflow ??
-        Object.keys(registry.workflows)[0],
-    );
-  }, [registry, worker]);
-
-  useEffect(() => {
-    if (worker) writeWorkflowConfigToUrl(worker);
-  }, [worker]);
 
   if (!registry) {
     return (
@@ -138,7 +217,6 @@ function ClientApp({
     );
   }
 
-  const workflows = Object.entries(registry.workflows);
   if (workflows.length === 0) {
     return (
       <>
@@ -152,14 +230,39 @@ function ClientApp({
     );
   }
 
-  const selectedWorker =
-    worker && registry.workflows[worker] ? worker : workflows[0][0];
-  const workflow = registry.workflows[selectedWorker];
+  const workflow = registry.workflows[selectedWorker ?? workflows[0][0]];
+  const navigation: WorkflowNavigation = {
+    home: () => {
+      void navigate({
+        to: "/",
+        search: (previous: ClientSearch) =>
+          withWorker(previous, selectedWorker),
+      });
+    },
+    workflow: (_workflowId, options) => {
+      void navigate({
+        to: "/",
+        search: (previous: ClientSearch) =>
+          withWorker(previous, selectedWorker),
+        replace: options?.replace,
+      });
+    },
+    run: (_workflowId, runId) => {
+      void navigate({
+        to: "/runs/$runId",
+        params: { runId },
+        search: (previous: ClientSearch) =>
+          withWorker(previous, selectedWorker),
+      });
+    },
+  };
 
   return (
     <>
       <WorkflowSinglePage
-        apiBaseUrl={workflowApiUrl(workflow.url, registryConfig.backendUrl)}
+        apiBaseUrl={workflowApiUrl(workflow.url)}
+        runId={routeRunId}
+        navigation={navigation}
         sidebarFooter={sidebarFooter}
       />
       {switcher}
@@ -266,21 +369,21 @@ function deployBackendOption(backendUrl: string | undefined): string | null {
 function isDefaultBackendUrl(backendUrl: string): boolean {
   try {
     return (
-      new URL(backendUrl).origin === "https://hylo-backend.smithery.workers.dev"
+      new URL(backendUrl, window.location.origin).origin ===
+      "https://hylo-backend.smithery.workers.dev"
     );
   } catch {
     return false;
   }
 }
 
-function workflowRegistryConfig(): WorkflowRegistryConfig {
-  const params = new URLSearchParams(window.location.search);
+function workflowRegistryConfig(search: ClientSearch): WorkflowRegistryConfig {
   const tenantId = firstNonEmpty(
-    params.get("tenantId"),
+    search.tenantId,
     import.meta.env.VITE_HYLO_TENANT_ID,
   );
   const explicitUrl = firstNonEmpty(
-    params.get("workflowRegistryUrl"),
+    search.workflowRegistryUrl,
     import.meta.env.VITE_HYLO_WORKFLOW_REGISTRY_URL,
   );
 
@@ -292,22 +395,12 @@ function workflowRegistryConfig(): WorkflowRegistryConfig {
     };
   }
 
-  const backendUrl = hyloBackendUrl();
-  const registryPath = tenantId
-    ? `/tenants/${encodeURIComponent(tenantId)}/workflows`
-    : "/tenants/me/workflows";
-
   return {
-    backendUrl,
-    url: backendUrl ? `${backendUrl}${registryPath}` : registryPath,
+    backendUrl: "/api",
+    url: tenantId
+      ? `/api/tenants/${encodeURIComponent(tenantId)}/workflows`
+      : "/api/tenants/me/workflows",
   };
-}
-
-function hyloBackendUrl(): string | undefined {
-  return firstNonEmpty(import.meta.env.VITE_HYLO_BACKEND_URL)?.replace(
-    /\/+$/,
-    "",
-  );
 }
 
 function workflowRegistryHeaders(
@@ -318,7 +411,7 @@ function workflowRegistryHeaders(
   const headers: Record<string, string> = { Accept: "application/json" };
   if (
     isSameOriginUrl(url) ||
-    isBackendUrl(url, backendUrl ?? hyloBackendUrl())
+    isBackendUrl(url, backendUrl ?? workflowRegistryConfig({}).backendUrl)
   ) {
     headers.Authorization = `Bearer ${accessToken}`;
   }
@@ -339,25 +432,28 @@ function isBackendUrl(value: string, backendUrl: string | undefined): boolean {
   try {
     return (
       new URL(value, window.location.origin).origin ===
-      new URL(backendUrl).origin
+      new URL(backendUrl, window.location.origin).origin
     );
   } catch {
     return false;
   }
 }
 
-function workflowApiUrl(apiBaseUrl: string, backendUrl: string | undefined) {
-  if (!backendUrl) return apiBaseUrl;
-
-  let url = new URL(apiBaseUrl, window.location.origin);
-  if (isLoopbackUrl(url)) {
-    const backend = new URL(backendUrl);
-    url = new URL(`${url.pathname}${url.search}${url.hash}`, backend.origin);
+function workflowApiUrl(apiBaseUrl: string): string {
+  const url = new URL(apiBaseUrl, window.location.origin);
+  if (url.pathname.startsWith("/workers/")) {
+    return `/worker${url.pathname.slice("/workers".length)}${url.search}${url.hash}`;
   }
-  url.searchParams.set("backendUrl", backendUrl);
-  return url.origin === window.location.origin
-    ? `${url.pathname}${url.search}${url.hash}`
-    : url.toString();
+  if (
+    url.pathname.startsWith("/worker/") ||
+    url.origin === window.location.origin
+  ) {
+    return `${url.pathname}${url.search}${url.hash}`;
+  }
+  if (isLoopbackUrl(url)) {
+    return url.toString();
+  }
+  return url.toString();
 }
 
 function isLoopbackUrl(url: URL): boolean {
@@ -414,8 +510,10 @@ function emptyWorkflowRegistry(): WorkflowRegistry {
 function localWorkflowRegistry(): WorkflowRegistry | undefined {
   if (!isLocalDev()) return undefined;
   const workflowId =
-    firstNonEmpty(requestedWorker(), import.meta.env.VITE_HYLO_WORKFLOW) ??
-    DEFAULT_LOCAL_WORKFLOW_ID;
+    firstNonEmpty(
+      requestedWorker({ worker: undefined }),
+      import.meta.env.VITE_HYLO_WORKFLOW,
+    ) ?? DEFAULT_LOCAL_WORKFLOW_ID;
   return {
     defaultWorkflow: workflowId,
     workflows: {
@@ -438,11 +536,8 @@ function parseWorkflowChoice(
   return undefined;
 }
 
-function requestedWorker(): string | undefined {
-  return firstNonEmpty(
-    new URLSearchParams(window.location.search).get("worker"),
-    import.meta.env.VITE_HYLO_WORKFLOW,
-  );
+function requestedWorker(search: ClientSearch): string | undefined {
+  return firstNonEmpty(search.worker, import.meta.env.VITE_HYLO_WORKFLOW);
 }
 
 function isLocalDev(): boolean {
@@ -466,11 +561,44 @@ function localWorkflowHost(raw: string): string {
   );
 }
 
-function writeWorkflowConfigToUrl(worker: string) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("worker", worker);
-  url.searchParams.delete("workflowApiUrl");
-  window.history.replaceState(null, "", url);
+function withWorker(
+  search: ClientSearch,
+  worker: string | undefined,
+): ClientSearch {
+  if (!worker) return search;
+  return {
+    ...search,
+    worker,
+  };
+}
+
+function resolvedWorkflowRegistry(
+  url: string | undefined,
+  query: {
+    data: WorkflowRegistry | undefined;
+    error: unknown;
+  },
+): WorkflowRegistry | undefined {
+  if (!url || query.error) return emptyWorkflowRegistry();
+  if (!query.data) return undefined;
+  const fallback =
+    Object.keys(query.data.workflows).length === 0
+      ? localWorkflowRegistry()
+      : undefined;
+  return fallback ?? query.data;
+}
+
+function workflowRegistryError(
+  url: string | undefined,
+  query: {
+    error: unknown;
+  },
+): string | undefined {
+  if (!url) return "Workflow registry could not be loaded.";
+  if (!query.error) return undefined;
+  return query.error instanceof Error
+    ? query.error.message
+    : "Workflow registry could not be loaded.";
 }
 
 function labelFromId(id: string): string {
@@ -487,4 +615,18 @@ function firstNonEmpty(
   ...values: (string | null | undefined)[]
 ): string | undefined {
   return values.map((value) => value?.trim()).find(Boolean);
+}
+
+function searchParam(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function useClientEnvironment(): ClientEnvironment {
+  const value = useContext(ClientEnvironmentContext);
+  if (!value) {
+    throw new Error(
+      "useClientEnvironment must be used within ClientEnvironmentContext",
+    );
+  }
+  return value;
 }
