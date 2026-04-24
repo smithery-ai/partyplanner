@@ -82,13 +82,6 @@ export function parseProvisionDeploymentInput(
       "compatibilityFlags can only be set with the admin API key.",
     );
   }
-  if (!allowAdvancedOptions && bindings?.length) {
-    throw new PlatformApiError(
-      403,
-      "advanced_options_forbidden",
-      "bindings can only be set with the admin API key.",
-    );
-  }
 
   const requestedTags = optionalStringArray(body, "tags") ?? [];
   const tenantTag = tagForTenant(tenantId);
