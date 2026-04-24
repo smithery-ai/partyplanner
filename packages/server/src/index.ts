@@ -1,5 +1,6 @@
 export type {
   BindRunSecretRequest,
+  ConnectManagedConnectionRequest as BackendConnectManagedConnectionRequest,
   CreateSecretVaultEntryRequest,
   RunSecretBinding,
   RunStateDocument,
@@ -10,6 +11,9 @@ export type {
   SubmitBackendInterventionRequest,
   SubmitBackendWebhookRequest,
   UpdateSecretVaultEntryRequest,
+  WorkflowConfigurationDocument as BackendWorkflowConfigurationDocument,
+  WorkflowManagedConnectionConfiguration as BackendWorkflowManagedConnectionConfiguration,
+  WorkflowManagedConnectionStatus as BackendWorkflowManagedConnectionStatus,
 } from "./api";
 export type { CreateWorkflowOptions, WorkflowApp } from "./app";
 export { createWorkflow } from "./app";
@@ -19,6 +23,7 @@ export { summarizeRun, WorkflowManager } from "./manager";
 export type {
   JsonSchema,
   WorkflowInputManifest,
+  WorkflowManagedConnectionManifest,
   WorkflowManifest,
 } from "./manifest";
 export { buildWorkflowManifest } from "./manifest";
@@ -34,11 +39,15 @@ export {
 } from "./openapi";
 
 export type {
+  ConnectManagedConnectionRequest,
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
   SubmitWorkflowWebhookRequest,
+  WorkflowConfigurationDocument,
   WorkflowEventSink,
+  WorkflowManagedConnectionConfiguration,
+  WorkflowManagedConnectionStatus,
   WorkflowQueue,
   WorkflowRunDocument,
   WorkflowRunSummary,

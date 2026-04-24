@@ -15,6 +15,8 @@ export type {
   GraphEdge,
   GraphNode,
   InspectableWorkQueue,
+  ManagedConnectionResolutionRequest,
+  ManagedConnectionResolver,
   QueueItem,
   QueueItemStatus,
   QueueSnapshot,

@@ -119,7 +119,7 @@ class RunSession {
     if (!stepDef) throw new Error(`Unknown step: ${event.stepId}`);
 
     try {
-      await this.runStep(stepDef);
+      await this.runStep(stepDef, event.reason ?? "dependency");
       return this.wakeWaiters(event.stepId);
     } catch (e) {
       if (e instanceof NotReadyError) {
@@ -135,7 +135,10 @@ class RunSession {
     }
   }
 
-  private async runStep(def: StepDef): Promise<unknown> {
+  private async runStep(
+    def: StepDef,
+    invocationReason: "dependency" | "managed_connection",
+  ): Promise<unknown> {
     const start = Date.now();
     const deps: string[] = [];
     const prev = this.state.nodes[def.id];
@@ -177,6 +180,7 @@ class RunSession {
       const value = await def.fn(get, requestIntervention, {
         runId: this.state.runId,
         stepId: def.id,
+        invocationReason,
         interventionId: (key) => interventionId(def.id, key),
       });
       const duration_ms = Date.now() - start;
@@ -382,10 +386,6 @@ class RunSession {
   buildTrace(): RunTrace {
     const nodes: RunTrace["nodes"] = {};
     const { trigger } = this.state;
-
-    if (trigger === undefined) {
-      throw new Error("Cannot build trace without a trigger");
-    }
 
     // Any node in the registry that never got a record → "not_reached",
     // except unfired non-deferred inputs which are "skipped".

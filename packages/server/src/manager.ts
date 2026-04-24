@@ -3,6 +3,7 @@ import {
   type Executor,
   type InspectableWorkQueue,
   LocalScheduler,
+  type ManagedConnectionResolver,
   type QueueItem,
   type QueueSnapshot,
   type RunEvent,
@@ -14,11 +15,14 @@ import {
 } from "@workflow/runtime";
 import { buildWorkflowManifest, type WorkflowManifest } from "./manifest";
 import type {
+  ConnectManagedConnectionRequest,
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
   SubmitWorkflowWebhookRequest,
+  WorkflowConfigurationDocument,
   WorkflowEventSink,
+  WorkflowManagedConnectionConfiguration,
   WorkflowQueue,
   WorkflowRunDocument,
   WorkflowRunSummary,
@@ -41,6 +45,8 @@ export type WorkflowManagerOptions = {
 };
 
 const WEBHOOK_PAYLOAD_NODE_ID = "@workflow/webhook-payload";
+const CONFIG_RUN_PREFIX = "@configuration/";
+const CONFIG_TRIGGER_ID = "@configuration";
 
 export type WorkflowWebhookRequestContext = {
   method: string;
@@ -98,20 +104,27 @@ export class WorkflowManager {
     return structuredClone(this.definition.manifest);
   }
 
-  listRuns(): Promise<WorkflowRunSummary[]> {
-    return this.stateStore.listRunSummaries(this.definition.ref.workflowId);
+  async listRuns(): Promise<WorkflowRunSummary[]> {
+    return (
+      await this.stateStore.listRunSummaries(this.definition.ref.workflowId)
+    ).filter((run) => run.runId !== this.configurationRunId());
   }
 
   getRun(runId: string): Promise<WorkflowRunDocument | undefined> {
     return this.stateStore.getRunDocument(runId);
   }
 
+  async configuration(): Promise<WorkflowConfigurationDocument> {
+    return this.loadConfiguration();
+  }
+
   async startRun(
     request: StartWorkflowRunRequest,
   ): Promise<WorkflowRunDocument> {
+    await this.requireConfigurationReady();
     const runId = request.runId ?? `run_${randomId()}`;
     const scheduler = this.createScheduler(runId, request.secretValues);
-    const snapshot = await scheduler.startRun({
+    let snapshot = await scheduler.startRun({
       workflow: this.definition.ref,
       runId,
       input: {
@@ -120,13 +133,41 @@ export class WorkflowManager {
       },
       additionalInputs: request.additionalInputs,
     });
+    await this.seedConfiguredManagedConnections(runId, snapshot.version);
+    snapshot = await scheduler.snapshot(runId);
     return this.publishSnapshot(snapshot);
+  }
+
+  async connectManagedConnection(
+    connectionId: string,
+    request: ConnectManagedConnectionRequest = {},
+  ): Promise<WorkflowConfigurationDocument> {
+    const configRunId = this.configurationRunId();
+    const scheduler = this.createScheduler(configRunId, request.secretValues, {
+      mode: "configuration",
+    });
+    await this.ensureConfigurationRun(scheduler, configRunId);
+    await this.publishSnapshot(
+      await scheduler.submitManagedConnection({
+        runId: configRunId,
+        workflow: this.definition.ref,
+        connectionId,
+      }),
+    );
+    await this.advanceConfigurationUntilSettled(
+      connectionId,
+      request.secretValues,
+    );
+    return this.loadConfiguration();
   }
 
   async submitInput(
     runId: string,
     request: SubmitWorkflowInputRequest,
   ): Promise<WorkflowRunDocument> {
+    if (runId !== this.configurationRunId()) {
+      await this.requireConfigurationReady();
+    }
     const scheduler = this.createScheduler(runId, request.secretValues);
     const snapshot = await scheduler.submitInput({
       runId,
@@ -141,6 +182,7 @@ export class WorkflowManager {
     request: SubmitWorkflowWebhookRequest,
     requestContext?: WorkflowWebhookRequestContext,
   ): Promise<WorkflowRunDocument> {
+    await this.requireConfigurationReady();
     const runId = request.runId ?? `run_${randomId()}`;
     const existing = await this.stateStore.getRunDocument(runId);
     if (
@@ -154,10 +196,12 @@ export class WorkflowManager {
     }
 
     const scheduler = this.createScheduler(runId);
-    const baseSnapshot = await scheduler.startRun({
+    let baseSnapshot = await scheduler.startRun({
       workflow: this.definition.ref,
       runId,
     });
+    await this.seedConfiguredManagedConnections(runId, baseSnapshot.version);
+    baseSnapshot = await scheduler.snapshot(runId);
     const at = Date.now();
     await this.stateStore.publishEvent({ type: "webhook_received", runId, at });
 
@@ -274,13 +318,23 @@ export class WorkflowManager {
     interventionId: string,
     request: SubmitWorkflowInterventionRequest,
   ): Promise<WorkflowRunDocument> {
-    const scheduler = this.createScheduler(runId, request.secretValues);
+    const mode = runId === this.configurationRunId() ? "configuration" : "run";
+    const scheduler = this.createScheduler(runId, request.secretValues, {
+      mode,
+    });
     const snapshot = await scheduler.submitIntervention({
       runId,
       workflow: this.definition.ref,
       interventionId,
       payload: request.payload,
     });
+    if (mode === "configuration") {
+      await this.advanceConfigurationUntilSettled(
+        interventionId.split(":")[0] ?? "",
+        request.secretValues,
+      );
+      return this.requireRun(runId);
+    }
     return this.publishSnapshot(snapshot);
   }
 
@@ -304,21 +358,191 @@ export class WorkflowManager {
     return document;
   }
 
+  private configurationRunId(): string {
+    return `${CONFIG_RUN_PREFIX}${this.definition.ref.workflowId}`;
+  }
+
+  private async loadConfiguration(): Promise<WorkflowConfigurationDocument> {
+    const runId = this.configurationRunId();
+    const run = await this.stateStore.getRunDocument(runId);
+    const connections = this.buildConfigurationConnections(run);
+    return {
+      runId,
+      ready: connections.every(
+        (connection) => connection.status === "connected",
+      ),
+      connections,
+      ...(run ? { run } : {}),
+    };
+  }
+
+  private buildConfigurationConnections(
+    run: WorkflowRunDocument | undefined,
+  ): WorkflowManagedConnectionConfiguration[] {
+    const queued = new Set(
+      [...(run?.queue.pending ?? []), ...(run?.queue.running ?? [])].map(
+        (item) =>
+          item.event.kind === "input" ? item.event.inputId : item.event.stepId,
+      ),
+    );
+    return this.definition.manifest.managedConnections.map((connection) => {
+      const node = run?.state.nodes[connection.id];
+      const intervention =
+        run?.state.interventions?.[`${connection.id}:oauth-callback`];
+      let status: WorkflowManagedConnectionConfiguration["status"] =
+        "not_connected";
+      if (node?.status === "resolved") {
+        status = "connected";
+      } else if (node?.status === "errored") {
+        status = "error";
+      } else if (
+        queued.has(connection.id) ||
+        node?.status === "waiting" ||
+        node?.status === "blocked" ||
+        intervention?.status === "pending"
+      ) {
+        status = "connecting";
+      }
+      return {
+        ...connection,
+        status,
+        waitingOn: node?.waitingOn,
+      };
+    });
+  }
+
+  private async requireConfigurationReady(): Promise<void> {
+    const configuration = await this.loadConfiguration();
+    const missing = configuration.connections.filter(
+      (connection) => connection.status !== "connected",
+    );
+    if (missing.length === 0) return;
+    throw new Error(
+      `Worker configuration incomplete. Connect ${missing
+        .map((connection) => connection.title ?? connection.providerId)
+        .join(", ")} before starting a run.`,
+    );
+  }
+
   private createScheduler(
     runId: string,
     secretValues?: Record<string, string>,
+    options: { mode?: "configuration" | "run" } = {},
   ): LocalScheduler {
     const executor =
       secretValues && Object.keys(secretValues).length > 0
         ? new RuntimeExecutor(secretResolverFromValues(secretValues))
         : this.executor;
+    const managedConnectionResolver =
+      options.mode === "configuration"
+        ? undefined
+        : this.managedConnectionResolver();
     return new LocalScheduler({
       loader: this.loader,
       stateStore: this.stateStore,
       queue: new ScopedWorkflowQueue(this.queue, runId),
       events: new StoreWorkflowEventSink(this.stateStore),
       executor,
+      managedConnectionResolver,
     });
+  }
+
+  private managedConnectionResolver(): ManagedConnectionResolver {
+    return {
+      resolve: async ({ connectionId }) => {
+        const configurationRun = await this.stateStore.load(
+          this.configurationRunId(),
+        );
+        const node = configurationRun?.state.nodes[connectionId];
+        return node?.status === "resolved" ? node.value : undefined;
+      },
+    };
+  }
+
+  private async advanceConfigurationUntilSettled(
+    connectionId: string,
+    secretValues?: Record<string, string>,
+  ): Promise<void> {
+    const runId = this.configurationRunId();
+    const scheduler = this.createScheduler(runId, secretValues, {
+      mode: "configuration",
+    });
+    await this.ensureConfigurationRun(scheduler, runId);
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const document = await this.publishSnapshot(
+        await scheduler.snapshot(runId),
+      );
+      const node = document.state.nodes[connectionId];
+      const intervention =
+        document.state.interventions?.[`${connectionId}:oauth-callback`];
+      if (
+        node?.status === "resolved" ||
+        node?.status === "errored" ||
+        node?.status === "skipped" ||
+        intervention?.status === "pending"
+      ) {
+        return;
+      }
+      if (document.queue.pending.length + document.queue.running.length === 0) {
+        return;
+      }
+      await scheduler.processNext();
+      await this.publishSnapshot(await scheduler.snapshot(runId));
+    }
+  }
+
+  private async seedConfiguredManagedConnections(
+    runId: string,
+    expectedVersion: number,
+  ): Promise<void> {
+    const configurationRun = await this.stateStore.load(
+      this.configurationRunId(),
+    );
+    if (!configurationRun) return;
+
+    const current = await this.stateStore.load(runId);
+    if (!current) return;
+
+    const state = structuredClone(current.state);
+    let changed = false;
+    for (const connection of this.definition.manifest.managedConnections) {
+      const configured = configurationRun.state.nodes[connection.id];
+      if (configured?.status !== "resolved") continue;
+      if (state.nodes[connection.id]?.status === "resolved") continue;
+      state.nodes[connection.id] = {
+        status: "resolved",
+        kind: "atom",
+        value: configured.value,
+        deps: [],
+        duration_ms: 0,
+        attempts: 0,
+      };
+      changed = true;
+    }
+
+    if (!changed) return;
+
+    const saved = await this.stateStore.save(runId, state, expectedVersion);
+    if (!saved.ok) throw new Error(`Unable to save run: ${saved.reason}`);
+  }
+
+  private async ensureConfigurationRun(
+    scheduler: LocalScheduler,
+    runId: string,
+  ): Promise<void> {
+    const snapshot = await scheduler.startRun({
+      workflow: this.definition.ref,
+      runId,
+    });
+    if (snapshot.state.trigger !== undefined) {
+      await this.publishSnapshot(snapshot);
+      return;
+    }
+    const state = structuredClone(snapshot.state);
+    state.trigger = CONFIG_TRIGGER_ID;
+    const saved = await this.stateStore.save(runId, state, snapshot.version);
+    if (!saved.ok) throw new Error(`Unable to save run: ${saved.reason}`);
+    await this.publishSnapshot(await scheduler.snapshot(runId));
   }
 
   private matchWebhookInputs(
@@ -442,6 +666,7 @@ function hashRegistry(registry: Registry): string {
     atoms: registry.allAtoms().map((atom) => ({
       id: atom.id,
       description: atom.description,
+      managedConnection: atom.managedConnection,
       fn: atom.fn.toString(),
     })),
     actions: registry.allActions().map((action) => ({

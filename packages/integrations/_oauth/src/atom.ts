@@ -3,6 +3,7 @@ import {
   atom,
   type Handle,
   type Input,
+  type ManagedConnectionRequirement,
   secret,
 } from "@workflow/core";
 import { type ZodSchema, z } from "zod";
@@ -128,6 +129,8 @@ export type CreateConnectionOptions<Token> = {
   // Defaults to `/api/workflow/integrations/${providerId}/handoff`.
   handoffPath?: string;
   scopes?: string[];
+  requirement?: ManagedConnectionRequirement;
+  title?: string;
   // Forwarded to the provider's authorize URL via the broker.
   // e.g. `{ show_dialog: "true" }` for Spotify, custom owner params for Notion.
   extra?: Handle<Record<string, string>>;
@@ -139,6 +142,34 @@ export type CreateConnectionOptions<Token> = {
   interventionDescription?: string;
   interventionLabel?: string;
 };
+
+export type ManagedConnectionOptions = {
+  providerId: string;
+  requirement?: ManagedConnectionRequirement;
+  title?: string;
+  scopes?: string[];
+  name?: string;
+  description?: string;
+  internal?: boolean;
+};
+
+export function managedConnection<Token>(
+  fn: Parameters<typeof atom<Token>>[0],
+  opts: ManagedConnectionOptions,
+): Atom<Token> {
+  return atom(fn, {
+    name: opts.name,
+    description: opts.description,
+    internal: opts.internal,
+    managedConnection: {
+      kind: "oauth",
+      providerId: opts.providerId,
+      requirement: opts.requirement ?? "lazy",
+      title: opts.title ?? capitalize(opts.providerId),
+      scopes: opts.scopes,
+    },
+  });
+}
 
 // Returns an atom that resolves to a brokered OAuth token. The first time any
 // downstream atom calls `get()` on this connection, it requests an OAuth
@@ -161,9 +192,11 @@ export function createConnection<Token>(
   const handoffPath =
     opts.handoffPath ?? `/api/workflow/integrations/${opts.providerId}/handoff`;
 
-  return atom(
+  return managedConnection(
     async (get, requestIntervention, context) => {
-      if (opts.waitFor) get(opts.waitFor);
+      if (opts.waitFor && context.invocationReason !== "managed_connection") {
+        get(opts.waitFor);
+      }
 
       const brokerCreds = get(broker);
       const appBaseUrl = get(appBaseUrlHandle);
@@ -224,6 +257,10 @@ export function createConnection<Token>(
       return callback as Token;
     },
     {
+      providerId: opts.providerId,
+      requirement: opts.requirement,
+      title: opts.title,
+      scopes: opts.scopes,
       name: opts.name ?? `${opts.providerId}Connection`,
       description:
         opts.description ??

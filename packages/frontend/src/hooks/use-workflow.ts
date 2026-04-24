@@ -11,6 +11,7 @@ import type {
 } from "../lib/workflow-runtimes";
 import type {
   BindRunSecretRequest,
+  ConnectManagedConnectionRequest,
   CreateSecretVaultEntryRequest,
   JsonPayload,
   RunStateDocument,
@@ -20,13 +21,14 @@ import type {
   SubmitBackendInputRequest,
   SubmitBackendInterventionRequest,
   SubmitBackendWebhookRequest,
+  WorkflowConfigurationDocument,
   WorkflowManifest,
   WorkflowRuntimeResult,
 } from "../types";
 
 export type StartRunArgs = {
-  inputId: string;
-  payload: unknown;
+  inputId?: string;
+  payload?: unknown;
   additionalInputs?: {
     inputId: string;
     payload: unknown;
@@ -39,9 +41,14 @@ export type WorkflowState = {
   manifest: WorkflowManifest | undefined;
   manifestNotFound: boolean;
   runs: RunSummary[];
+  configuration: WorkflowConfigurationDocument | undefined;
   isPending: boolean;
   error: Error | undefined;
   start(args: StartRunArgs): Promise<WorkflowRuntimeResult>;
+  connectManagedConnection(
+    connectionId: string,
+  ): Promise<WorkflowConfigurationDocument>;
+  refreshConfiguration(): Promise<void>;
   refreshRuns(): Promise<void>;
 };
 
@@ -52,7 +59,6 @@ export type WorkflowRunState = {
   events: RunEvent[];
   workflowId: string | undefined;
   isPending: boolean;
-  /** True while a deferred input or intervention submission is in flight. */
   isSubmittingPendingInput: boolean;
   error: Error | undefined;
   refresh(): Promise<void>;
@@ -89,6 +95,8 @@ const queryKeys = {
     ["workflow-frontend", apiBaseUrl, "workflow"] as const,
   runs: (apiBaseUrl: string) =>
     ["workflow-frontend", apiBaseUrl, "runs"] as const,
+  configuration: (apiBaseUrl: string) =>
+    ["workflow-frontend", apiBaseUrl, "configuration"] as const,
   runState: (apiBaseUrl: string, runId: string) =>
     ["workflow-frontend", apiBaseUrl, "run-state", runId] as const,
   vault: (apiBaseUrl: string) =>
@@ -109,6 +117,18 @@ function useRunsQuery() {
   return useQuery({
     queryKey: queryKeys.runs(config.apiBaseUrl),
     queryFn: () => apiGet<RunSummary[]>(config.apiBaseUrl, "/runs"),
+  });
+}
+
+function useWorkflowConfigurationQuery() {
+  const config = useWorkflowFrontendConfig();
+  return useQuery({
+    queryKey: queryKeys.configuration(config.apiBaseUrl),
+    queryFn: () =>
+      apiGet<WorkflowConfigurationDocument>(
+        config.apiBaseUrl,
+        "/configuration",
+      ),
   });
 }
 
@@ -136,7 +156,7 @@ function useStartWorkflowRunMutation() {
   return useMutation({
     mutationFn: async (args: StartRunArgs) => {
       const body: StartWorkflowRunRequest = {
-        inputId: args.inputId,
+        inputId: requiredInputId(args.inputId),
         payload: args.payload as JsonPayload,
         additionalInputs: args.additionalInputs as
           | { inputId: string; payload: JsonPayload }[]
@@ -150,6 +170,23 @@ function useStartWorkflowRunMutation() {
           "/runs",
           body,
         ),
+      );
+    },
+  });
+}
+
+function useConnectManagedConnectionMutation() {
+  const config = useWorkflowFrontendConfig();
+  return useMutation({
+    mutationFn: async (connectionId: string) => {
+      const body: ConnectManagedConnectionRequest = {};
+      return apiPost<
+        ConnectManagedConnectionRequest,
+        WorkflowConfigurationDocument
+      >(
+        config.apiBaseUrl,
+        `/configuration/connections/${encodeURIComponent(connectionId)}/connect`,
+        body,
       );
     },
   });
@@ -358,7 +395,10 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
   const queryClient = useQueryClient();
   const manifestQuery = useWorkflowManifestQuery();
   const runsQuery = useRunsQuery();
+  const configurationQuery = useWorkflowConfigurationQuery();
   const startMutation = useStartWorkflowRunMutation();
+  const connectManagedConnectionMutation =
+    useConnectManagedConnectionMutation();
   const [error, setError] = useState<Error | undefined>();
 
   const manifest =
@@ -368,6 +408,7 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
       ? undefined
       : manifestQuery.data;
   const runs = runsQuery.data ?? [];
+  const configuration = configurationQuery.data;
 
   const start = useCallback(
     async (args: StartRunArgs) => {
@@ -396,6 +437,37 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
     [config.apiBaseUrl, queryClient, startMutation],
   );
 
+  const connectManagedConnection = useCallback(
+    async (connectionId: string) => {
+      setError(undefined);
+      try {
+        const result =
+          await connectManagedConnectionMutation.mutateAsync(connectionId);
+        queryClient.setQueryData(
+          queryKeys.configuration(config.apiBaseUrl),
+          result,
+        );
+        return result;
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        setError(err);
+        throw err;
+      }
+    },
+    [config.apiBaseUrl, connectManagedConnectionMutation, queryClient],
+  );
+
+  const refreshConfiguration = useCallback(async () => {
+    try {
+      const result = await configurationQuery.refetch();
+      if (result.error) {
+        setError(normalizeError(result.error));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error(String(e)));
+    }
+  }, [configurationQuery]);
+
   const refreshRuns = useCallback(async () => {
     try {
       const result = await runsQuery.refetch();
@@ -411,10 +483,18 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
     }
   }, [runsQuery]);
 
-  const isPending = manifestQuery.isPending || startMutation.isPending;
+  const isPending =
+    manifestQuery.isPending ||
+    runsQuery.isPending ||
+    configurationQuery.isPending ||
+    startMutation.isPending ||
+    connectManagedConnectionMutation.isPending;
 
   const activeError =
-    error ?? normalizeError(manifestQuery.error ?? runsQuery.error);
+    error ??
+    normalizeError(
+      manifestQuery.error ?? runsQuery.error ?? configurationQuery.error,
+    );
 
   const manifestNotFound =
     !manifestQuery.isPending && (!manifest || Boolean(manifestQuery.error));
@@ -423,9 +503,12 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
     manifest,
     manifestNotFound,
     runs,
+    configuration,
     isPending,
     error: activeError,
     start,
+    connectManagedConnection,
+    refreshConfiguration,
     refreshRuns,
   };
 }
@@ -602,8 +685,9 @@ function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
   let failedNodeCount = 0;
 
   for (const node of snapshot?.nodes ?? []) {
-    if (snapshot && isTerminalSummaryNode(snapshot, node))
+    if (snapshot && isTerminalSummaryNode(snapshot, node)) {
       terminalNodeCount += 1;
+    }
     if (node.status === "errored") failedNodeCount += 1;
   }
 
@@ -733,4 +817,11 @@ function documentResult(document: RunStateDocument): WorkflowRuntimeResult {
     queue: document.queue,
     events: document.events,
   };
+}
+
+function requiredInputId(value: string | undefined): string {
+  if (!value) {
+    throw new Error("An inputId is required to start a workflow run.");
+  }
+  return value;
 }

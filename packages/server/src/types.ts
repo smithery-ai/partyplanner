@@ -10,7 +10,10 @@ import type {
   StoredRunState,
   WorkflowRef,
 } from "@workflow/runtime";
-import type { WorkflowManifest } from "./manifest";
+import type {
+  WorkflowManagedConnectionManifest,
+  WorkflowManifest,
+} from "./manifest";
 
 export type StartWorkflowRunRequest = {
   inputId: string;
@@ -22,6 +25,29 @@ export type StartWorkflowRunRequest = {
   secretBindings?: Record<string, string | { vaultEntryId: string }>;
   secretValues?: Record<string, string>;
   runId?: string;
+};
+
+export type ConnectManagedConnectionRequest = {
+  secretValues?: Record<string, string>;
+};
+
+export type WorkflowManagedConnectionStatus =
+  | "not_connected"
+  | "connecting"
+  | "connected"
+  | "error";
+
+export type WorkflowManagedConnectionConfiguration =
+  WorkflowManagedConnectionManifest & {
+    status: WorkflowManagedConnectionStatus;
+    waitingOn?: string;
+  };
+
+export type WorkflowConfigurationDocument = {
+  runId: string;
+  ready: boolean;
+  connections: WorkflowManagedConnectionConfiguration[];
+  run?: WorkflowRunDocument;
 };
 
 export type SubmitWorkflowInputRequest = {

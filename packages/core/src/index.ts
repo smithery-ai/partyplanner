@@ -18,7 +18,14 @@ export type {
 } from "./handles";
 export { HANDLE, isHandle } from "./handles";
 export { input, secret } from "./input";
-export type { ActionDef, AtomDef, InputDef, StepDef } from "./registry";
+export type {
+  ActionDef,
+  AtomDef,
+  InputDef,
+  ManagedConnectionDef,
+  ManagedConnectionRequirement,
+  StepDef,
+} from "./registry";
 export { globalRegistry, Registry } from "./registry";
 export { createRuntime } from "./runtime";
 export type {

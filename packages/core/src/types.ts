@@ -51,6 +51,7 @@ export type RequestIntervention = <T>(
 export type AtomRuntimeContext = {
   runId: string;
   stepId: string;
+  invocationReason?: "dependency" | "managed_connection";
   interventionId: (key: string) => string;
 };
 
@@ -116,8 +117,8 @@ export type RunState = {
 
 export type RunTrace = {
   runId: string;
-  trigger: string;
-  payload: unknown;
+  trigger?: string;
+  payload?: unknown;
   startedAt: number;
   completedAt: number;
   nodes: Record<string, NodeRecord>;
@@ -131,7 +132,13 @@ export type QueueEvent =
       inputId: string;
       payload: unknown;
     }
-  | { kind: "step"; eventId: string; runId: string; stepId: string };
+  | {
+      kind: "step";
+      eventId: string;
+      runId: string;
+      stepId: string;
+      reason?: "dependency" | "managed_connection";
+    };
 
 export type DispatchResult = {
   state: RunState;

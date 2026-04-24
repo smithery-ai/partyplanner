@@ -24,6 +24,7 @@ describe("findPendingWait", () => {
       version: "1",
       createdAt: Date.now(),
       inputs: [],
+      managedConnections: [],
       atoms: [],
       actions: [],
     };
@@ -105,6 +106,7 @@ describe("findPendingWait", () => {
           schema: { type: "object", properties: {} },
         },
       ],
+      managedConnections: [],
       atoms: [],
       actions: [],
     };

@@ -33,7 +33,10 @@ import {
   workflowInputRequested,
 } from "./components/queue-visualizer";
 import { RunStateJsonSheet } from "./components/run-state-json-sheet";
-import { StartWorkflowForm } from "./components/start-workflow-form";
+import {
+  type ManagedConnectionDisplayState,
+  StartWorkflowForm,
+} from "./components/start-workflow-form";
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -45,6 +48,7 @@ import { cn } from "./lib/utils";
 import { workflowInputLabel } from "./lib/workflow-labels";
 import type {
   RunSummary,
+  WorkflowConfigurationDocument,
   WorkflowInputManifest,
   WorkflowManifest,
 } from "./types";
@@ -497,6 +501,10 @@ function WorkflowRunnerBody({
   const [seedInputId, setSeedInputId] = useState("");
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [connectingManagedConnectionId, setConnectingManagedConnectionId] =
+    useState<string | undefined>();
+  const [awaitingManagedConnectionId, setAwaitingManagedConnectionId] =
+    useState<string | undefined>();
 
   const { isRunning, setRunning, executingNodeId, runComplete, runState } =
     workflowRun;
@@ -513,6 +521,9 @@ function WorkflowRunnerBody({
 
   const nodes = runState?.nodes ?? {};
   const isPending = workflow.isPending || workflowRun.isPending;
+  const managedConnectionStates = buildManagedConnectionStates(
+    workflow.configuration,
+  );
 
   useEffect(() => {
     if (!workflow.manifest) return;
@@ -536,6 +547,55 @@ function WorkflowRunnerBody({
       };
     });
   }, [pendingIntervention]);
+
+  useEffect(() => {
+    if (!awaitingManagedConnectionId) return;
+    const interventionId = `${awaitingManagedConnectionId}:oauth-callback`;
+    const intervention =
+      workflow.configuration?.run?.state.interventions?.[interventionId];
+    const connection = workflow.configuration?.connections.find(
+      (candidate) => candidate.id === awaitingManagedConnectionId,
+    );
+
+    if (intervention && intervention.status !== "resolved") {
+      const url =
+        intervention.actionUrl ??
+        (intervention.action?.type === "open_url"
+          ? intervention.action.url
+          : undefined);
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+      setAwaitingManagedConnectionId(undefined);
+      return;
+    }
+
+    if (connection?.status === "connected" || connection?.status === "error") {
+      setAwaitingManagedConnectionId(undefined);
+    }
+  }, [awaitingManagedConnectionId, workflow.configuration]);
+
+  useEffect(() => {
+    if (!awaitingManagedConnectionId) return;
+    const interventionId = `${awaitingManagedConnectionId}:oauth-callback`;
+    const intervention =
+      workflow.configuration?.run?.state.interventions?.[interventionId];
+    const connection = workflow.configuration?.connections.find(
+      (candidate) => candidate.id === awaitingManagedConnectionId,
+    );
+    if (
+      intervention ||
+      connection?.status === "connected" ||
+      connection?.status === "error"
+    ) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void workflow.refreshConfiguration();
+    }, 500);
+    return () => window.clearTimeout(timeout);
+  }, [awaitingManagedConnectionId, workflow]);
 
   useEffect(() => {
     if (!selectedNodeId) return;
@@ -562,6 +622,8 @@ function WorkflowRunnerBody({
   function clearRun() {
     workflowRun.clear();
     setSelectedNodeId(null);
+    setConnectingManagedConnectionId(undefined);
+    setAwaitingManagedConnectionId(undefined);
     setInputValues(buildInitialManifestInputValues(workflow.manifest));
     setSeedInputId(firstManifestSeedInputId(workflow.manifest));
     setPayloadError("");
@@ -592,9 +654,6 @@ function WorkflowRunnerBody({
     }
 
     try {
-      // Canonical UI starts should exercise the same webhook ingress path as
-      // external callers. The selected input form shapes the payload, but the
-      // server still decides which unresolved inputs the webhook matches.
       const result = await workflowRun.submitWebhook({
         payload,
       });
@@ -604,6 +663,41 @@ function WorkflowRunnerBody({
       setPayloadError(
         errorMessage(e, "Processing failed — check input values."),
       );
+    }
+  }
+
+  async function connectManagedConnection(connectionId: string) {
+    setPayloadError("");
+    const existingActionUrl = managedConnectionStates[connectionId]?.actionUrl;
+    if (existingActionUrl) {
+      window.open(existingActionUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setConnectingManagedConnectionId(connectionId);
+    setAwaitingManagedConnectionId(connectionId);
+
+    try {
+      const result = await workflow.connectManagedConnection(connectionId);
+      const intervention =
+        result.run?.state.interventions?.[`${connectionId}:oauth-callback`];
+      if (intervention && intervention.status !== "resolved") {
+        const url =
+          intervention.actionUrl ??
+          (intervention.action?.type === "open_url"
+            ? intervention.action.url
+            : undefined);
+        if (url) {
+          window.open(url, "_blank", "noopener,noreferrer");
+        }
+        setAwaitingManagedConnectionId(undefined);
+      }
+    } catch (e) {
+      setAwaitingManagedConnectionId(undefined);
+      setPayloadError(
+        errorMessage(e, "Unable to start managed connection authorization."),
+      );
+    } finally {
+      setConnectingManagedConnectionId(undefined);
     }
   }
 
@@ -971,10 +1065,16 @@ function WorkflowRunnerBody({
             <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-center overflow-y-auto p-6 md:items-center">
               <StartWorkflowForm
                 inputs={workflow.manifest?.inputs ?? []}
+                managedConnections={workflow.manifest?.managedConnections ?? []}
+                managedConnectionStates={managedConnectionStates}
                 inputValues={inputValues}
                 onInputValuesChange={setInputValue}
-                canSubmitSeed={!runState}
+                canSubmitSeed={!runState && !runId}
                 onSubmitSeed={(inputId) => void runWorkflow(inputId)}
+                onConnectManagedConnection={(connectionId) =>
+                  void connectManagedConnection(connectionId)
+                }
+                connectingManagedConnectionId={connectingManagedConnectionId}
                 error={payloadError || undefined}
                 starting={workflow.isPending}
               />
@@ -1016,6 +1116,29 @@ function WorkflowRunnerBody({
       </div>
     </div>
   );
+}
+
+function buildManagedConnectionStates(
+  configuration: WorkflowConfigurationDocument | undefined,
+): Record<string, ManagedConnectionDisplayState> {
+  const states: Record<string, ManagedConnectionDisplayState> = {};
+  for (const connection of configuration?.connections ?? []) {
+    const intervention =
+      configuration?.run?.state.interventions?.[
+        `${connection.id}:oauth-callback`
+      ];
+    const actionUrl =
+      intervention?.actionUrl ??
+      (intervention?.action?.type === "open_url"
+        ? intervention.action.url
+        : undefined);
+    states[connection.id] = {
+      status: connection.status,
+      waitingOn: connection.waitingOn,
+      actionUrl,
+    };
+  }
+  return states;
 }
 
 export function WorkflowSingleApp({
