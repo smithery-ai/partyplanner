@@ -17,11 +17,6 @@ type WorkOSConfig = {
   devMode?: boolean;
 };
 
-type BackendTarget = "local" | "hosted";
-
-const DEFAULT_HOSTED_BACKEND_URL = "https://hylo-backend.smithery.workers.dev";
-const BACKEND_TARGET_STORAGE_KEY = "hylo.client.backendTarget";
-
 export function App({ children }: AppProps) {
   const [workos, setWorkos] = useState<WorkOSConfig | null | undefined>();
 
@@ -213,36 +208,7 @@ function hyloBackendUrl(): string | undefined {
 }
 
 function authConfigBackendUrl(): string {
-  if (shouldUseHostedBackendConfig()) return hostedBackendUrl();
   return hyloBackendUrl() ?? window.location.origin;
-}
-
-function hostedBackendUrl(): string {
-  return (
-    optionalEnv(import.meta.env.VITE_HYLO_HOSTED_BACKEND_URL) ??
-    DEFAULT_HOSTED_BACKEND_URL
-  ).replace(/\/+$/, "");
-}
-
-function shouldUseHostedBackendConfig(): boolean {
-  if (!import.meta.env.DEV) return false;
-  return requestedBackendTarget() === "hosted";
-}
-
-function requestedBackendTarget(): BackendTarget {
-  const requested =
-    optionalEnv(
-      new URLSearchParams(window.location.search).get("backend") ?? undefined,
-    ) ?? readLocalStorage(BACKEND_TARGET_STORAGE_KEY);
-  return requested === "hosted" ? "hosted" : "local";
-}
-
-function readLocalStorage(key: string): string | undefined {
-  try {
-    return window.localStorage.getItem(key) ?? undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function displayName(user: User) {

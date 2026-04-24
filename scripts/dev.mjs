@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import net from "node:net";
 
 const host = "127.0.0.1";
@@ -16,9 +16,15 @@ for (const [name, fallback] of portSpecs) {
   env[name] = String(await resolvePort(name, fallback));
 }
 
+execSync(`portless alias api-worker.hylo ${env.HYLO_BACKEND_PORT}`, {
+  stdio: "ignore",
+});
+
 console.log("pnpm dev using local ports:");
 console.log("  client: https://hylo-client.localhost");
-console.log(`  backend-node: http://${host}:${env.HYLO_BACKEND_PORT}`);
+console.log(
+  `  backend-node: https://api-worker.hylo.localhost (port ${env.HYLO_BACKEND_PORT})`,
+);
 console.log(
   "  workflow-cloudflare-worker-example: https://workflow-cloudflare-worker-example.localhost",
 );

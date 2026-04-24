@@ -1,0 +1,5 @@
+{
+  "setup": ["pnpm install && pnpm run build"],
+  "teardown": [],
+  "run": ["pnpm dev"]
+}

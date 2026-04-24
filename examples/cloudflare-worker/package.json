@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc --noEmit",
-    "dev": "pnpm --dir ../.. hylo build examples/cloudflare-worker --backend ${HYLO_BACKEND_URL:-http://127.0.0.1:${HYLO_BACKEND_PORT:-8787}} && portless workflow-cloudflare-worker-example sh -c 'wrangler dev .hylo/build/src/index.ts --config .hylo/build/wrangler.toml --ip 127.0.0.1 --port \"${PORT:-8788}\" --inspector-port \"${HYLO_CLOUDFLARE_WORKER_INSPECTOR_PORT:-9231}\" --var INCIDENT_PUBLISHER_TOKEN:${INCIDENT_PUBLISHER_TOKEN:-local-dev-incident-publisher-token}'",
+    "dev": "pnpm --dir ../.. hylo build examples/cloudflare-worker --backend ${HYLO_BACKEND_URL:-http://127.0.0.1:${HYLO_BACKEND_PORT:-8787}} && portless workflow-cloudflare-worker-example sh -c 'wrangler dev .hylo/build/src/index.ts --config .hylo/build/wrangler.toml --ip 127.0.0.1 --port \"${PORT:-8788}\" --inspector-port \"${HYLO_CLOUDFLARE_WORKER_INSPECTOR_PORT:-9231}\" --var INCIDENT_PUBLISHER_TOKEN:${INCIDENT_PUBLISHER_TOKEN:-local-dev-incident-publisher-token} --var HYLO_APP_URL:https://workflow-cloudflare-worker-example.localhost'",
     "deploy": "hylo deploy",
     "typecheck": "tsc --noEmit"
   },
