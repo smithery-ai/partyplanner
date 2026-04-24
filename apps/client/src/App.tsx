@@ -1,4 +1,12 @@
 import { createHyloApiClient } from "@hylo/api-client";
+import { Button } from "@workflow/frontend/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@workflow/frontend/components/ui/card";
 import { AuthKitProvider, type User, useAuth } from "@workos-inc/authkit-react";
 import { LogOut } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -57,9 +65,6 @@ export function App({ children }: AppProps) {
       redirectUri={workos.redirectUri}
       devMode={workos.devMode}
       onRedirectCallback={handleRedirectCallback}
-      onRefreshFailure={({ signIn }) => {
-        void signIn({ state: { returnTo: currentReturnTo() } });
-      }}
     >
       <AuthenticatedApp>{children}</AuthenticatedApp>
     </AuthKitProvider>
@@ -75,15 +80,17 @@ function AuthenticatedApp({ children }: AppProps) {
 
     if (isLoginRoute && user) {
       window.history.replaceState({}, "", "/");
-      return;
     }
+  }, [isLoading, isLoginRoute, user]);
 
-    if (!user) {
-      void signIn({ state: { returnTo: currentReturnTo() } });
-    }
-  }, [isLoading, isLoginRoute, signIn, user]);
-
-  if (!user) return null;
+  if (!user) {
+    return (
+      <SignedOutScreen
+        isLoading={isLoading}
+        onSignIn={() => void signIn({ state: { returnTo: currentReturnTo() } })}
+      />
+    );
+  }
 
   return children({
     getAccessToken,
@@ -132,6 +139,37 @@ function UserFooter({
         <LogOut className="size-3.5" aria-hidden />
       </button>
     </div>
+  );
+}
+
+function SignedOutScreen({
+  isLoading,
+  onSignIn,
+}: {
+  isLoading: boolean;
+  onSignIn: () => void;
+}) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-background px-6 py-10 text-foreground">
+      <Card className="w-full max-w-sm shadow-sm">
+        <CardHeader className="gap-2 px-8 pt-8">
+          <p className="text-sm font-medium text-muted-foreground">Hylo</p>
+          <CardTitle className="text-2xl">Sign in to continue</CardTitle>
+          <CardDescription>Authenticate to access the client.</CardDescription>
+        </CardHeader>
+        <CardContent className="px-8 pb-8">
+          <Button
+            type="button"
+            onClick={onSignIn}
+            disabled={isLoading}
+            size="lg"
+            className="mt-2 w-full"
+          >
+            {isLoading ? "Loading..." : "Sign in"}
+          </Button>
+        </CardContent>
+      </Card>
+    </main>
   );
 }
 
