@@ -78,13 +78,13 @@ the Workers project with:
   ALIAS="$(echo "$WORKERS_CI_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/^-*//; s/-*$//; s/--*/-/g' | cut -c1-40 | sed 's/-*$//')" && pnpm --filter backend-cloudflare exec wrangler versions upload --env preview --preview-alias "${ALIAS:-preview}"
   ```
 
-`wrangler.toml` enables Worker preview URLs, so Cloudflare non-production
-branch builds produce preview URLs without promoting the Worker to production.
-The `preview` Wrangler environment uses the staging Hyperdrive database.
+`wrangler.toml` enables Worker preview URLs, so pull requests upload preview
+versions without promoting the Worker to production. The `preview` Wrangler
+environment uses the staging Hyperdrive database.
 The aliased preview URL format is:
 
 ```txt
-https://{branch}-hylo-backend.smithery.workers.dev
+https://{branch}-hylo-backend-preview.smithery.workers.dev
 ```
 
 where `{branch}` is the sanitized branch alias from the non-production deploy
