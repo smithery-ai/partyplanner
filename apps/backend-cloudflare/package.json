@@ -10,7 +10,9 @@
     "db:migrate:dev": "infisical run --path=/ --env=dev -- pnpm db:migrate",
     "db:migrate:staging": "infisical run --path=/ --env=staging -- pnpm db:migrate",
     "db:migrate:prod": "infisical run --path=/ --env=prod -- pnpm db:migrate",
-    "db:studio": "pnpm -C ../../packages/postgres db:studio",
+    "db:studio": "infisical run --path=/ --env=dev -- pnpm -C ../../packages/postgres db:studio",
+    "db:studio:staging": "infisical run --path=/ --env=staging -- pnpm -C ../../packages/postgres db:studio",
+    "db:studio:prod": "infisical run --path=/ --env=prod -- pnpm -C ../../packages/postgres db:studio",
     "build": "tsc --noEmit"
   },
   "dependencies": {

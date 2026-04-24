@@ -11,7 +11,9 @@ export function connectionUrl(): string | undefined {
 export function requireConnectionUrl(): string {
   const url = connectionUrl();
   if (!url) {
-    throw new Error("POSTGRES_URL or DATABASE_URL is required");
+    throw new Error(
+      "POSTGRES_URL or DATABASE_URL is required. Example: POSTGRES_URL=postgres://... pnpm db:studio",
+    );
   }
   return url;
 }

@@ -5,6 +5,7 @@
   "scripts": {
     "build": "turbo run build",
     "check": "biome ci --error-on-warnings .",
+    "db:studio": "infisical run --path=/ --env=dev -- pnpm -C packages/postgres db:studio",
     "hylo": "tsx packages/cli/src/index.ts",
     "example": "rm -rf examples/sample && pnpm hylo init examples/sample && pnpm -C examples/sample install && pnpm -C examples/sample exec hylo deploy --backend ${HYLO_BACKEND_URL:-https://hylo-backend.smithery.workers.dev}",
     "dev": "node scripts/dev.mjs",
