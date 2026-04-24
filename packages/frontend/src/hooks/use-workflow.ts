@@ -51,6 +51,7 @@ export type WorkflowRunState = {
   workflowId: string | undefined;
   isPending: boolean;
   error: Error | undefined;
+  refresh(): Promise<void>;
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>;
   submitIntervention(
     args: SubmitWorkflowInterventionArgs,
@@ -99,7 +100,6 @@ function useRunsQuery() {
   const config = useWorkflowFrontendConfig();
   return useQuery({
     queryKey: queryKeys.runs(config.apiBaseUrl),
-    refetchInterval: 500,
     queryFn: () => apiGet<RunSummary[]>(config.apiBaseUrl, "/runs"),
   });
 }
@@ -111,7 +111,6 @@ function useRunStateQuery(runId: string | undefined) {
       ? queryKeys.runState(config.apiBaseUrl, runId)
       : ["workflow-frontend", config.apiBaseUrl, "run-state", "none"],
     enabled: Boolean(runId),
-    refetchInterval: 500,
     queryFn: async () => {
       if (!runId) throw new Error("Cannot poll before a run exists.");
       return documentResult(
@@ -474,6 +473,18 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     [bindSecretMutation, runMutation],
   );
 
+  const refresh = useCallback(async () => {
+    if (!runId) return;
+    try {
+      const result = await stateQuery.refetch();
+      if (result.error) {
+        setError(normalizeError(result.error));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error(String(e)));
+    }
+  }, [runId, stateQuery]);
+
   const clear = useCallback(() => {
     setError(undefined);
   }, []);
@@ -505,6 +516,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     workflowId: stateQuery.data?.snapshot?.workflow.workflowId,
     isPending,
     error: activeError,
+    refresh,
     submitInput,
     submitIntervention,
     advance,

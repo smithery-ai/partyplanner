@@ -809,6 +809,10 @@ export function WorkflowRunnerApp({
     setPendingAutoAdvance(nextAutoAdvance);
   }
 
+  async function refreshWorkflowView() {
+    await Promise.all([workflow.refreshRuns(), workflowRun.refresh()]);
+  }
+
   const selectedRecord = displayNodeRecord(
     globalRegistry,
     selectedNodeId,
@@ -994,7 +998,7 @@ export function WorkflowRunnerApp({
               variant="ghost"
               title="Refresh runs"
               aria-label="Refresh runs"
-              onClick={() => void workflow.refreshRuns()}
+              onClick={() => void refreshWorkflowView()}
             >
               <RefreshCw className="size-3.5" aria-hidden />
             </Button>
