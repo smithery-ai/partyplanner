@@ -58,7 +58,7 @@ jobs:
       - name: Upload backend preview
         run: |
           ALIAS="$(echo "${GITHUB_HEAD_REF}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/^-*//; s/-*$//; s/--*/-/g' | cut -c1-40 | sed 's/-*$//')"
-          pnpm --filter backend-cloudflare build
+          pnpm --filter backend-cloudflare... build
           pnpm --filter backend-cloudflare exec wrangler versions upload --env preview --preview-alias "${ALIAS:-preview}"
 
   deploy:
