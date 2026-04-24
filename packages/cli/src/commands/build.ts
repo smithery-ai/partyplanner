@@ -9,8 +9,12 @@ import { runWrangler } from "../wrangler.js";
 const COMPATIBILITY_DATE = "2026-04-19";
 
 export async function runBuild(args: string[]): Promise<number> {
-  const { options } = parseBuildArgs(args);
-  const project = await loadProject(process.cwd());
+  const { options, rest } = parseBuildArgs(args);
+  if (rest.length > 1) {
+    throw new Error(`Unexpected argument for build: ${rest[1]}`);
+  }
+  const projectRoot = rest[0] ? resolve(process.cwd(), rest[0]) : process.cwd();
+  const project = await loadProject(projectRoot);
   const bundle = await buildWorkerBundle(project, options);
   info(`Built ${project.workerName} → ${bundle.outputDir}`);
   return 0;
@@ -83,6 +87,7 @@ function renderWranglerToml(
     `name = "${project.workerName}"`,
     `main = "src/index.ts"`,
     `compatibility_date = "${COMPATIBILITY_DATE}"`,
+    `compatibility_flags = ["global_fetch_strictly_public"]`,
     ``,
     `[vars]`,
     ...vars,

@@ -5,7 +5,7 @@ import {
   authClientConfig,
   authenticateRequest,
 } from "../auth/workos";
-import { isCloudflarePlatformConfigured } from "../deployments/cloudflare";
+import type { DeploymentBackend } from "../deployments/backend";
 import { apiErrorResponse, PlatformApiError } from "../errors";
 import {
   BearerSecurity,
@@ -84,6 +84,7 @@ export function mountAuthApi(
   app: OpenAPIHono,
   env: BackendAppEnv,
   apiKey: string,
+  deploymentBackend: DeploymentBackend,
 ) {
   app.openapi(GetAuthClientConfigRoute, (c) =>
     typedRouteResponse(
@@ -95,7 +96,7 @@ export function mountAuthApi(
           },
           features: {
             cliAuth: Boolean(env.WORKOS_CLIENT_ID?.trim()),
-            deployments: isCloudflarePlatformConfigured(env),
+            deployments: deploymentBackend.configured,
           },
         },
         200,
