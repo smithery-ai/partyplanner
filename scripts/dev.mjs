@@ -13,8 +13,9 @@ const portSpecs = [
 
 const reserved = new Set();
 const env = { ...process.env };
+const args = new Set(process.argv.slice(2).filter((arg) => arg !== "--"));
 const enableBackendTunnel =
-  process.argv.includes("--tunnel") || env.HYLO_BACKEND_TUNNEL === "1";
+  args.has("--tunnel") || env.HYLO_BACKEND_TUNNEL === "1";
 
 if (!env.NODE_EXTRA_CA_CERTS && existsSync(portlessCaPath)) {
   env.NODE_EXTRA_CA_CERTS = portlessCaPath;
@@ -24,6 +25,7 @@ env.NODE_TLS_REJECT_UNAUTHORIZED ??= "0";
 for (const [name, fallback] of portSpecs) {
   env[name] = String(await resolvePort(name, fallback));
 }
+env.HYLO_BACKEND_URL ??= `http://${host}:${env.HYLO_BACKEND_PORT}`;
 
 execSync(`portless alias api-worker.hylo ${env.HYLO_BACKEND_PORT}`, {
   stdio: "ignore",
