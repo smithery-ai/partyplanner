@@ -955,7 +955,16 @@ function WorkflowRunnerBody({
             }}
           />
 
-          {!runState && (
+          {runId && isPending && !runState ? (
+            <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center bg-background/85 p-6 text-center backdrop-blur-sm">
+              <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground shadow-sm">
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+                Loading run…
+              </div>
+            </div>
+          ) : null}
+
+          {!runState && !runId && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-center overflow-y-auto p-6 md:items-center">
               <StartWorkflowForm
                 inputs={workflow.manifest?.inputs ?? []}
@@ -1008,12 +1017,17 @@ function WorkflowRunnerBody({
 
 export function WorkflowSingleApp({
   sidebarFooter,
+  runId: controlledRunId,
+  navigation,
 }: {
   sidebarFooter?: ReactNode;
+  runId?: string;
+  navigation?: WorkflowNavigation;
 } = {}) {
   const workflow = useWorkflow(undefined);
-  const [runId, setRunId] = useState<string | undefined>();
+  const [internalRunId, setRunId] = useState<string | undefined>();
   const manifest = workflow.manifest;
+  const runId = controlledRunId ?? internalRunId;
 
   if (workflow.isPending && !manifest) {
     return (
@@ -1038,7 +1052,7 @@ export function WorkflowSingleApp({
     );
   }
 
-  const navigation: WorkflowNavigation = {
+  const resolvedNavigation: WorkflowNavigation = navigation ?? {
     home: () => setRunId(undefined),
     workflow: () => setRunId(undefined),
     run: (_workflowId, nextRunId) => setRunId(nextRunId),
@@ -1048,7 +1062,7 @@ export function WorkflowSingleApp({
     <WorkflowRunnerApp
       workflowId={manifest.workflowId}
       runId={runId}
-      navigation={navigation}
+      navigation={resolvedNavigation}
       sidebarFooter={sidebarFooter}
     />
   );
@@ -1057,13 +1071,21 @@ export function WorkflowSingleApp({
 export function WorkflowSinglePage({
   apiBaseUrl = "/api/workflow",
   sidebarFooter,
+  runId,
+  navigation,
 }: {
   apiBaseUrl?: string;
   sidebarFooter?: ReactNode;
+  runId?: string;
+  navigation?: WorkflowNavigation;
 }) {
   return (
     <WorkflowFrontendRoot config={{ apiBaseUrl }}>
-      <WorkflowSingleApp sidebarFooter={sidebarFooter} />
+      <WorkflowSingleApp
+        sidebarFooter={sidebarFooter}
+        runId={runId}
+        navigation={navigation}
+      />
     </WorkflowFrontendRoot>
   );
 }

@@ -34,29 +34,19 @@ export default defineConfig({
     port: process.env.PORT ? Number(process.env.PORT) : 5173,
     strictPort: Boolean(process.env.PORT),
     proxy: {
-      "/auth": {
+      "/api": {
         target: backendCloudflareTarget,
         changeOrigin: true,
         secure: false,
         agent: hyloLocalAgent(backendCloudflareTarget),
+        rewrite: (path) => path.replace(/^\/api(?=\/|$)/, "") || "/",
       },
-      "/deployments": {
+      "/worker": {
         target: backendCloudflareTarget,
         changeOrigin: true,
         secure: false,
         agent: hyloLocalAgent(backendCloudflareTarget),
-      },
-      "/tenants": {
-        target: backendCloudflareTarget,
-        changeOrigin: true,
-        secure: false,
-        agent: hyloLocalAgent(backendCloudflareTarget),
-      },
-      "/workers": {
-        target: backendCloudflareTarget,
-        changeOrigin: true,
-        secure: false,
-        agent: hyloLocalAgent(backendCloudflareTarget),
+        rewrite: (path) => path.replace(/^\/worker(?=\/|$)/, "/workers"),
       },
       "/user_management": {
         target: "https://api.workos.com",

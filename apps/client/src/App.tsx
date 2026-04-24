@@ -77,15 +77,6 @@ export function App({ children }: AppProps) {
 
 function AuthenticatedApp({ children }: AppProps) {
   const { getAccessToken, isLoading, user, signIn, signOut } = useAuth();
-  const isLoginRoute = window.location.pathname === "/login";
-
-  useEffect(() => {
-    if (isLoading) return;
-
-    if (isLoginRoute && user) {
-      window.history.replaceState({}, "", "/");
-    }
-  }, [isLoading, isLoginRoute, user]);
 
   if (!user) {
     return (
@@ -292,15 +283,8 @@ function optionalBooleanEnv(value: string | undefined): boolean | undefined {
   return undefined;
 }
 
-function hyloBackendUrl(): string | undefined {
-  return optionalEnv(import.meta.env.VITE_HYLO_BACKEND_URL)?.replace(
-    /\/+$/,
-    "",
-  );
-}
-
 function authConfigBackendUrl(): string {
-  return hyloBackendUrl() ?? window.location.origin;
+  return "/api";
 }
 
 function displayName(user: User) {
