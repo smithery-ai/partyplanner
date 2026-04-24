@@ -1,14 +1,15 @@
 import { resolve } from "node:path";
 import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
 import { parseBuildArgs } from "../args.js";
-import { resolveHyloBackendUrl } from "../config.js";
+import { DEFAULT_HYLO_BACKEND_URL, resolveHyloBackendUrl } from "../config.js";
 import { info } from "../log.js";
 import { loadProject } from "../project.js";
 import { envSecretBindings } from "../secrets.js";
 import { getHyloAccessToken } from "./auth.js";
 import { buildWorkerBundle } from "./build.js";
 
-const CLIENT_URL = "https://hylo-client.vercel.app";
+const DEFAULT_CLIENT_URL = "https://hylo-client.vercel.app";
+const LOCAL_CLIENT_URL = "https://hylo-client.localhost";
 
 export async function runDeploy(args: string[]): Promise<number> {
   try {
@@ -22,9 +23,11 @@ export async function runDeploy(args: string[]): Promise<number> {
       : process.cwd();
     const project = await loadProject(projectRoot);
     const backendUrl = resolveHyloBackendUrl(options.backendUrl);
-    const accessToken = await getHyloAccessToken();
+    const accessToken = await getHyloAccessToken({ backendUrl });
     if (!accessToken) {
-      throw new Error("Sign in with `hylo auth login` before deploying.");
+      throw new Error(
+        `Sign in with \`${authLoginCommand(backendUrl)}\` before deploying.`,
+      );
     }
 
     const bundle = await buildWorkerBundle(project, {
@@ -51,12 +54,49 @@ export async function runDeploy(args: string[]): Promise<number> {
 
     info(``);
     info(`Deployment: ${deployment.deploymentId}`);
-    info(`Open it at: ${CLIENT_URL}/?worker=${deployment.deploymentId}`);
+    info(`Open it at: ${clientUrl(backendUrl, deployment.deploymentId)}`);
     return 0;
   } catch (e) {
     process.stderr.write(`${deployErrorMessage(e)}\n`);
     return 1;
   }
+}
+
+function clientUrl(backendUrl: string, deploymentId: string): string {
+  const url = new URL(clientBaseUrl(backendUrl));
+  url.searchParams.set("worker", deploymentId);
+  return url.toString();
+}
+
+function clientBaseUrl(backendUrl: string): string {
+  const explicit = process.env.HYLO_CLIENT_URL?.trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+
+  const backend = new URL(backendUrl);
+  if (isLoopbackHost(backend.hostname)) return LOCAL_CLIENT_URL;
+
+  if (backend.origin === DEFAULT_HYLO_BACKEND_URL) return DEFAULT_CLIENT_URL;
+
+  const previewBranch = backend.hostname.match(
+    /^(.+)-hylo-backend-preview\.smithery\.workers\.dev$/,
+  )?.[1];
+  if (previewBranch) {
+    return `https://hylo-client-git-${previewBranch}-smithery.vercel.app`;
+  }
+
+  return DEFAULT_CLIENT_URL;
+}
+
+function authLoginCommand(backendUrl: string): string {
+  return new URL(backendUrl).origin === DEFAULT_HYLO_BACKEND_URL
+    ? "hylo auth login"
+    : `hylo auth login --backend-url ${backendUrl}`;
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+  );
 }
 
 function deployErrorMessage(e: unknown): string {

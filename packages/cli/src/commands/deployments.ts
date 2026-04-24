@@ -78,7 +78,7 @@ async function getDeployment(args: string[]): Promise<void> {
     rest.slice(deploymentId === rest[0] ? 1 : 0),
     "deployments get",
   );
-  const api = await deploymentApi(options, { requireApiKey: true });
+  const api = await deploymentApi(options);
   printJson(
     await api.deployments.get(requireValue(deploymentId, "deploymentId")),
   );
@@ -91,26 +91,26 @@ async function deleteDeployment(args: string[]): Promise<void> {
     rest.slice(deploymentId === rest[0] ? 1 : 0),
     "deployments delete",
   );
-  const api = await deploymentApi(options, { requireApiKey: true });
+  const api = await deploymentApi(options);
   printJson(
     await api.deployments.delete(requireValue(deploymentId, "deploymentId")),
   );
 }
 
-async function deploymentApi(
-  options: DeploymentCommandOptions,
-  apiOptions: { requireApiKey?: boolean } = {},
-) {
+async function deploymentApi(options: DeploymentCommandOptions) {
+  const backendUrl = resolveHyloBackendUrl(options.backendUrl);
   const adminApiKey = options.apiKey ?? process.env.HYLO_API_KEY?.trim();
-  const accessToken = adminApiKey ? undefined : await getHyloAccessToken();
-  if (apiOptions.requireApiKey && !adminApiKey && !accessToken) {
+  const accessToken = adminApiKey
+    ? undefined
+    : await getHyloAccessToken({ backendUrl });
+  if (!adminApiKey && !accessToken) {
     throw new Error(
-      "Sign in with `hylo auth login` or provide HYLO_API_KEY/--api-key.",
+      `Sign in with \`hylo auth login --backend-url ${backendUrl}\` or provide HYLO_API_KEY/--api-key.`,
     );
   }
   return createHyloApiClient({
     bearerToken: adminApiKey ?? accessToken,
-    baseUrl: resolveHyloBackendUrl(options.backendUrl),
+    baseUrl: backendUrl,
   });
 }
 

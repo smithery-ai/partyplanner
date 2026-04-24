@@ -27,6 +27,12 @@ execSync(`portless alias api-worker.hylo ${env.HYLO_BACKEND_PORT}`, {
   stdio: "ignore",
 });
 
+console.log("Applying local backend database migrations...");
+execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
+  env,
+  stdio: "inherit",
+});
+
 console.log("pnpm dev using local ports:");
 console.log("  client: https://hylo-client.localhost");
 console.log(
@@ -47,9 +53,11 @@ const child = spawn(
     "turbo",
     "run",
     "dev",
+    "dev:info",
     "--filter=backend-node",
     "--filter=workflow-cloudflare-worker-example",
     "--filter=client",
+    "--filter=//",
   ],
   {
     env,

@@ -94,7 +94,7 @@ function targetUrl(
   const workflowHost = localWorkflowHost(
     typeof deploymentOrWorkflowId === "string"
       ? deploymentOrWorkflowId
-      : deploymentOrWorkflowId.deploymentId,
+      : localWorkflowIdFromDeployment(deploymentOrWorkflowId.deploymentId),
   );
   const template =
     env.HYLO_LOCAL_WORKFLOW_URL_TEMPLATE?.trim() ||
@@ -110,6 +110,10 @@ function localWorkflowHost(raw: string): string {
       .replace(/[^a-z0-9-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "workflow"
   );
+}
+
+function localWorkflowIdFromDeployment(deploymentId: string): string {
+  return deploymentId.replace(/-[a-z0-9]{10}$/, "");
 }
 
 function rewriteWorkflowRequest(request: Request, workflowApiUrl: string) {

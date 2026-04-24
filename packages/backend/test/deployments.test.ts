@@ -1,7 +1,10 @@
 import type { WorkflowPostgresDb } from "@workflow/postgres";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackendApp } from "../src/app";
-import { createCloudflareDeploymentBackend } from "../src/deployments/cloudflare-backend";
+import {
+  createCloudflareDeploymentBackend,
+  createDefaultCloudflareDeploymentBackend,
+} from "../src/deployments/cloudflare-backend";
 import { createLocalDeploymentBackend } from "../src/deployments/local-backend";
 import type {
   WorkflowDeploymentRecord,
@@ -85,6 +88,43 @@ describe("deployment routing", () => {
     });
   });
 
+  it("proxies legacy local deployment rows without stored target URLs", async () => {
+    const registry = new MemoryDeploymentRegistry();
+    await registry.upsert({
+      tenantId: "org_01KNWF4QSWGYT6DPD78KH7XWF8",
+      deploymentId: "workflow-cloudflare-worker-example-d78kh7xwf8",
+      label: "Cloudflare Worker Example",
+      workflowApiUrl:
+        "/workers/workflow-cloudflare-worker-example-d78kh7xwf8/api/workflow",
+      dispatchNamespace: "local",
+      tags: ["tenant:org_01KNWF4QSWGYT6DPD78KH7XWF8"],
+    });
+    const app = createBackendApp({
+      db: fakeDb(),
+      env: { HYLO_API_KEY: API_KEY },
+      deploymentRegistry: registry,
+      deploymentBackend: createLocalDeploymentBackend(
+        { HYLO_API_KEY: API_KEY },
+        registry,
+      ),
+    });
+
+    const fetchMock = vi.fn(async (request: Request) => {
+      return Response.json({ url: request.url });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await app.request(
+      "http://backend.test/workers/workflow-cloudflare-worker-example-d78kh7xwf8/api/workflow/runs",
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(await response.json()).toEqual({
+      url: "https://workflow-cloudflare-worker-example.localhost/api/workflow/runs",
+    });
+  });
+
   it("lets Cloudflare deployments derive their public worker URL from request origin", () => {
     const backend = createCloudflareDeploymentBackend({
       CLOUDFLARE_ACCOUNT_ID: "account",
@@ -114,6 +154,55 @@ describe("deployment routing", () => {
         "https://api.example.com",
       ),
     ).toBe("https://workers.example.com/customer-worker/api/workflow");
+  });
+
+  it("dispatches existing Cloudflare workers without provisioning API credentials", async () => {
+    const registry = new MemoryDeploymentRegistry();
+    await registry.upsert({
+      tenantId: "tenant-1",
+      deploymentId: "customer-worker",
+      workflowApiUrl: "/workers/customer-worker/api/workflow",
+      dispatchNamespace: "hylo-tenants",
+      tags: ["tenant:tenant-1"],
+    });
+    const dispatchFetch = vi.fn(async (request: Request) => {
+      return Response.json({ url: request.url });
+    });
+    const app = createBackendApp({
+      db: fakeDb(),
+      env: {
+        CLOUDFLARE_ACCOUNT_ID: "account",
+        CLOUDFLARE_DISPATCH_NAMESPACE: "hylo-tenants",
+        DISPATCHER: {
+          get(scriptName) {
+            expect(scriptName).toBe("customer-worker");
+            return { fetch: dispatchFetch };
+          },
+        },
+        HYLO_API_KEY: API_KEY,
+      },
+      deploymentRegistry: registry,
+      deploymentBackend: createDefaultCloudflareDeploymentBackend({
+        CLOUDFLARE_ACCOUNT_ID: "account",
+        CLOUDFLARE_DISPATCH_NAMESPACE: "hylo-tenants",
+        DISPATCHER: {
+          get(scriptName) {
+            expect(scriptName).toBe("customer-worker");
+            return { fetch: dispatchFetch };
+          },
+        },
+      }),
+    });
+
+    const response = await app.request(
+      "https://backend.example.com/workers/customer-worker/api/workflow/runs?limit=1",
+    );
+
+    expect(response.status).toBe(200);
+    expect(dispatchFetch).toHaveBeenCalledOnce();
+    expect(await response.json()).toEqual({
+      url: "https://backend.example.com/api/workflow/runs?limit=1",
+    });
   });
 });
 

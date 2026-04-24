@@ -151,7 +151,12 @@ export function createUnavailableCloudflareDeploymentBackend(
     get: unavailable,
     delete: unavailable,
     deleteMany: unavailable,
-    fetchWorkflow: unavailable,
+    async fetchWorkflow(deploymentId, request) {
+      if (!env.DISPATCHER) unavailable();
+      return await env.DISPATCHER.get(deploymentId).fetch(
+        rewriteDispatchRequest(request),
+      );
+    },
   };
 
   function unavailable(): never {
