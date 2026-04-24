@@ -173,13 +173,11 @@ function ClientApp({
   const workflow = registry.workflows[selectedWorker];
 
   return (
-    <>
-      <WorkflowSinglePage
-        apiBaseUrl={workflowApiUrl(workflow.url, registryConfig.backendUrl)}
-        sidebarFooter={sidebarFooter}
-        queueControls={embeddedSwitcher}
-      />
-    </>
+    <WorkflowSinglePage
+      apiBaseUrl={workflowApiUrl(workflow.url, registryConfig.backendUrl)}
+      sidebarFooter={sidebarFooter}
+      queueControls={embeddedSwitcher}
+    />
   );
 }
 
@@ -203,7 +201,9 @@ function ClientSwitcher({
       className={`hylo-client-switcher ${embedded ? "hylo-client-switcher--pane" : "hylo-client-switcher--floating"}`}
       aria-label="Workflow routing"
     >
-      <label className={embedded ? "hylo-client-switcher__label--pane" : undefined}>
+      <label
+        className={embedded ? "hylo-client-switcher__label--pane" : undefined}
+      >
         {embedded ? (
           <span className="hylo-client-switcher__inline-label">Worker</span>
         ) : (
