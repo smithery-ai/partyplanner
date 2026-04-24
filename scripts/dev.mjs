@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { execSync, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import net from "node:net";
 
 const host = "127.0.0.1";
+const tunnelInfoPath = ".hylo/dev-tunnel.json";
 const portlessCaPath = "/tmp/portless/ca.pem";
 const portSpecs = [
   ["HYLO_BACKEND_PORT", 8787],
@@ -37,8 +38,10 @@ if (enableBackendTunnel) {
   backendTunnel = await startBackendTunnel(env.HYLO_BACKEND_PORT);
   env.HYLO_BACKEND_TUNNEL_URL = backendTunnel.url;
   env.HYLO_BACKEND_PUBLIC_URL = backendTunnel.url;
+  writeTunnelInfo(backendTunnel.url, env.HYLO_BACKEND_PORT);
   console.log(`  public backend: ${backendTunnel.url}`);
   console.log(`  public webhooks: ${backendTunnel.url}/webhooks`);
+  console.log(`  tunnel info: ${tunnelInfoPath}`);
 }
 
 console.log("Preparing local workflow package builds...");
@@ -171,6 +174,23 @@ function startBackendTunnel(port) {
 function stopBackendTunnel(tunnel) {
   if (!tunnel || tunnel.process.killed) return;
   tunnel.process.kill("SIGTERM");
+}
+
+function writeTunnelInfo(url, backendPort) {
+  mkdirSync(".hylo", { recursive: true });
+  writeFileSync(
+    tunnelInfoPath,
+    `${JSON.stringify(
+      {
+        backendUrl: url,
+        webhooksUrl: `${url.replace(/\/+$/, "")}/webhooks`,
+        localBackendUrl: `http://${host}:${backendPort}`,
+        writtenAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 async function resolvePort(name, fallback) {
