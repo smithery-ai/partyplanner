@@ -21,6 +21,12 @@ type BackendTarget = "local" | "hosted";
 const DEFAULT_HOSTED_BACKEND_URL = "https://hylo-backend.smithery.workers.dev";
 const BACKEND_TARGET_STORAGE_KEY = "hylo.client.backendTarget";
 
+type WorkflowRegistryConfig = {
+  backendUrl?: string;
+  registry?: WorkflowRegistry;
+  url?: string;
+};
+
 const root = document.getElementById("root");
 
 if (!root) {
@@ -65,11 +71,23 @@ function ClientApp({
     setRegistry(undefined);
     setRegistryError(undefined);
 
+    if (registryConfig.registry) {
+      setRegistry(registryConfig.registry);
+      return () => abort.abort();
+    }
+
+    if (!registryConfig.url) {
+      setRegistry(emptyWorkflowRegistry());
+      setRegistryError("Workflow registry could not be loaded.");
+      return () => abort.abort();
+    }
+    const registryUrl = registryConfig.url;
+
     void getAccessToken()
       .then((accessToken) =>
-        fetch(registryConfig.url, {
+        fetch(registryUrl, {
           headers: workflowRegistryHeaders(
-            registryConfig.url,
+            registryUrl,
             accessToken,
             registryConfig.backendUrl,
           ),
@@ -259,10 +277,9 @@ function TenantWorkersEmptyState({
   );
 }
 
-function workflowRegistryConfig(backendTarget: BackendTarget | undefined): {
-  url: string;
-  backendUrl?: string;
-} {
+function workflowRegistryConfig(
+  backendTarget: BackendTarget | undefined,
+): WorkflowRegistryConfig {
   const params = new URLSearchParams(window.location.search);
   const tenantId = firstNonEmpty(
     params.get("tenantId"),
@@ -281,12 +298,12 @@ function workflowRegistryConfig(backendTarget: BackendTarget | undefined): {
     };
   }
 
+  if (backendTarget === "local") {
+    return { registry: normalizeWorkflowRegistry(__HYLO_WORKFLOWS__) };
+  }
+
   const backendUrl =
-    backendTarget === "local"
-      ? undefined
-      : backendTarget === "hosted"
-        ? hostedBackendUrl()
-        : hyloBackendUrl();
+    backendTarget === "hosted" ? hostedBackendUrl() : hyloBackendUrl();
   const registryPath = tenantId
     ? `/tenants/${encodeURIComponent(tenantId)}/workflows`
     : "/tenants/me/workflows";

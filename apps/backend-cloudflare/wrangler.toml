@@ -25,7 +25,6 @@ id = "13a2b723638746bf9d08d56785d65bb2"
 [[dispatch_namespaces]]
 binding = "DISPATCHER"
 namespace = "hylo-tenants"
-remote = true
 
 [env.preview]
 name = "hylo-backend-preview"
@@ -45,4 +44,3 @@ id = "51815469767c42a5b531b68464f4e7cf"
 [[env.preview.dispatch_namespaces]]
 binding = "DISPATCHER"
 namespace = "hylo-tenants"
-remote = true
