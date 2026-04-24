@@ -78,7 +78,6 @@ const WorkflowRunDocumentSchema = z
   .object({
     events: z.array(RunEventSchema),
     publishedAt: z.number(),
-    autoAdvance: z.boolean(),
   })
   .catchall(z.unknown())
   .openapi("WorkflowRunDocument", {

@@ -16,7 +16,7 @@ import {
   SkipForward,
   Trash2,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ZodError } from "zod";
 import {
   defaultForJsonSchema,
@@ -540,6 +540,7 @@ export function WorkflowRunnerApp({
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [pendingAutoAdvance, setPendingAutoAdvance] = useState(false);
+  const autoAdvanceInFlight = useRef(false);
 
   const runState = workflowRun.runState;
   const wait = findPendingWait(workflow.manifest, runState);
@@ -566,7 +567,7 @@ export function WorkflowRunnerApp({
   const runComplete = workflowRun.snapshot
     ? workflowRun.snapshot.status === "completed"
     : isRunComplete(runState, workflow.manifest);
-  const activeAutoAdvance = workflowRun.autoAdvance ?? pendingAutoAdvance;
+  const activeAutoAdvance = pendingAutoAdvance;
   const isPending = workflow.isPending || workflowRun.isPending;
 
   useEffect(() => {
@@ -610,6 +611,50 @@ export function WorkflowRunnerApp({
     return () => window.removeEventListener("keydown", onKey);
   }, [pane]);
 
+  useEffect(() => {
+    if (
+      !pendingAutoAdvance ||
+      !runState ||
+      inputPending ||
+      runComplete ||
+      !nextWork ||
+      isPending ||
+      autoAdvanceInFlight.current
+    ) {
+      return;
+    }
+
+    let active = true;
+    autoAdvanceInFlight.current = true;
+
+    void workflowRun
+      .advance({
+        state: runState,
+      })
+      .catch((e) => {
+        if (!active) return;
+        setPendingAutoAdvance(false);
+        setPayloadError(
+          errorMessage(e, "Processing failed — check workflow code."),
+        );
+      })
+      .finally(() => {
+        autoAdvanceInFlight.current = false;
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    inputPending,
+    isPending,
+    nextWork,
+    pendingAutoAdvance,
+    runComplete,
+    runState,
+    workflowRun.advance,
+  ]);
+
   function setInputValue(id: string, value: unknown) {
     setInputValues((prev) => ({ ...prev, [id]: value }));
   }
@@ -650,7 +695,6 @@ export function WorkflowRunnerApp({
       const result = await workflow.start({
         inputId: seed.id,
         payload,
-        autoAdvance: pendingAutoAdvance,
       });
       navigation.run(workflowId, result.state.runId);
       setPane(null);
@@ -695,7 +739,6 @@ export function WorkflowRunnerApp({
         state: runState,
         inputId,
         payload,
-        autoAdvance: activeAutoAdvance,
       });
       setPane(null);
     } catch (e) {
@@ -729,7 +772,6 @@ export function WorkflowRunnerApp({
         state: runState,
         interventionId: pendingInterventionId,
         payload,
-        autoAdvance: activeAutoAdvance,
       });
       setPane(null);
     } catch (e) {
@@ -756,26 +798,15 @@ export function WorkflowRunnerApp({
 
   async function nextStep() {
     if (activeAutoAdvance) {
-      await changeAdvanceMode(false);
+      changeAdvanceMode(false);
     }
     await advanceWorkflow();
   }
 
-  async function changeAdvanceMode(nextAutoAdvance: boolean) {
+  function changeAdvanceMode(nextAutoAdvance: boolean) {
     if (nextAutoAdvance === activeAutoAdvance) return;
-    setPendingAutoAdvance(nextAutoAdvance);
-    if (!runState) return;
-
     setPayloadError("");
-    try {
-      await workflowRun.setAutoAdvance({
-        state: runState,
-        autoAdvance: nextAutoAdvance,
-      });
-    } catch (e) {
-      setPendingAutoAdvance(!nextAutoAdvance);
-      setPayloadError(errorMessage(e, "Unable to change advance mode."));
-    }
+    setPendingAutoAdvance(nextAutoAdvance);
   }
 
   const selectedRecord = displayNodeRecord(
@@ -898,7 +929,7 @@ export function WorkflowRunnerApp({
                 size="sm"
                 variant="outline"
                 onClick={() => void nextStep()}
-                disabled={!activeAutoAdvance && (isPending || !nextWork)}
+                disabled={isPending || (!activeAutoAdvance && !nextWork)}
                 title={
                   activeAutoAdvance
                     ? "Pause fast-forward and step manually"

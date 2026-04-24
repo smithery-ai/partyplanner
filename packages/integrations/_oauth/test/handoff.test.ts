@@ -50,7 +50,6 @@ describe("createOAuthHandoffRoutes", () => {
       );
       expect(await workflowRequests[0]?.json()).toEqual({
         payload: { accessToken: "notion-token" },
-        autoAdvance: true,
       });
     } finally {
       fetchMock.mockRestore();

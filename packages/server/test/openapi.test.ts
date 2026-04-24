@@ -44,12 +44,16 @@ describe("workflow OpenAPI routes", () => {
     expect(
       asRecord(paths["/api/workflow/runs/{runId}/inputs"]).post,
     ).toBeTruthy();
+    expect(paths["/api/workflow/runs/{runId}/auto-advance"]).toBeUndefined();
 
     const components = asRecord(document.components);
     const schemas = asRecord(components.schemas);
     expect(JSON.stringify(schemas.WorkflowInputRequest)).toContain("lead");
     expect(JSON.stringify(schemas.WorkflowInputRequest)).toContain(
       "enterprise",
+    );
+    expect(JSON.stringify(schemas.WorkflowRunDocument)).not.toContain(
+      "autoAdvance",
     );
 
     const swagger = await app.request("/api/workflow/swagger");

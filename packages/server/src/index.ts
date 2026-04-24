@@ -6,7 +6,6 @@ export type {
   RunSummary,
   SecretVaultEntry,
   SecretVaultScope,
-  SetAutoAdvanceRequest,
   SubmitBackendInputRequest,
   SubmitBackendInterventionRequest,
   UpdateSecretVaultEntryRequest,
@@ -34,7 +33,6 @@ export {
 } from "./openapi";
 
 export type {
-  SetWorkflowAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,

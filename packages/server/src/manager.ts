@@ -14,7 +14,6 @@ import {
 } from "@workflow/runtime";
 import { buildWorkflowManifest, type WorkflowManifest } from "./manifest";
 import type {
-  SetWorkflowAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
@@ -98,9 +97,8 @@ export class WorkflowManager {
     request: StartWorkflowRunRequest,
   ): Promise<WorkflowRunDocument> {
     const runId = request.runId ?? `run_${randomId()}`;
-    const autoAdvance = request.autoAdvance ?? true;
     const scheduler = this.createScheduler(runId, request.secretValues);
-    let snapshot = await scheduler.startRun({
+    const snapshot = await scheduler.startRun({
       workflow: this.definition.ref,
       runId,
       input: {
@@ -109,35 +107,21 @@ export class WorkflowManager {
       },
       additionalInputs: request.additionalInputs,
     });
-
-    if (autoAdvance) {
-      await scheduler.drain();
-      snapshot = await scheduler.snapshot(runId);
-    }
-
-    return this.publishSnapshot(snapshot, autoAdvance);
+    return this.publishSnapshot(snapshot);
   }
 
   async submitInput(
     runId: string,
     request: SubmitWorkflowInputRequest,
   ): Promise<WorkflowRunDocument> {
-    const current = await this.requireRun(runId);
-    const autoAdvance = request.autoAdvance ?? current.autoAdvance;
     const scheduler = this.createScheduler(runId, request.secretValues);
-    let snapshot = await scheduler.submitInput({
+    const snapshot = await scheduler.submitInput({
       runId,
       workflow: this.definition.ref,
       inputId: request.inputId,
       payload: request.payload,
     });
-
-    if (autoAdvance) {
-      await scheduler.drain();
-      snapshot = await scheduler.snapshot(runId);
-    }
-
-    return this.publishSnapshot(snapshot, autoAdvance);
+    return this.publishSnapshot(snapshot);
   }
 
   async submitIntervention(
@@ -145,22 +129,14 @@ export class WorkflowManager {
     interventionId: string,
     request: SubmitWorkflowInterventionRequest,
   ): Promise<WorkflowRunDocument> {
-    const current = await this.requireRun(runId);
-    const autoAdvance = request.autoAdvance ?? current.autoAdvance;
     const scheduler = this.createScheduler(runId, request.secretValues);
-    let snapshot = await scheduler.submitIntervention({
+    const snapshot = await scheduler.submitIntervention({
       runId,
       workflow: this.definition.ref,
       interventionId,
       payload: request.payload,
     });
-
-    if (autoAdvance) {
-      await scheduler.drain();
-      snapshot = await scheduler.snapshot(runId);
-    }
-
-    return this.publishSnapshot(snapshot, autoAdvance);
+    return this.publishSnapshot(snapshot);
   }
 
   async advanceRun(
@@ -174,28 +150,7 @@ export class WorkflowManager {
       runId,
     });
     await scheduler.processNext();
-    return this.publishSnapshot(await scheduler.snapshot(runId), false);
-  }
-
-  async setAutoAdvance(
-    runId: string,
-    request: SetWorkflowAutoAdvanceRequest,
-  ): Promise<WorkflowRunDocument> {
-    await this.requireRun(runId);
-    const scheduler = this.createScheduler(runId, request.secretValues);
-    await scheduler.startRun({
-      workflow: this.definition.ref,
-      runId,
-    });
-
-    if (request.autoAdvance) {
-      await scheduler.drain();
-    }
-
-    return this.publishSnapshot(
-      await scheduler.snapshot(runId),
-      request.autoAdvance,
-    );
+    return this.publishSnapshot(await scheduler.snapshot(runId));
   }
 
   private async requireRun(runId: string): Promise<WorkflowRunDocument> {
@@ -223,14 +178,12 @@ export class WorkflowManager {
 
   private async publishSnapshot(
     snapshot: RunSnapshot,
-    autoAdvance: boolean,
   ): Promise<WorkflowRunDocument> {
     const events = await this.stateStore.listEvents(snapshot.runId);
     const document: WorkflowRunDocument = {
       ...snapshot,
       events,
       publishedAt: Date.now(),
-      autoAdvance,
     };
     await this.stateStore.saveRunDocument(document);
     return structuredClone(document);

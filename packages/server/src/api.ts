@@ -10,24 +10,16 @@ export type StartWorkflowRunRequest = {
   secretBindings?: Record<string, string | { vaultEntryId: string }>;
   secretValues?: Record<string, string>;
   runId?: string;
-  autoAdvance?: boolean;
 };
 
 export type SubmitBackendInputRequest = {
   inputId: string;
   payload: unknown;
   secretValues?: Record<string, string>;
-  autoAdvance?: boolean;
 };
 
 export type SubmitBackendInterventionRequest = {
   payload: unknown;
-  secretValues?: Record<string, string>;
-  autoAdvance?: boolean;
-};
-
-export type SetAutoAdvanceRequest = {
-  autoAdvance: boolean;
   secretValues?: Record<string, string>;
 };
 
@@ -71,13 +63,11 @@ export type RunSecretBinding = {
 
 export type BindRunSecretRequest = {
   vaultEntryId: string;
-  autoAdvance?: boolean;
 };
 
 export type RunStateDocument = RunSnapshot & {
   events: RunEvent[];
   publishedAt: number;
-  autoAdvance: boolean;
 };
 
 export type RunSummary = {
