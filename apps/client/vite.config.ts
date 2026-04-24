@@ -12,14 +12,14 @@ if (isVercelBuild() && !resolvedHyloBackendUrl) {
   );
 }
 const backendCloudflareTarget =
-  resolvedHyloBackendUrl || localUrl(process.env.HYLO_BACKEND_PORT, 8787);
+  resolvedHyloBackendUrl || "https://api-worker.hylo.localhost";
 const nextjsTarget = envUrl(
   ["VITE_HYLO_NEXTJS_WORKFLOW_URL", "HYLO_NEXTJS_WORKFLOW_URL"],
   "http://127.0.0.1:3000",
 );
 const cloudflareWorkerTarget = envUrl(
   ["VITE_HYLO_CLOUDFLARE_WORKFLOW_URL", "HYLO_CLOUDFLARE_WORKFLOW_URL"],
-  localUrl(process.env.HYLO_CLOUDFLARE_WORKER_PORT, 8788),
+  "https://workflow-cloudflare-worker-example.localhost",
 );
 
 export default defineConfig({
@@ -84,13 +84,6 @@ function workflowProxy(target: string, prefix: RegExp) {
     rewrite: (proxyPath: string) =>
       proxyPath.replace(prefix, "/api/workflow") || "/api/workflow",
   };
-}
-
-function localUrl(portValue: string | undefined, fallbackPort: number) {
-  const port = Number(portValue ?? fallbackPort);
-  const resolvedPort =
-    Number.isInteger(port) && port > 0 && port <= 65535 ? port : fallbackPort;
-  return `http://127.0.0.1:${resolvedPort}`;
 }
 
 function hyloLocalAgent(target: string): https.Agent | undefined {
@@ -203,12 +196,8 @@ function workflowRegistry() {
   }
 
   return {
-    defaultWorkflow: "workflow.nextjs",
+    defaultWorkflow: "workflow.cloudflareWorker",
     workflows: {
-      "workflow.nextjs": {
-        label: "Next.js",
-        url: "/api/nextjs",
-      },
       "workflow.cloudflareWorker": {
         label: "Cloudflare Worker",
         url: "/api/cloudflare",

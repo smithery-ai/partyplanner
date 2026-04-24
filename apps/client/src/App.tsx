@@ -151,7 +151,7 @@ async function getWorkOSConfig(
   }
 
   const client = createHyloApiClient({
-    baseUrl: hyloBackendUrl() ?? window.location.origin,
+    baseUrl: authConfigBackendUrl(),
     fetch: (input, init) =>
       fetch(input, {
         ...init,
@@ -217,6 +217,10 @@ function hyloBackendUrl(): string | undefined {
     /\/+$/,
     "",
   );
+}
+
+function authConfigBackendUrl(): string {
+  return hyloBackendUrl() ?? window.location.origin;
 }
 
 function displayName(user: User) {

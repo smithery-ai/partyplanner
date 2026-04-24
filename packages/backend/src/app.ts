@@ -18,21 +18,45 @@ import {
 import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { mountAuthApi, registerAuthOpenApiRoutes } from "./auth/routes";
+import type { DeploymentBackend } from "./deployments/backend";
+import { createDefaultCloudflareDeploymentBackend } from "./deployments/cloudflare-backend";
 import type { WorkflowDeploymentRegistry } from "./deployments/registry";
 import {
   mountDeploymentApi,
   registerDeploymentOpenApiRoutes,
 } from "./deployments/routes";
 import { parseDeploymentIdParam } from "./deployments/validators";
-import { apiErrorResponse, PlatformApiError } from "./errors";
+import { apiErrorResponse } from "./errors";
 import type { BackendAppEnv } from "./types";
 
 export type { BackendAppEnv } from "./types";
+
+export type BackendAppOptions = {
+  db: WorkflowPostgresDb;
+  env?: BackendAppEnv;
+  deploymentRegistry?: WorkflowDeploymentRegistry;
+  deploymentBackend?: DeploymentBackend;
+};
+
+export function createBackendApp(options: BackendAppOptions) {
+  const env = options.env ?? {};
+  const deploymentBackend =
+    options.deploymentBackend ?? createDefaultCloudflareDeploymentBackend(env);
+  return createApp(
+    options.db,
+    env,
+    options.deploymentRegistry,
+    deploymentBackend,
+  );
+}
 
 export function createApp(
   db: WorkflowPostgresDb,
   env: BackendAppEnv = {},
   deploymentRegistry?: WorkflowDeploymentRegistry,
+  deploymentBackend: DeploymentBackend = createDefaultCloudflareDeploymentBackend(
+    env,
+  ),
 ) {
   const adapterOptions = { autoMigrate: false };
   const stateStore = createPostgresWorkflowStateStore(db, adapterOptions);
@@ -48,7 +72,7 @@ export function createApp(
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
-  mountWorkerDispatchApi(app, env);
+  mountWorkerDispatchApi(app, deploymentBackend);
   mountRemoteRuntimeOpenApi(app, createBackendOpenApiOptions());
   app.route(
     "/runtime",
@@ -62,7 +86,7 @@ export function createApp(
 
   const curatedProviders = collectCuratedProviders(env);
   const apiKey = resolveApiKey(env);
-  mountAuthApi(app, env, apiKey);
+  mountAuthApi(app, env, apiKey, deploymentBackend);
   app.route(
     "/oauth",
     createOAuthBrokerServer({
@@ -74,7 +98,7 @@ export function createApp(
     }),
   );
 
-  mountDeploymentApi(app, env, apiKey, deploymentRegistry);
+  mountDeploymentApi(app, env, apiKey, deploymentRegistry, deploymentBackend);
 
   return app;
 }
@@ -136,20 +160,14 @@ function mountBackendOpenApiRoutes(app: OpenAPIHono): void {
   registerDeploymentOpenApiRoutes(app);
 }
 
-function mountWorkerDispatchApi(app: OpenAPIHono, env: BackendAppEnv): void {
+function mountWorkerDispatchApi(
+  app: OpenAPIHono,
+  deploymentBackend: DeploymentBackend,
+): void {
   const dispatch = async (c: Context) => {
     try {
       const deploymentId = parseDeploymentIdParam(c.req.param("deploymentId"));
-      if (!env.DISPATCHER) {
-        throw new PlatformApiError(
-          503,
-          "worker_dispatch_not_configured",
-          "Worker dispatch namespace binding is not configured.",
-        );
-      }
-      return await env.DISPATCHER.get(deploymentId).fetch(
-        rewriteDispatchRequest(c.req.raw),
-      );
+      return await deploymentBackend.fetchWorkflow(deploymentId, c.req.raw);
     } catch (e) {
       return apiErrorResponse(c, e);
     }
@@ -157,13 +175,6 @@ function mountWorkerDispatchApi(app: OpenAPIHono, env: BackendAppEnv): void {
 
   app.all("/workers/:deploymentId", dispatch);
   app.all("/workers/:deploymentId/*", dispatch);
-}
-
-function rewriteDispatchRequest(request: Request): Request {
-  const url = new URL(request.url);
-  const path = url.pathname.split("/").slice(3).join("/");
-  url.pathname = path ? `/${path}` : "/";
-  return new Request(url, request);
 }
 
 function collectCuratedProviders(

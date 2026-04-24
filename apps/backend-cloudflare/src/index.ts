@@ -1,8 +1,11 @@
+import {
+  type BackendAppEnv,
+  createBackendApp,
+  createWorkflowDeploymentRegistry,
+} from "@hylo/backend";
+import { createDefaultCloudflareDeploymentBackend } from "@hylo/backend/cloudflare";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import type { BackendAppEnv } from "./app";
-import { createApp } from "./app";
-import { createWorkflowDeploymentRegistry } from "./deployments/registry";
 
 export default {
   fetch(request, env) {
@@ -12,9 +15,13 @@ export default {
       prepare: true,
     });
     const db = drizzle(client);
-    return createApp(db, env, createWorkflowDeploymentRegistry(db)).fetch(
-      request,
-    );
+    const deploymentRegistry = createWorkflowDeploymentRegistry(db);
+    return createBackendApp({
+      db,
+      env,
+      deploymentRegistry,
+      deploymentBackend: createDefaultCloudflareDeploymentBackend(env),
+    }).fetch(request);
   },
 } satisfies ExportedHandler<Env>;
 
