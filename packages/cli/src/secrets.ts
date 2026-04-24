@@ -2,8 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
-const SECRET_DECLARATION =
-  /\bsecret\s*\(\s*["']([A-Z][A-Z0-9_]*)["']/g;
+const SECRET_DECLARATION = /\bsecret\s*\(\s*["']([A-Z][A-Z0-9_]*)["']/g;
 
 export async function envSecretBindings(
   srcDir: string,
