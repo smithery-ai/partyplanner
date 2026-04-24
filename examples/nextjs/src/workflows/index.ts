@@ -1,7 +1,9 @@
 import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
 import "./notion";
+import "./slack";
 import { exampleSecretValue } from "./secrets";
+import { slackInterventionResult } from "./slack";
 import { spotifyProfile } from "./spotify";
 import { spotifyPlaylistNotionResult } from "./spotify-notion-playlist";
 
@@ -357,6 +359,7 @@ export const branchSummary = atom(
     const incident = get.maybe(incidentWrapUp);
     const purchase = get.maybe(purchaseNotifyRequester);
     const customer = get.maybe(customerFollowUp);
+    const slackMessage = get.maybe(slackInterventionResult);
     const spotify = get.maybe(spotifyProfile);
     const spotifyPlaylistNotion = get.maybe(spotifyPlaylistNotionResult);
 
@@ -364,6 +367,7 @@ export const branchSummary = atom(
       incident,
       purchase,
       customer,
+      slackMessage,
       spotify,
       spotifyPlaylistNotion,
     ].filter(Boolean);

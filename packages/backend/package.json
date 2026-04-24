@@ -25,6 +25,7 @@
   "dependencies": {
     "@hono/zod-openapi": "^1.3.0",
     "@workflow/integrations-notion": "workspace:*",
+    "@workflow/integrations-slack": "workspace:*",
     "@workflow/integrations-spotify": "workspace:*",
     "@workflow/oauth-broker": "workspace:*",
     "@workflow/postgres": "workspace:*",

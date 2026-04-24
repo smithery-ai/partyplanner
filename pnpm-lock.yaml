@@ -182,6 +182,9 @@ importers:
       '@workflow/integrations-oauth':
         specifier: workspace:*
         version: link:../../packages/integrations/_oauth
+      '@workflow/integrations-slack':
+        specifier: workspace:*
+        version: link:../../packages/integrations/slack
       '@workflow/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -222,6 +225,9 @@ importers:
       '@workflow/integrations-oauth':
         specifier: workspace:*
         version: link:../../packages/integrations/_oauth
+      '@workflow/integrations-slack':
+        specifier: workspace:*
+        version: link:../../packages/integrations/slack
       '@workflow/integrations-spotify':
         specifier: workspace:*
         version: link:../../packages/integrations/spotify
@@ -293,6 +299,9 @@ importers:
       '@workflow/integrations-notion':
         specifier: workspace:*
         version: link:../integrations/notion
+      '@workflow/integrations-slack':
+        specifier: workspace:*
+        version: link:../integrations/slack
       '@workflow/integrations-spotify':
         specifier: workspace:*
         version: link:../integrations/spotify
@@ -478,6 +487,25 @@ importers:
       hono:
         specifier: ^4.12.14
         version: 4.12.14
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@edge-runtime/vm@3.2.0)(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
+
+  packages/integrations/slack:
+    dependencies:
+      '@workflow/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@workflow/integrations-oauth':
+        specifier: workspace:*
+        version: link:../_oauth
       zod:
         specifier: ^4.3.6
         version: 4.3.6
