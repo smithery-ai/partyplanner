@@ -67,6 +67,201 @@ describe("WorkflowManager", () => {
       completed.nodes.find((node) => node.id === "increment")?.status,
     ).toBe("resolved");
   });
+
+  it("matches all trigger inputs for a webhook-started run", async () => {
+    input("leadA", z.object({ source: z.literal("webhook"), id: z.string() }));
+    input("leadB", z.object({ source: z.literal("webhook"), id: z.string() }));
+
+    const manager = new WorkflowManager({
+      stateStore: new TestWorkflowStateStore(),
+      queue: new TestWorkflowQueue(),
+    });
+
+    const started = await manager.submitWebhook(
+      {
+        payload: { source: "webhook", id: "evt_1" },
+      },
+      {
+        method: "POST",
+        url: "https://example.test/api/workflow/webhooks?source=test",
+        route: "/api/workflow/webhooks",
+        headers: {
+          "content-type": "application/json",
+          "x-test": "1",
+        },
+        query: {
+          source: "test",
+        },
+      },
+    );
+
+    expect(started.status).toBe("running");
+    expect(started.state.payload).toEqual({
+      source: "webhook",
+      id: "evt_1",
+    });
+    expect(started.state.webhook).toEqual({
+      nodeId: "@workflow/webhook-payload",
+      matchedInputs: ["leadA", "leadB"],
+      receivedAt: started.state.webhook?.receivedAt,
+    });
+    expect(started.state.nodes["@workflow/webhook-payload"]).toMatchObject({
+      status: "resolved",
+      kind: "webhook",
+      value: {
+        method: "POST",
+        route: "/api/workflow/webhooks",
+        url: "https://example.test/api/workflow/webhooks?source=test",
+        headers: {
+          "content-type": "application/json",
+          "x-test": "1",
+        },
+        query: {
+          source: "test",
+        },
+        payload: { source: "webhook", id: "evt_1" },
+      },
+    });
+    expect(
+      started.events.map(
+        (event) => event.type === "webhook_matched" && event.inputId,
+      ),
+    ).toContain("leadA");
+    expect(
+      started.events.map(
+        (event) => event.type === "webhook_matched" && event.inputId,
+      ),
+    ).toContain("leadB");
+    expect(
+      started.queue.pending
+        .filter((item) => item.event.kind === "input")
+        .map((item) => item.event.inputId),
+    ).toEqual(["leadA", "leadB"]);
+
+    await manager.advanceRun(started.runId);
+    const completed = await manager.advanceRun(started.runId);
+
+    expect(completed.status).toBe("completed");
+    expect(completed.state.inputs.leadA).toEqual({
+      source: "webhook",
+      id: "evt_1",
+    });
+    expect(completed.state.inputs.leadB).toEqual({
+      source: "webhook",
+      id: "evt_1",
+    });
+  });
+
+  it("matches all deferred inputs for a waiting run", async () => {
+    const seed = input("seed", z.object({ id: z.string() }));
+    const approvalA = input.deferred(
+      "approvalA",
+      z.object({ approved: z.boolean() }),
+    );
+    const approvalB = input.deferred(
+      "approvalB",
+      z.object({ approved: z.boolean() }),
+    );
+
+    atom(
+      (get) => {
+        get(seed);
+        return get(approvalA).approved;
+      },
+      { name: "checkApprovalA" },
+    );
+    atom(
+      (get) => {
+        get(seed);
+        return get(approvalB).approved;
+      },
+      { name: "checkApprovalB" },
+    );
+
+    const manager = new WorkflowManager({
+      stateStore: new TestWorkflowStateStore(),
+      queue: new TestWorkflowQueue(),
+    });
+
+    const started = await manager.startRun({
+      inputId: "seed",
+      payload: { id: "seed_1" },
+    });
+    await manager.advanceRun(started.runId);
+    await manager.advanceRun(started.runId);
+    const waiting = await manager.advanceRun(started.runId);
+
+    expect(waiting.status).toBe("waiting");
+
+    const resumed = await manager.submitWebhook({
+      runId: started.runId,
+      payload: { approved: true },
+    });
+
+    expect(resumed.status).toBe("running");
+    expect(resumed.state.inputs.approvalA).toEqual({ approved: true });
+    expect(resumed.state.inputs.approvalB).toEqual({ approved: true });
+    expect(
+      resumed.events.map(
+        (event) => event.type === "webhook_matched" && event.inputId,
+      ),
+    ).toContain("approvalA");
+    expect(
+      resumed.events.map(
+        (event) => event.type === "webhook_matched" && event.inputId,
+      ),
+    ).toContain("approvalB");
+    expect(
+      resumed.queue.pending
+        .filter((item) => item.event.kind === "step")
+        .map((item) => item.event.stepId),
+    ).toEqual(["checkApprovalA", "checkApprovalB"]);
+  });
+
+  it("fails runs when a webhook payload matches no unresolved input", async () => {
+    input("lead", z.object({ kind: z.literal("lead") }));
+
+    const manager = new WorkflowManager({
+      stateStore: new TestWorkflowStateStore(),
+      queue: new TestWorkflowQueue(),
+    });
+
+    const failed = await manager.submitWebhook({
+      payload: { kind: "other" },
+    });
+
+    expect(failed.status).toBe("failed");
+    expect(failed.queue.pending).toHaveLength(0);
+    expect(failed.state.payload).toEqual({ kind: "other" });
+    expect(failed.state.nodes["@workflow/webhook-payload"]).toMatchObject({
+      status: "errored",
+      kind: "webhook",
+      value: {
+        method: "POST",
+        route: "/webhooks",
+        headers: {},
+        query: {},
+        payload: { kind: "other" },
+      },
+      error: {
+        message:
+          "No unresolved workflow input matched the received webhook payload.",
+      },
+    });
+    expect(failed.state.terminal).toEqual({
+      status: "failed",
+      reason: "webhook_unmatched",
+    });
+    expect(failed.events.map((event) => event.type)).toEqual([
+      "run_started",
+      "webhook_received",
+      "webhook_unmatched",
+      "run_failed",
+    ]);
+
+    const runs = await manager.listRuns();
+    expect(runs[0]?.status).toBe("failed");
+  });
 });
 
 class TestWorkflowStateStore implements WorkflowStateStore {

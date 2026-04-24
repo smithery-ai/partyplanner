@@ -100,7 +100,7 @@ const STATUS_LEGEND: {
 
 type WorkflowNodeData = {
   label: string;
-  kind: "input" | "atom" | "action";
+  kind: "input" | "atom" | "action" | "webhook";
   deferred?: boolean;
   secret?: boolean;
   /** Waiting on this input or secret (no node record in state until submitted). */
@@ -287,9 +287,11 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
         : data.deferred
           ? "Deferred input"
           : "Input"
-      : data.kind === "action"
-        ? "Action"
-        : "Atom";
+      : data.kind === "webhook"
+        ? "Webhook"
+        : data.kind === "action"
+          ? "Action"
+          : "Atom";
 
   return (
     <WorkflowCard
@@ -406,6 +408,9 @@ function workflowNodeOrder(
     registry.allIds().map((id, index) => [id, index + manifestOrder.size]),
   );
   return [...ids].sort((a, b) => {
+    const aWebhook = runState?.nodes[a]?.kind === "webhook";
+    const bWebhook = runState?.nodes[b]?.kind === "webhook";
+    if (aWebhook !== bWebhook) return aWebhook ? -1 : 1;
     const ao = manifestOrder.get(a) ?? registryOrder.get(a) ?? 9999;
     const bo = manifestOrder.get(b) ?? registryOrder.get(b) ?? 9999;
     return ao === bo ? a.localeCompare(b) : ao - bo;
@@ -682,6 +687,15 @@ function edgesFromObservedDeps(
       out.push({ id: idStr, source: dep, target: id });
     }
   }
+  const webhookNodeId = state.webhook?.nodeId;
+  if (webhookNodeId) {
+    for (const target of state.webhook?.matchedInputs ?? []) {
+      const id = edgeIdFromEndpoints(webhookNodeId, target);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ id, source: webhookNodeId, target });
+    }
+  }
   return out;
 }
 
@@ -796,11 +810,14 @@ function buildFlow(
     const actionDef =
       registry.getAction(id) ??
       manifest?.actions.find((item) => item.id === id);
-    const kind: WorkflowNodeData["kind"] = inputDef
-      ? "input"
-      : actionDef
-        ? "action"
-        : "atom";
+    const kind: WorkflowNodeData["kind"] =
+      rec?.kind === "webhook"
+        ? "webhook"
+        : inputDef
+          ? "input"
+          : actionDef
+            ? "action"
+            : "atom";
     const deferred = Boolean(inputDef?.kind === "deferred_input");
     const secret = Boolean(inputDef?.secret);
     const pendingInput = Boolean(
@@ -817,7 +834,7 @@ function buildFlow(
         runState.interventions[waitingInterventionId]?.status !== "resolved",
     );
     const data: WorkflowNodeData = {
-      label: id,
+      label: rec?.kind === "webhook" ? "Webhook Request" : id,
       kind,
       deferred,
       secret,

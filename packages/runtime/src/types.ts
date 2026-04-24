@@ -68,6 +68,14 @@ export interface InspectableWorkQueue extends WorkQueue {
 
 export type RunEvent =
   | { type: "run_started"; runId: string; at: number }
+  | { type: "webhook_received"; runId: string; at: number }
+  | { type: "webhook_matched"; runId: string; inputId: string; at: number }
+  | {
+      type: "webhook_unmatched";
+      runId: string;
+      reason: string;
+      at: number;
+    }
   | { type: "input_received"; runId: string; inputId: string; at: number }
   | { type: "node_queued"; runId: string; nodeId: string; at: number }
   | { type: "node_started"; runId: string; nodeId: string; at: number }
@@ -113,6 +121,7 @@ export type RunEvent =
       message: string;
       at: number;
     }
+  | { type: "run_failed"; runId: string; reason?: string; at: number }
   | { type: "run_completed"; runId: string; at: number }
   | { type: "run_waiting"; runId: string; waitingOn: string[]; at: number };
 
@@ -162,7 +171,7 @@ export type ExecutionStatus =
 
 export type GraphNode = {
   id: string;
-  kind: "input" | "deferred_input" | "atom" | "action";
+  kind: "input" | "deferred_input" | "atom" | "action" | "webhook";
   secret?: boolean;
   description?: string;
   status: ExecutionStatus;

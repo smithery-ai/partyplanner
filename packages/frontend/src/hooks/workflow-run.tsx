@@ -137,7 +137,8 @@ export function useWorkflowRun(): WorkflowRunContextValue {
  */
 export function useIsRunning(): boolean {
   const ctx = useContext(WorkflowRunContext);
-  return ctx?.isRunning ?? false;
+  if (!ctx?.runState) return false;
+  return ctx.isRunning;
 }
 
 /**

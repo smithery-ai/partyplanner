@@ -18,6 +18,11 @@ export type SubmitBackendInputRequest = {
   secretValues?: Record<string, string>;
 };
 
+export type SubmitBackendWebhookRequest = {
+  payload: unknown;
+  runId?: string;
+};
+
 export type SubmitBackendInterventionRequest = {
   payload: unknown;
   secretValues?: Record<string, string>;

@@ -30,6 +30,11 @@ export type SubmitWorkflowInputRequest = {
   secretValues?: Record<string, string>;
 };
 
+export type SubmitWorkflowWebhookRequest = {
+  payload: unknown;
+  runId?: string;
+};
+
 export type SubmitWorkflowInterventionRequest = {
   payload: unknown;
   secretValues?: Record<string, string>;

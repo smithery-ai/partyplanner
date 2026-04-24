@@ -535,17 +535,28 @@ function buildGraphNodes(
   const pending = new Set(queue.pending.map((item) => queueNodeId(item.event)));
   const running = new Set(queue.running.map((item) => queueNodeId(item.event)));
 
-  return registry.allIds().map((id) => {
+  const ids = new Set([...registry.allIds(), ...Object.keys(state.nodes)]);
+  return [...ids].map((id) => {
     const inputDef = registry.getInput(id);
     const atomDef = registry.getAtom(id);
     const actionDef = registry.getAction(id);
     const rec = state.nodes[id] ?? fallbackRecord(inputDef?.kind);
     return {
       id,
-      kind: inputDef?.kind ?? atomDef?.kind ?? actionDef?.kind ?? "atom",
+      kind:
+        inputDef?.kind ??
+        atomDef?.kind ??
+        actionDef?.kind ??
+        rec.kind ??
+        "atom",
       secret: inputDef?.secret,
       description:
-        inputDef?.description ?? atomDef?.description ?? actionDef?.description,
+        inputDef?.description ??
+        atomDef?.description ??
+        actionDef?.description ??
+        (rec.kind === "webhook"
+          ? "Most recent webhook request received for this run."
+          : undefined),
       status: running.has(id)
         ? "running"
         : pending.has(id)
@@ -592,6 +603,15 @@ function buildGraphEdges(state: RunState): GraphEdge[] {
       edges.push({ id, source, target });
     }
   }
+  const webhookNodeId = state.webhook?.nodeId;
+  if (webhookNodeId) {
+    for (const target of state.webhook?.matchedInputs ?? []) {
+      const id = `${webhookNodeId}->${target}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      edges.push({ id, source: webhookNodeId, target });
+    }
+  }
   return edges;
 }
 
@@ -603,6 +623,7 @@ function runStatus(
   state: RunState,
   activeQueueItems: number,
 ): RunSnapshot["status"] {
+  if (state.terminal) return state.terminal.status;
   if (Object.values(state.nodes).some((record) => record.status === "errored"))
     return "failed";
   if (activeQueueItems > 0) return "running";

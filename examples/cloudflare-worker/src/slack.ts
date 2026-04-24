@@ -5,11 +5,7 @@ import { z } from "zod";
 export const slackInterventionTrigger = input(
   "slackInterventionTrigger",
   z.object({
-    context: z
-      .string()
-      .default(
-        "Collect the destination and copy from a human, then send the message as the Slack bot.",
-      ),
+    context: z.string(),
   }),
   {
     title: "Send a Slack bot message",

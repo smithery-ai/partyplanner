@@ -17,6 +17,7 @@ import type {
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
+  SubmitWorkflowWebhookRequest,
   WorkflowEventSink,
   WorkflowQueue,
   WorkflowRunDocument,
@@ -39,8 +40,19 @@ export type WorkflowManagerOptions = {
   };
 };
 
+const WEBHOOK_PAYLOAD_NODE_ID = "@workflow/webhook-payload";
+
+export type WorkflowWebhookRequestContext = {
+  method: string;
+  url: string;
+  route: string;
+  headers: Record<string, string>;
+  query: Record<string, string>;
+};
+
 export class WorkflowManager {
   readonly definition: WorkflowServerDefinition;
+  private readonly registry: Registry;
   private readonly stateStore: WorkflowStateStore;
   private readonly queue: WorkflowQueue;
   private readonly executor: Executor;
@@ -51,6 +63,7 @@ export class WorkflowManager {
     this.executor = options.executor ?? new RuntimeExecutor();
 
     const registry = cloneRegistry(options.registry ?? globalRegistry);
+    this.registry = registry;
     const codeHash = options.workflow?.codeHash ?? hashRegistry(registry);
     const workflow: WorkflowRef = {
       workflowId: options.workflow?.id ?? "workflow",
@@ -124,6 +137,138 @@ export class WorkflowManager {
     return this.publishSnapshot(snapshot);
   }
 
+  async submitWebhook(
+    request: SubmitWorkflowWebhookRequest,
+    requestContext?: WorkflowWebhookRequestContext,
+  ): Promise<WorkflowRunDocument> {
+    const runId = request.runId ?? `run_${randomId()}`;
+    const existing = await this.stateStore.getRunDocument(runId);
+    if (
+      existing &&
+      existing.status !== "created" &&
+      existing.status !== "waiting"
+    ) {
+      throw new Error(
+        `Webhook payloads can only be submitted to created or waiting runs. Current status: ${existing.status}`,
+      );
+    }
+
+    const scheduler = this.createScheduler(runId);
+    const baseSnapshot = await scheduler.startRun({
+      workflow: this.definition.ref,
+      runId,
+    });
+    const at = Date.now();
+    await this.stateStore.publishEvent({ type: "webhook_received", runId, at });
+
+    let snapshot = baseSnapshot;
+    {
+      const state = structuredClone(snapshot.state);
+      if (state.payload === undefined) state.payload = request.payload;
+      const previousWebhookNode = state.nodes[WEBHOOK_PAYLOAD_NODE_ID];
+      state.webhook = {
+        nodeId: WEBHOOK_PAYLOAD_NODE_ID,
+        matchedInputs: [],
+        receivedAt: at,
+      };
+      state.nodes[WEBHOOK_PAYLOAD_NODE_ID] = {
+        status: "resolved",
+        kind: "webhook",
+        value: webhookRequestValue(request, requestContext, at),
+        deps: [],
+        duration_ms: 0,
+        attempts: (previousWebhookNode?.attempts ?? 0) + 1,
+      };
+      const saved = await this.stateStore.save(runId, state, snapshot.version);
+      if (!saved.ok) {
+        throw new Error(`Unable to save run: ${saved.reason}`);
+      }
+      snapshot = await scheduler.snapshot(runId);
+    }
+
+    const matches = this.matchWebhookInputs(snapshot.state, request.payload);
+    if (matches.length === 0) {
+      const state = structuredClone(snapshot.state);
+      state.webhook = {
+        ...(state.webhook ?? {
+          nodeId: WEBHOOK_PAYLOAD_NODE_ID,
+          receivedAt: at,
+        }),
+        matchedInputs: [],
+      };
+      state.nodes[WEBHOOK_PAYLOAD_NODE_ID] = {
+        ...(state.nodes[WEBHOOK_PAYLOAD_NODE_ID] ?? {
+          kind: "webhook",
+          deps: [],
+          duration_ms: 0,
+          attempts: 1,
+        }),
+        status: "errored",
+        error: {
+          message:
+            "No unresolved workflow input matched the received webhook payload.",
+        },
+      };
+      state.terminal = {
+        status: "failed",
+        reason: "webhook_unmatched",
+      };
+      const saved = await this.stateStore.save(runId, state, snapshot.version);
+      if (!saved.ok) {
+        throw new Error(`Unable to save run: ${saved.reason}`);
+      }
+      await this.stateStore.publishEvents([
+        {
+          type: "webhook_unmatched",
+          runId,
+          reason:
+            "No unresolved workflow input matched the received webhook payload.",
+          at: Date.now(),
+        },
+        {
+          type: "run_failed",
+          runId,
+          reason: "webhook_unmatched",
+          at: Date.now(),
+        },
+      ]);
+      return this.publishSnapshot(await scheduler.snapshot(runId));
+    }
+
+    await this.stateStore.publishEvents(
+      matches.map((input) => ({
+        type: "webhook_matched" as const,
+        runId,
+        inputId: input.id,
+        at: Date.now(),
+      })),
+    );
+
+    {
+      const state = structuredClone(snapshot.state);
+      state.webhook = {
+        nodeId: WEBHOOK_PAYLOAD_NODE_ID,
+        matchedInputs: matches.map((input) => input.id),
+        receivedAt: at,
+      };
+      const saved = await this.stateStore.save(runId, state, snapshot.version);
+      if (!saved.ok) {
+        throw new Error(`Unable to save run: ${saved.reason}`);
+      }
+      snapshot = await scheduler.snapshot(runId);
+    }
+
+    for (const input of matches) {
+      snapshot = await scheduler.submitInput({
+        runId,
+        workflow: this.definition.ref,
+        inputId: input.id,
+        payload: request.payload,
+      });
+    }
+    return this.publishSnapshot(snapshot);
+  }
+
   async submitIntervention(
     runId: string,
     interventionId: string,
@@ -176,6 +321,20 @@ export class WorkflowManager {
     });
   }
 
+  private matchWebhookInputs(
+    state: RunSnapshot["state"],
+    payload: unknown,
+  ): ReturnType<Registry["allInputs"]> {
+    const candidateKind =
+      state.trigger === undefined ? "input" : "deferred_input";
+    return this.registry.allInputs().filter((input) => {
+      if (input.kind !== candidateKind || input.secret) return false;
+      if (Object.hasOwn(state.inputs, input.id)) return false;
+      if (state.nodes[input.id]?.status === "resolved") return false;
+      return input.schema.safeParse(payload).success;
+    });
+  }
+
   private async publishSnapshot(
     snapshot: RunSnapshot,
   ): Promise<WorkflowRunDocument> {
@@ -188,6 +347,23 @@ export class WorkflowManager {
     await this.stateStore.saveRunDocument(document);
     return structuredClone(document);
   }
+}
+
+function webhookRequestValue(
+  request: SubmitWorkflowWebhookRequest,
+  requestContext: WorkflowWebhookRequestContext | undefined,
+  receivedAt: number,
+): Record<string, unknown> {
+  return {
+    receivedAt,
+    method: requestContext?.method ?? "POST",
+    route: requestContext?.route ?? "/webhooks",
+    url: requestContext?.url,
+    headers: requestContext?.headers ?? {},
+    query: requestContext?.query ?? {},
+    runId: request.runId,
+    payload: request.payload,
+  };
 }
 
 function secretResolverFromValues(

@@ -13,7 +13,7 @@ export type NodeDetailEditor = {
   /** From `input(..., { description })` in the workflow registry. */
   inputDescription?: string;
   description: string;
-  schema: JsonSchema;
+  schema?: JsonSchema;
   secret?: boolean;
   value: unknown;
   onChange: (value: unknown) => void;
@@ -83,13 +83,15 @@ export function NodeDetailSheet({
               <p className="text-muted-foreground text-xs leading-snug">
                 {editor.description}
               </p>
-              <JsonSchemaForm
-                schema={editor.schema}
-                value={editor.value}
-                onChange={editor.onChange}
-                idPrefix={nodeId}
-                secret={editor.secret}
-              />
+              {editor.schema ? (
+                <JsonSchemaForm
+                  schema={editor.schema}
+                  value={editor.value}
+                  onChange={editor.onChange}
+                  idPrefix={nodeId}
+                  secret={editor.secret}
+                />
+              ) : null}
               {editor.error ? (
                 <p
                   className="whitespace-pre-line text-destructive text-xs"

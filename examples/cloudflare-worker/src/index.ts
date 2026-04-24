@@ -7,14 +7,10 @@ export * from "./slack";
 export const incidentAlert = input(
   "incidentAlert",
   z.object({
-    service: z.string().default("checkout-api"),
-    severity: z.enum(["sev1", "sev2", "sev3"]).default("sev2"),
-    customerImpact: z
-      .string()
-      .default("Elevated payment failures for enterprise customers."),
-    detectedBy: z
-      .enum(["synthetic", "support", "engineer"])
-      .default("synthetic"),
+    service: z.string(),
+    severity: z.enum(["sev1", "sev2", "sev3"]),
+    customerImpact: z.string(),
+    detectedBy: z.enum(["synthetic", "support", "engineer"]),
   }),
   {
     title: "Respond to an incident",
@@ -26,8 +22,8 @@ export const incidentAlert = input(
 export const incidentCommsApproval = input.deferred(
   "incidentCommsApproval",
   z.object({
-    approved: z.boolean().default(true),
-    channel: z.enum(["status-page", "email", "slack"]).default("status-page"),
+    approved: z.boolean(),
+    channel: z.enum(["status-page", "email", "slack"]),
     note: z.string().optional(),
   }),
   {
