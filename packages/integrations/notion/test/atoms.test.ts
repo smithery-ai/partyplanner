@@ -1,19 +1,14 @@
+import type { QueueEvent, RunState, RunTrace } from "@workflow/core";
 import { atom, createRuntime, globalRegistry, input } from "@workflow/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { getPage } from "../src/atoms";
 
-async function runToIdle(seed: {
-  kind: "input";
-  eventId: string;
-  runId: string;
-  inputId: string;
-  payload: unknown;
-}) {
+async function runToIdle(seed: QueueEvent) {
   const runtime = createRuntime();
   const queue = [seed];
-  let state = undefined;
-  let trace = undefined;
+  let state: RunState | undefined;
+  let trace: RunTrace | undefined;
 
   while (queue.length > 0) {
     const event = queue.shift();

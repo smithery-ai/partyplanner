@@ -46,8 +46,8 @@ import {
   useWorkflow,
   useWorkflowRun,
 } from "./hooks/use-workflow";
-import { cn } from "./lib/utils";
 import { findPendingWait } from "./lib/pending-wait";
+import { cn } from "./lib/utils";
 import { workflowInputLabel } from "./lib/workflow-labels";
 import type {
   RunSummary,

@@ -3,12 +3,12 @@ import type { RunState } from "@workflow/core";
 import type { QueueSnapshot, RunEvent, RunSnapshot } from "@workflow/runtime";
 import { useCallback, useMemo, useState } from "react";
 import { useWorkflowFrontendConfig } from "../config";
+import { collectUnresolvedWaitingOn } from "../lib/pending-wait";
 import type {
   AdvanceWorkflowArgs,
   SubmitWorkflowInputArgs,
   SubmitWorkflowInterventionArgs,
 } from "../lib/workflow-runtimes";
-import { collectUnresolvedWaitingOn } from "../lib/pending-wait";
 import type {
   BindRunSecretRequest,
   CreateSecretVaultEntryRequest,

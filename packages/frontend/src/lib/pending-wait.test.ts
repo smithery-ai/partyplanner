@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { collectUnresolvedWaitingOn, findPendingWait } from "./pending-wait";
 import type { RunState } from "@workflow/core";
+import { describe, expect, it } from "vitest";
 import type { WorkflowManifest } from "../types";
+import { collectUnresolvedWaitingOn, findPendingWait } from "./pending-wait";
 
 function makeRunState(overrides: Partial<RunState> = {}): RunState {
   return {
