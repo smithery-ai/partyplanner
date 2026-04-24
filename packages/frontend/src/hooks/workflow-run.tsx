@@ -96,22 +96,15 @@ export function WorkflowRunProvider({
     // Don't clear while any mutation is in flight — the snapshot we're reading
     // was computed BEFORE the mutation and may still report `waiting` even
     // though the user has just submitted the input that will unstick the run.
-    if (hasQueuedWork || run.isPending || autoAdvanceInFlight.current) return;
-    if (runComplete || runIsWaiting || runIsFailed) {
-      setRunning(false);
-      return;
-    }
-    // Queue drained, nothing in flight, run not terminal — nothing to do.
+    // Note: we intentionally do NOT guard on `autoAdvanceInFlight.current`
+    // here. That ref is cleared inside the advance promise's `.finally()`,
+    // which runs AFTER React has already committed the post-advance render
+    // (mutation.isPending flips false first). Guarding on it would make this
+    // effect bail in the very window where we need to clear, and setting the
+    // ref later doesn't trigger a re-render.
+    if (hasQueuedWork || run.isPending) return;
     setRunning(false);
-  }, [
-    isRunning,
-    run.runState,
-    run.isPending,
-    hasQueuedWork,
-    runComplete,
-    runIsWaiting,
-    runIsFailed,
-  ]);
+  }, [isRunning, run.runState, run.isPending, hasQueuedWork]);
 
   const value: WorkflowRunContextValue = {
     ...run,
@@ -145,4 +138,14 @@ export function useWorkflowRun(): WorkflowRunContextValue {
 export function useIsRunning(): boolean {
   const ctx = useContext(WorkflowRunContext);
   return ctx?.isRunning ?? false;
+}
+
+/**
+ * True while a deferred input or intervention submission is in flight.
+ * Lets sheets show a "Submitted" confirmation during the mutation instead
+ * of the generic "disabled while the workflow is running" hint.
+ */
+export function useIsSubmittingPendingInput(): boolean {
+  const ctx = useContext(WorkflowRunContext);
+  return ctx?.isSubmittingPendingInput ?? false;
 }

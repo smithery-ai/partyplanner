@@ -111,7 +111,12 @@ type WorkflowNodeData = {
   handles: { target: boolean; source: boolean };
   /** Inline approve/reject when a downstream step is blocked on this deferred input */
   inlineActions?: { approve: () => void; reject: () => void };
+  /** Skipped node that's fading out before it's removed from the graph. */
+  fadingOut?: boolean;
 };
+
+/** How long a skipped node sticks around (greyed + fading) before the layout removes it. */
+const SKIPPED_FADE_MS = 1500;
 
 function statusVisual(data: WorkflowNodeData): StatusVisual {
   if (data.intervention) return "intervention";
@@ -168,8 +173,9 @@ function statusNodeClasses(visual: StatusVisual): {
       };
     case "skipped":
       return {
-        card: "border-primary/55 ring-1 ring-primary/20",
-        header: "border-b border-primary/30 bg-primary/12 dark:bg-primary/18",
+        card: "border-muted-foreground/30 bg-muted/30 text-muted-foreground dark:bg-muted/20",
+        header:
+          "border-b border-muted-foreground/20 bg-muted/50 text-muted-foreground dark:bg-muted/30",
       };
     case "blocked":
       return {
@@ -203,7 +209,7 @@ const STATUS_SWATCH: Record<StatusVisual, string> = {
     "bg-yellow-400/50 ring-1 ring-yellow-500/30 dark:bg-yellow-400/35",
   intervention:
     "bg-yellow-400/15 ring-1 ring-yellow-500/50 dark:bg-yellow-500/12 dark:ring-yellow-500/45",
-  skipped: "bg-primary/45 ring-1 ring-primary/25",
+  skipped: "bg-muted-foreground/35 ring-1 ring-muted-foreground/25",
   blocked: "bg-orange-600/45 ring-1 ring-orange-600/25 dark:bg-orange-500/35",
   errored: "bg-destructive/40 ring-1 ring-destructive/25",
   not_reached: "bg-muted/60 ring-1 ring-muted-foreground/20",
@@ -291,6 +297,7 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
       className={cn(
         "!w-[11rem] max-w-[11rem] shadow-sm transition-colors duration-200",
         cardStatus,
+        data.fadingOut && "workflow-node-skipped-fade",
       )}
     >
       <NodeHeader className={cn("p-2!", headerStatus)}>
@@ -775,6 +782,7 @@ function buildFlow(
     | Record<string, { approve: () => void; reject: () => void }>
     | undefined,
   runningIds: ReadonlySet<string>,
+  fadingIds: ReadonlySet<string>,
 ): { nodes: Node[]; edges: Edge[] } {
   const ids = visibleIds;
   const animate = animatedEdgesFromState(runState);
@@ -821,6 +829,7 @@ function buildFlow(
           ? "queued"
           : (rec?.status ?? "not_reached"),
       handles: dagHandleSides(id, topology),
+      fadingOut: fadingIds.has(id),
     };
     const actions = nodeInlineActions?.[id];
     if (actions) data.inlineActions = actions;
@@ -900,12 +909,73 @@ function FlowInner({
     () => skippedWorkflowNodeIds(reachableIds, runState),
     [reachableIds, runState],
   );
+  const skippedNodeCount = skippedIds.length;
+
+  // Track first-seen timestamp per skipped node so we keep it rendered
+  // (greyed + fading) for SKIPPED_FADE_MS before the layout recomputes without
+  // it. `fadeTick` forces a re-render when the earliest fade window expires.
+  const [skippedSeenAt, setSkippedSeenAt] = useState<Map<string, number>>(
+    () => new Map(),
+  );
+  const [fadeTick, setFadeTick] = useState(0);
+
+  useEffect(() => {
+    setSkippedSeenAt((prev) => {
+      const now = Date.now();
+      const current = new Set(skippedIds);
+      let next: Map<string, number> | null = null;
+      for (const id of current) {
+        if (!prev.has(id)) {
+          if (!next) next = new Map(prev);
+          next.set(id, now);
+        }
+      }
+      for (const id of prev.keys()) {
+        if (!current.has(id)) {
+          if (!next) next = new Map(prev);
+          next.delete(id);
+        }
+      }
+      return next ?? prev;
+    });
+  }, [skippedIds]);
+
+  const fadingIds = useMemo(() => {
+    void fadeTick;
+    if (showSkippedNodes) return new Set<string>();
+    const now = Date.now();
+    const result = new Set<string>();
+    for (const [id, seenAt] of skippedSeenAt) {
+      if (now - seenAt < SKIPPED_FADE_MS) result.add(id);
+    }
+    return result;
+  }, [skippedSeenAt, fadeTick, showSkippedNodes]);
+
+  useEffect(() => {
+    if (fadingIds.size === 0) return;
+    const now = Date.now();
+    let earliestRemaining = Number.POSITIVE_INFINITY;
+    for (const id of fadingIds) {
+      const seenAt = skippedSeenAt.get(id);
+      if (seenAt === undefined) continue;
+      const remaining = SKIPPED_FADE_MS - (now - seenAt);
+      if (remaining > 0 && remaining < earliestRemaining) {
+        earliestRemaining = remaining;
+      }
+    }
+    if (!Number.isFinite(earliestRemaining)) return;
+    const timer = window.setTimeout(
+      () => setFadeTick((t) => t + 1),
+      earliestRemaining + 50,
+    );
+    return () => window.clearTimeout(timer);
+  }, [fadingIds, skippedSeenAt]);
+
   const visibleIds = useMemo(() => {
     if (showSkippedNodes) return reachableIds;
     const skipped = new Set(skippedIds);
-    return reachableIds.filter((id) => !skipped.has(id));
-  }, [reachableIds, skippedIds, showSkippedNodes]);
-  const skippedNodeCount = skippedIds.length;
+    return reachableIds.filter((id) => !skipped.has(id) || fadingIds.has(id));
+  }, [reachableIds, skippedIds, fadingIds, showSkippedNodes]);
 
   const graphEdges = useMemo(() => {
     const raw = edgesFromObservedDeps(runState);
@@ -987,6 +1057,7 @@ function FlowInner({
         queue,
         nodeInlineActions,
         visibleRunningIds,
+        fadingIds,
       ),
     [
       registry,
@@ -999,6 +1070,7 @@ function FlowInner({
       queue,
       nodeInlineActions,
       visibleRunningIds,
+      fadingIds,
     ],
   );
 

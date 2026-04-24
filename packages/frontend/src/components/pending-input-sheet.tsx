@@ -9,7 +9,10 @@ import { useState } from "react";
 import { JsonSchemaForm } from "../components/json-schema-form";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { useIsRunning } from "../hooks/workflow-run";
+import {
+  useIsRunning,
+  useIsSubmittingPendingInput,
+} from "../hooks/workflow-run";
 import { cn } from "../lib/utils";
 import { workflowInputLabel } from "../lib/workflow-labels";
 import type { JsonSchema, WorkflowInputManifest } from "../types";
@@ -53,6 +56,7 @@ export function PendingInputSheet({
   error?: string;
 }) {
   const disabled = useIsRunning();
+  const submitting = useIsSubmittingPendingInput();
   const [manualFormOpen, setManualFormOpen] = useState(false);
 
   if (!open || !input) return null;
@@ -143,7 +147,7 @@ export function PendingInputSheet({
                 onClick={() => onSubmit()}
                 disabled={disabled || secretValue.length === 0}
               >
-                Add secret
+                {submitting ? "Submitted" : "Add secret"}
               </Button>
             </div>
           ) : (
@@ -213,7 +217,7 @@ export function PendingInputSheet({
                         onClick={() => onSubmit()}
                         disabled={disabled}
                       >
-                        Submit
+                        {submitting ? "Submitted" : "Submit"}
                       </Button>
                     </div>
                   ) : null}
@@ -232,16 +236,17 @@ export function PendingInputSheet({
                     onClick={() => onSubmit()}
                     disabled={disabled}
                   >
-                    Submit
+                    {submitting ? "Submitted" : "Submit"}
                   </Button>
                 </>
               )}
             </div>
           )}
-          {disabled ? (
+          {submitting ? (
+            <p className="text-muted-foreground text-[11px]">Submitted.</p>
+          ) : disabled ? (
             <p className="text-muted-foreground text-[11px]">
-              Inputs are disabled while the workflow is running. Pause to
-              submit.
+              Inputs are disabled while the workflow is running.
             </p>
           ) : null}
           {error ? (
