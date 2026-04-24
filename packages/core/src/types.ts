@@ -95,7 +95,6 @@ export type RunState = {
   payload?: unknown;
   inputs: Record<string, unknown>;
   interventions: Record<string, InterventionRequest>;
-  interventionResponses: Record<string, unknown>;
   nodes: Record<string, NodeRecord>;
   waiters: Record<string, string[]>;
   processedEventIds: Record<string, true>;

@@ -9,7 +9,6 @@ function makeRunState(overrides: Partial<RunState> = {}): RunState {
     startedAt: Date.now(),
     inputs: {},
     interventions: {},
-    interventionResponses: {},
     nodes: {},
     waiters: {},
     processedEventIds: {},

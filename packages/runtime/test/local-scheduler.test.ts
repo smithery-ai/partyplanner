@@ -329,7 +329,7 @@ describe("LocalScheduler", () => {
     expect(events.events.at(-1)?.type).toBe("run_completed");
   });
 
-  it("pauses on deferred input and resumes only queued waiters", async () => {
+  it("resolves deferred input immediately and resumes only queued waiters", async () => {
     const expense = input(
       "expense",
       z.object({
@@ -398,8 +398,14 @@ describe("LocalScheduler", () => {
     });
 
     snapshot = await scheduler.snapshot("run-deferred");
+    expect(snapshot.nodes.find((node) => node.id === "approval")?.status).toBe(
+      "resolved",
+    );
     expect(snapshot.queue.pending).toHaveLength(1);
-    expect(snapshot.queue.pending[0]?.event.kind).toBe("input");
+    expect(snapshot.queue.pending[0]?.event.kind).toBe("step");
+    expect(snapshot.queue.pending[0]?.event).toMatchObject({
+      stepId: "submit",
+    });
 
     await scheduler.drain();
     snapshot = await scheduler.snapshot("run-deferred");
@@ -416,7 +422,7 @@ describe("LocalScheduler", () => {
     );
   });
 
-  it("can resume deferred input one queue event at a time", async () => {
+  it("queues the waiting step immediately when deferred input is submitted", async () => {
     const seed = input("seed", z.object({ name: z.string() }));
     const approval = input.deferred(
       "approval",
@@ -460,25 +466,137 @@ describe("LocalScheduler", () => {
 
     snapshot = await scheduler.snapshot("run-step-deferred");
     expect(snapshot.status).toBe("running");
-    expect(snapshot.queue.pending).toHaveLength(1);
-    expect(snapshot.queue.pending[0]?.event.kind).toBe("input");
-
-    await scheduler.processNext();
-    snapshot = await scheduler.snapshot("run-step-deferred");
     expect(snapshot.nodes.find((node) => node.id === "approval")?.status).toBe(
       "resolved",
     );
+    expect(snapshot.queue.pending).toHaveLength(1);
+    expect(snapshot.queue.pending[0]?.event.kind).toBe("step");
     expect(snapshot.nodes.find((node) => node.id === "finish")?.status).toBe(
       "queued",
     );
-    expect(snapshot.queue.pending).toHaveLength(1);
-    expect(snapshot.queue.pending[0]?.event.kind).toBe("step");
 
     await scheduler.processNext();
     snapshot = await scheduler.snapshot("run-step-deferred");
     expect(snapshot.status).toBe("completed");
     expect(snapshot.nodes.find((node) => node.id === "finish")?.value).toBe(
       "approved demo",
+    );
+  });
+
+  it("stores deferred input immediately without re-running unrelated steps", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+    input.deferred("approval", z.object({ approved: z.boolean() }));
+    let greetCalls = 0;
+
+    atom(
+      (get) => {
+        const s = get(seed);
+        greetCalls += 1;
+        return `hello ${s.name}`;
+      },
+      { name: "greet" },
+    );
+
+    const { scheduler } = makeScheduler();
+    await scheduler.startRun({
+      workflow,
+      runId: "run-deferred-ref",
+      input: {
+        inputId: "seed",
+        payload: { name: "Ada" },
+        eventId: "evt-seed",
+      },
+    });
+
+    await scheduler.drain();
+    let snapshot = await scheduler.snapshot("run-deferred-ref");
+    expect(snapshot.status).toBe("completed");
+    expect(greetCalls).toBe(1);
+
+    snapshot = await scheduler.submitInput({
+      runId: "run-deferred-ref",
+      inputId: "approval",
+      payload: { approved: true },
+      eventId: "evt-approval",
+    });
+
+    expect(snapshot.status).toBe("completed");
+    expect(snapshot.state.inputs.approval).toEqual({ approved: true });
+    expect(snapshot.nodes.find((node) => node.id === "approval")?.status).toBe(
+      "resolved",
+    );
+    expect(snapshot.queue.pending).toHaveLength(0);
+    expect(greetCalls).toBe(1);
+  });
+
+  it("blocks downstream steps on waiting dependencies and resumes them when the dependency resolves", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+
+    const review = atom(
+      (get, requestIntervention) => {
+        const s = get(seed);
+        const approval = requestIntervention(
+          "approval",
+          z.object({ approved: z.boolean() }),
+        );
+        if (!approval.approved) return get.skip("review denied");
+        return `reviewed:${s.name}`;
+      },
+      { name: "review" },
+    );
+
+    atom(
+      (get) => {
+        const result = get(review);
+        return `wrap:${result}`;
+      },
+      { name: "wrap" },
+    );
+
+    const { scheduler } = makeScheduler();
+    await scheduler.startRun({
+      workflow,
+      runId: "run-wait-propagation",
+      input: {
+        inputId: "seed",
+        payload: { name: "Ada" },
+        eventId: "evt-seed",
+      },
+    });
+
+    await scheduler.drain();
+    let snapshot = await scheduler.snapshot("run-wait-propagation");
+    const interventionId = "review:approval";
+
+    expect(snapshot.status).toBe("waiting");
+    expect(snapshot.nodes.find((node) => node.id === "review")?.status).toBe(
+      "waiting",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "review")?.waitingOn).toBe(
+      interventionId,
+    );
+    expect(snapshot.nodes.find((node) => node.id === "wrap")?.status).toBe(
+      "blocked",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "wrap")?.blockedOn).toBe(
+      "review",
+    );
+
+    await scheduler.submitIntervention({
+      runId: "run-wait-propagation",
+      interventionId,
+      payload: { approved: true },
+    });
+
+    await scheduler.drain();
+    snapshot = await scheduler.snapshot("run-wait-propagation");
+
+    expect(snapshot.status).toBe("completed");
+    expect(snapshot.nodes.find((node) => node.id === "review")?.value).toBe(
+      "reviewed:Ada",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "wrap")?.value).toBe(
+      "wrap:reviewed:Ada",
     );
   });
 
@@ -582,6 +700,7 @@ describe("LocalScheduler", () => {
     });
 
     expect(snapshot.status).toBe("running");
+    expect(snapshot.state.inputs[interventionId]).toEqual({ approved: true });
     expect(snapshot.queue.pending).toHaveLength(1);
     expect(snapshot.queue.pending[0]?.event.kind).toBe("step");
     expect(

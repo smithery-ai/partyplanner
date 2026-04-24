@@ -15,6 +15,10 @@ import type {
   RuntimeOptions,
 } from "./types";
 
+type LegacyInterventionResponseState = RunState & {
+  interventionResponses?: Record<string, unknown>;
+};
+
 class RuntimeImpl implements Runtime {
   constructor(private readonly opts: RuntimeOptions) {}
 
@@ -121,8 +125,11 @@ class RunSession {
       if (e instanceof NotReadyError) {
         return this.emitStep(e.dependencyId);
       }
-      if (e instanceof SkipError || e instanceof WaitError) {
+      if (e instanceof SkipError) {
         return this.wakeWaiters(event.stepId);
+      }
+      if (e instanceof WaitError) {
+        return [];
       }
       return this.wakeWaiters(event.stepId);
     }
@@ -271,8 +278,8 @@ class RunSession {
       if (existing.waitingOn === undefined) {
         throw new Error(`Waiting node "${depId}" is missing waitingOn`);
       }
-      this.registerWaiter(existing.waitingOn, readerStepId);
-      throw new WaitError(existing.waitingOn);
+      this.registerWaiter(depId, readerStepId);
+      throw new NotReadyError(depId);
     }
     if (existing?.status === "errored") {
       throw Object.assign(new Error(existing.error?.message), {
@@ -312,13 +319,16 @@ class RunSession {
     opts?: InterventionOptions,
   ): T {
     const id = interventionId(stepId, key);
-    const responses = this.state.interventionResponses ?? {};
-    if (Object.hasOwn(responses, id)) {
-      return schema.parse(responses[id]);
+    const legacyResponses = (this.state as LegacyInterventionResponseState)
+      .interventionResponses;
+    if (Object.hasOwn(this.state.inputs, id)) {
+      return schema.parse(this.state.inputs[id]);
+    }
+    if (legacyResponses && Object.hasOwn(legacyResponses, id)) {
+      return schema.parse(legacyResponses[id]);
     }
 
     this.state.interventions ??= {};
-    this.state.interventionResponses ??= {};
     this.state.interventions[id] ??= makeInterventionRequest(
       id,
       stepId,
@@ -424,7 +434,6 @@ function makeEmptyRunState(runId: string): RunState {
     startedAt: Date.now(),
     inputs: {},
     interventions: {},
-    interventionResponses: {},
     nodes: {},
     waiters: {},
     processedEventIds: {},

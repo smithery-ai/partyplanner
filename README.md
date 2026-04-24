@@ -122,7 +122,7 @@ Pausing on user input works through the same queue:
 
 1. `approval` calls `requestIntervention("page-oncall", ...)`. There's no response in state yet, so the runtime throws a `WaitError`.
 2. The scheduler catches it, records `approval` as a waiter on the intervention id, and **does not** enqueue any dependents. The run goes idle.
-3. The human submits a response via `POST /runs/:runId/interventions/:id`. The scheduler writes the response into state, finds every waiter for that id, and enqueues a fresh `step` event for each.
+3. The human submits a response via `POST /runs/:runId/interventions/:id`. The scheduler writes that payload into the run's key-value input state under the intervention id, finds every waiter for that id, and enqueues a fresh `step` event for each.
 4. A worker dequeues the `step`, re-runs `approval`, finds the response already in state this time, and returns normally. `pageOncall`'s `step` then enqueues, and the cascade resumes.
 
 Because the queue is a database table (`workflow_queue_items`), the days between step 2 and step 3 cost nothing — no process is held open, and any worker can pick the run back up.

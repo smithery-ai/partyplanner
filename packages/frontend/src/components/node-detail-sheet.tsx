@@ -2,6 +2,7 @@ import type { InterventionRequest, NodeRecord } from "@workflow/core";
 import { X } from "lucide-react";
 import { JsonSchemaForm } from "../components/json-schema-form";
 import { Button } from "../components/ui/button";
+import { useIsRunning } from "../hooks/workflow-run";
 import { cn } from "../lib/utils";
 import type { JsonSchema } from "../types";
 
@@ -38,6 +39,7 @@ export function NodeDetailSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const disabled = useIsRunning();
   if (!open || !nodeId) return null;
 
   const showEmpty = !record && !editor && !interventions?.length;
@@ -92,10 +94,17 @@ export function NodeDetailSheet({
                   {editor.error}
                 </p>
               ) : null}
+              {disabled ? (
+                <p className="text-muted-foreground text-[11px]">
+                  Inputs are disabled while the workflow is running. Pause to
+                  submit.
+                </p>
+              ) : null}
               <Button
                 type="button"
                 size="sm"
                 onClick={() => void editor.onSubmit()}
+                disabled={disabled}
               >
                 {editor.submitLabel}
               </Button>

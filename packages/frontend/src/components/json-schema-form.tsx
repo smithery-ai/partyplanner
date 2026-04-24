@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Input } from "../components/ui/input";
+import { useIsRunning } from "../hooks/workflow-run";
 import type { JsonSchema } from "../types";
 
 type JsonSchemaObject = JsonSchema & {
@@ -126,6 +127,7 @@ function JsonSchemaField({
   secret?: boolean;
   optional?: boolean;
 }) {
+  const disabled = useIsRunning();
   const s = schema as JsonSchemaObject;
   const description =
     typeof s.description === "string" ? s.description : undefined;
@@ -178,9 +180,10 @@ function JsonSchemaField({
       <FieldLabel id={id} label={fieldLabel(path)} optional={optional}>
         <select
           id={id}
-          className="flex h-8 w-full rounded-lg border border-input bg-background px-2 font-mono text-xs"
+          className="flex h-8 w-full rounded-lg border border-input bg-background px-2 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60"
           value={String(value ?? s.enum[0])}
           onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
         >
           {s.enum.map((option) => (
             <option key={String(option)} value={String(option)}>
@@ -204,6 +207,7 @@ function JsonSchemaField({
           type="checkbox"
           checked={Boolean(value)}
           onChange={(e) => onChange(e.target.checked)}
+          disabled={disabled}
         />
         <span>
           {fieldLabel(path)}
@@ -229,7 +233,7 @@ function JsonSchemaField({
       >
         <textarea
           id={id}
-          className="min-h-20 w-full rounded-lg border border-input bg-background px-2 py-1 font-mono text-xs"
+          className="min-h-20 w-full rounded-lg border border-input bg-background px-2 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60"
           value={JSON.stringify(Array.isArray(value) ? value : [], null, 2)}
           onChange={(e) => {
             try {
@@ -238,6 +242,7 @@ function JsonSchemaField({
               onChange(e.target.value);
             }
           }}
+          disabled={disabled}
         />
       </FieldLabel>
     );
@@ -263,6 +268,7 @@ function JsonSchemaField({
             s.type === "number" ? Number(e.target.value) : e.target.value,
           )
         }
+        disabled={disabled}
       />
     </FieldLabel>
   );

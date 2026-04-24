@@ -404,7 +404,9 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
   };
 }
 
-export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
+export function useWorkflowRunQuery(
+  runId: string | undefined,
+): WorkflowRunState {
   const config = useWorkflowFrontendConfig();
   const queryClient = useQueryClient();
   const stateQuery = useRunStateQuery(runId);

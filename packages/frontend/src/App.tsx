@@ -2,21 +2,18 @@
 
 import type { InterventionRequest, Registry, RunState } from "@workflow/core";
 import { globalRegistry } from "@workflow/core";
-import type { QueueSnapshot } from "@workflow/runtime";
 import {
-  AlertTriangle,
   ArrowLeft,
   Check,
   Clock3,
-  FastForward,
   History,
   KeyRound,
+  Loader2,
   Plus,
   RefreshCw,
-  SkipForward,
   Trash2,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { ZodError } from "zod";
 import {
   defaultForJsonSchema,
@@ -41,11 +38,8 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { WorkflowFrontendRoot } from "./config";
-import {
-  useSecretVault,
-  useWorkflow,
-  useWorkflowRun,
-} from "./hooks/use-workflow";
+import { useSecretVault, useWorkflow } from "./hooks/use-workflow";
+import { useWorkflowRun, WorkflowRunProvider } from "./hooks/workflow-run";
 import { findPendingWait } from "./lib/pending-wait";
 import { cn } from "./lib/utils";
 import { workflowInputLabel } from "./lib/workflow-labels";
@@ -136,20 +130,6 @@ function pendingInputNeedsForm(
   return workflowInputRequested(globalRegistry, manifest, runState, nodeId);
 }
 
-function isRunComplete(
-  runState: RunState | undefined,
-  manifest: WorkflowManifest | undefined,
-): boolean {
-  if (!runState) return false;
-  if (Object.keys(runState.nodes).length === 0) return false;
-  if (findPendingWait(manifest, runState)) return false;
-  for (const n of Object.values(runState.nodes)) {
-    if (n.status === "waiting" || n.status === "blocked") return false;
-    if (n.status === "errored") return false;
-  }
-  return true;
-}
-
 function displayNodeRecord(
   registry: Registry,
   nodeId: string | null,
@@ -196,28 +176,6 @@ function zodIssues(error: unknown): ZodIssueLike[] | undefined {
     return undefined;
   }
   return issues;
-}
-
-type NextQueuedWork = {
-  id: string;
-  type: "Input" | "Step";
-  description?: string;
-};
-
-function nextQueuedWork(
-  queue: QueueSnapshot | undefined,
-  registry: Registry,
-): NextQueuedWork | undefined {
-  const event = queue?.pending[0]?.event;
-  if (!event) return undefined;
-
-  const id = event.kind === "input" ? event.inputId : event.stepId;
-  const def = registry.getInput(id) ?? registry.getAtom(id);
-  return {
-    id,
-    type: event.kind === "input" ? "Input" : "Step",
-    description: def?.description,
-  };
 }
 
 function shortRunId(runId: string): string {
@@ -506,8 +464,31 @@ export function WorkflowRunnerApp({
   navigation?: WorkflowNavigation;
   sidebarFooter?: ReactNode;
 }) {
+  return (
+    <WorkflowRunProvider runId={runId}>
+      <WorkflowRunnerBody
+        workflowId={workflowId}
+        runId={runId}
+        navigation={navigation}
+        sidebarFooter={sidebarFooter}
+      />
+    </WorkflowRunProvider>
+  );
+}
+
+function WorkflowRunnerBody({
+  workflowId,
+  runId,
+  navigation,
+  sidebarFooter,
+}: {
+  workflowId: string;
+  runId?: string;
+  navigation: WorkflowNavigation;
+  sidebarFooter?: ReactNode;
+}) {
   const workflow = useWorkflow(workflowId);
-  const workflowRun = useWorkflowRun(runId);
+  const workflowRun = useWorkflowRun();
 
   const [pane, setPane] = useState<SidePane>(null);
   const [inputValues, setInputValues] = useState<Record<string, unknown>>(() =>
@@ -516,10 +497,9 @@ export function WorkflowRunnerApp({
   const [seedInputId, setSeedInputId] = useState("");
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [pendingAutoAdvance, setPendingAutoAdvance] = useState(false);
-  const autoAdvanceInFlight = useRef(false);
 
-  const runState = workflowRun.runState;
+  const { isRunning, setRunning, executingNodeId, runComplete, runState } =
+    workflowRun;
   const wait = findPendingWait(workflow.manifest, runState);
   const pendingInputId = wait?.kind === "input" ? wait.inputId : undefined;
   const pendingInterventionId =
@@ -530,21 +510,8 @@ export function WorkflowRunnerApp({
     : undefined;
   const pendingRequest =
     pendingFormForIntervention(pendingIntervention) ?? pendingInput;
-  const inputPending = Boolean(wait);
-  const pendingInputLabel = pendingInterventionId
-    ? "Needs Human Input"
-    : pendingInputId
-      ? pendingInput?.secret
-        ? `Missing secret ${pendingInputId}`
-        : workflowInputLabel(pendingInput, pendingInputId)
-      : "Input pending";
 
   const nodes = runState?.nodes ?? {};
-  const nextWork = nextQueuedWork(workflowRun.queue, globalRegistry);
-  const runComplete = workflowRun.snapshot
-    ? workflowRun.snapshot.status === "completed"
-    : isRunComplete(runState, workflow.manifest);
-  const activeAutoAdvance = pendingAutoAdvance;
   const isPending = workflow.isPending || workflowRun.isPending;
 
   useEffect(() => {
@@ -587,50 +554,6 @@ export function WorkflowRunnerApp({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [pane]);
-
-  useEffect(() => {
-    if (
-      !pendingAutoAdvance ||
-      !runState ||
-      inputPending ||
-      runComplete ||
-      !nextWork ||
-      isPending ||
-      autoAdvanceInFlight.current
-    ) {
-      return;
-    }
-
-    let active = true;
-    autoAdvanceInFlight.current = true;
-
-    void workflowRun
-      .advance({
-        state: runState,
-      })
-      .catch((e) => {
-        if (!active) return;
-        setPendingAutoAdvance(false);
-        setPayloadError(
-          errorMessage(e, "Processing failed — check workflow code."),
-        );
-      })
-      .finally(() => {
-        autoAdvanceInFlight.current = false;
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [
-    inputPending,
-    isPending,
-    nextWork,
-    pendingAutoAdvance,
-    runComplete,
-    runState,
-    workflowRun.advance,
-  ]);
 
   function setInputValue(id: string, value: unknown) {
     setInputValues((prev) => ({ ...prev, [id]: value }));
@@ -685,9 +608,18 @@ export function WorkflowRunnerApp({
   async function submitPendingInput(explicitInputId?: string) {
     const inputId = explicitInputId ?? pendingInputId;
     if (!inputId) return;
-    if (inputId !== pendingInputId) {
+    const explicitRequestedInput =
+      Boolean(explicitInputId) &&
+      runState &&
+      workflowInputRequested(
+        globalRegistry,
+        workflow.manifest,
+        runState,
+        inputId,
+      );
+    if (!explicitRequestedInput && inputId !== pendingInputId) {
       setPayloadError(
-        `This run is waiting on "${pendingInputId ?? "—"}", not "${inputId}".`,
+        `This run is waiting on "${pendingInputId ?? pendingInterventionId ?? "—"}", not "${inputId}".`,
       );
       return;
     }
@@ -711,19 +643,16 @@ export function WorkflowRunnerApp({
       return;
     }
 
+    setRunning(true);
     try {
-      const result = await workflowRun.submitInput({
+      await workflowRun.submitInput({
         state: runState,
         inputId,
         payload,
       });
-      if ((result.queue?.pending.length ?? 0) > 0) {
-        await workflowRun.advance({
-          state: result.state,
-        });
-      }
       setPane(null);
     } catch (e) {
+      setRunning(false);
       setPayloadError(
         errorMessage(e, "Processing failed — check input values."),
       );
@@ -749,51 +678,25 @@ export function WorkflowRunnerApp({
       return;
     }
 
+    setRunning(true);
     try {
-      const result = await workflowRun.submitIntervention({
+      await workflowRun.submitIntervention({
         state: runState,
         interventionId: pendingInterventionId,
         payload,
       });
-      if ((result.queue?.pending.length ?? 0) > 0) {
-        await workflowRun.advance({
-          state: result.state,
-        });
-      }
       setPane(null);
     } catch (e) {
+      setRunning(false);
       setPayloadError(
         errorMessage(e, "Processing failed — check input values."),
       );
     }
   }
 
-  async function advanceWorkflow() {
-    if (!runState) return;
+  function toggleRunning() {
     setPayloadError("");
-    try {
-      await workflowRun.advance({
-        state: runState,
-      });
-      setPane(null);
-    } catch (e) {
-      setPayloadError(
-        errorMessage(e, "Processing failed — check workflow code."),
-      );
-    }
-  }
-
-  async function nextStep() {
-    if (activeAutoAdvance) {
-      changeAdvanceMode(false);
-    }
-    await advanceWorkflow();
-  }
-
-  function changeAdvanceMode(nextAutoAdvance: boolean) {
-    if (nextAutoAdvance === activeAutoAdvance) return;
-    setPayloadError("");
-    setPendingAutoAdvance(nextAutoAdvance);
+    setRunning(!isRunning);
   }
 
   async function refreshWorkflowView() {
@@ -811,7 +714,7 @@ export function WorkflowRunnerApp({
         .filter((request) => request.stepId === selectedNodeId)
         .map((request) => ({
           request,
-          response: runState?.interventionResponses?.[request.id],
+          response: runState?.inputs?.[request.id],
         }))
     : [];
 
@@ -896,59 +799,6 @@ export function WorkflowRunnerApp({
               <KeyRound className="size-3.5" aria-hidden />
             </Button>
           ) : null}
-          {!runComplete && runState ? (
-            <>
-              {nextWork ? (
-                <div
-                  className="inline-flex h-7 max-w-[16rem] items-center gap-1.5 rounded-lg border border-muted-foreground/20 bg-muted/45 px-2.5 text-[0.8rem] font-medium text-foreground dark:bg-muted/35"
-                  title={
-                    nextWork.description
-                      ? `${nextWork.type} ${nextWork.id}: ${nextWork.description}`
-                      : `${nextWork.type} ${nextWork.id}`
-                  }
-                >
-                  <span className="shrink-0 text-muted-foreground">
-                    Up next
-                  </span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {nextWork.type}
-                  </span>
-                  <span className="min-w-0 truncate">{nextWork.id}</span>
-                </div>
-              ) : null}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void nextStep()}
-                disabled={isPending || (!activeAutoAdvance && !nextWork)}
-                title={
-                  activeAutoAdvance
-                    ? "Pause fast-forward and step manually"
-                    : nextWork
-                      ? `Run ${nextWork.type.toLowerCase()} "${nextWork.id}" from the queue.`
-                      : "Nothing to advance"
-                }
-              >
-                <SkipForward className="size-3.5 shrink-0" aria-hidden />
-                Next
-              </Button>
-              <Button
-                size="sm"
-                variant={activeAutoAdvance ? "default" : "outline"}
-                aria-pressed={activeAutoAdvance}
-                onClick={() => void changeAdvanceMode(!activeAutoAdvance)}
-                disabled={isPending}
-                title={
-                  activeAutoAdvance
-                    ? "Pause fast-forward"
-                    : "Fast-forward until human input is required"
-                }
-              >
-                <FastForward className="size-3.5 shrink-0" aria-hidden />
-                Fast forward
-              </Button>
-            </>
-          ) : null}
           {runComplete ? (
             <div
               role="status"
@@ -958,16 +808,31 @@ export function WorkflowRunnerApp({
               <Check className="size-3.5 shrink-0 stroke-[2.5]" aria-hidden />
               Run complete
             </div>
-          ) : inputPending ? (
-            <button
-              type="button"
-              aria-label="Open pending input"
-              className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-lg border border-yellow-500/50 bg-yellow-400/15 px-2.5 text-[0.8rem] font-medium text-yellow-950 dark:border-yellow-500/45 dark:bg-yellow-500/12 dark:text-yellow-50"
-              onClick={() => setPane("pending")}
+          ) : runState ? (
+            <Button
+              size="sm"
+              variant={isRunning ? "default" : "outline"}
+              aria-pressed={isRunning}
+              onClick={toggleRunning}
+              disabled={isRunning}
+              title={
+                isRunning
+                  ? "Advancing the workflow"
+                  : "Advance the workflow until it completes or needs input"
+              }
             >
-              <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
-              {pendingInputLabel}
-            </button>
+              {isRunning ? (
+                <>
+                  <Loader2
+                    className="size-3.5 shrink-0 animate-spin"
+                    aria-hidden
+                  />
+                  Running
+                </>
+              ) : (
+                "Next"
+              )}
+            </Button>
           ) : null}
         </div>
       </header>
@@ -1071,6 +936,7 @@ export function WorkflowRunnerApp({
             queue={workflowRun.queue}
             registry={globalRegistry}
             manifest={workflow.manifest}
+            executingNodeId={executingNodeId}
             onNodeClick={(id) => {
               const rec = runState?.nodes[id];
               const waitingOn = rec?.waitingOn;
@@ -1098,6 +964,7 @@ export function WorkflowRunnerApp({
                 canSubmitSeed={!runState}
                 onSubmitSeed={(inputId) => void runWorkflow(inputId)}
                 error={payloadError || undefined}
+                starting={workflow.isPending}
               />
             </div>
           )}

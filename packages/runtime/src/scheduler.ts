@@ -86,16 +86,77 @@ export class LocalScheduler implements Scheduler {
 
   async submitInput(request: SubmitInputRequest): Promise<RunSnapshot> {
     const workflow = request.workflow ?? this.workflowForRun(request.runId);
-    await this.opts.loader.load(workflow);
+    const definition = await this.opts.loader.load(workflow);
     this.runWorkflows.set(request.runId, workflow);
-    await this.enqueueAndPublish({
-      kind: "input",
-      eventId: request.eventId ?? `evt_${randomId()}`,
-      runId: request.runId,
-      inputId: request.inputId,
-      payload: request.payload,
-    });
-    return this.snapshot(request.runId);
+
+    const inputDef = definition.registry.getInput(request.inputId);
+    if (!inputDef) throw new Error(`Unknown input: ${request.inputId}`);
+
+    if (inputDef.kind !== "deferred_input") {
+      await this.enqueueAndPublish({
+        kind: "input",
+        eventId: request.eventId ?? `evt_${randomId()}`,
+        runId: request.runId,
+        inputId: request.inputId,
+        payload: request.payload,
+      });
+      return this.snapshot(request.runId);
+    }
+
+    const stored = await this.opts.stateStore.load(request.runId);
+    if (!stored) throw new Error(`Unknown run: ${request.runId}`);
+
+    const state = structuredClone(stored.state);
+    const resolvedValue = inputDef.schema.parse(request.payload);
+    const previous = state.nodes[request.inputId];
+
+    state.inputs[request.inputId] = resolvedValue;
+    state.nodes[request.inputId] = {
+      status: "resolved",
+      kind: inputDef.kind,
+      value: resolvedValue,
+      deps: [],
+      duration_ms: 0,
+      attempts: (previous?.attempts ?? 0) + 1,
+    };
+
+    const waiters = waitersForDependency(state, request.inputId);
+    delete state.waiters[request.inputId];
+
+    const saved = await this.opts.stateStore.save(
+      request.runId,
+      state,
+      stored.version,
+    );
+    if (!saved.ok) throw new Error(`Unable to save run: ${saved.reason}`);
+
+    const events: RunEvent[] = [
+      {
+        type: "input_received",
+        runId: request.runId,
+        inputId: request.inputId,
+        at: Date.now(),
+      },
+    ];
+    const nodeEvent = recordEvent(
+      request.runId,
+      request.inputId,
+      state.nodes[request.inputId],
+    );
+    if (nodeEvent) events.push(nodeEvent);
+    await this.opts.events.publishMany(events);
+    await this.enqueueAndPublishMany(
+      waiters.flatMap((stepId) => emitStepEvent(state, stepId)),
+    );
+    await this.publishRunStatus(request.runId, state);
+
+    return this.buildSnapshot(
+      request.runId,
+      workflow,
+      definition,
+      state,
+      saved.version,
+    );
   }
 
   async submitIntervention(
@@ -110,14 +171,13 @@ export class LocalScheduler implements Scheduler {
 
     const state = structuredClone(stored.state);
     state.interventions ??= {};
-    state.interventionResponses ??= {};
 
     const intervention = state.interventions[request.interventionId];
     if (!intervention) {
       throw new Error(`Unknown intervention: ${request.interventionId}`);
     }
 
-    state.interventionResponses[request.interventionId] = request.payload;
+    state.inputs[request.interventionId] = request.payload;
     state.interventions[request.interventionId] = {
       ...intervention,
       status: "resolved",
@@ -393,7 +453,6 @@ function makeEmptyRunState(runId: string): RunState {
     startedAt: Date.now(),
     inputs: {},
     interventions: {},
-    interventionResponses: {},
     nodes: {},
     waiters: {},
     processedEventIds: {},

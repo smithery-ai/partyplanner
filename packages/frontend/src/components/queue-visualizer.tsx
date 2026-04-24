@@ -133,9 +133,9 @@ function statusNodeClasses(visual: StatusVisual): {
       };
     case "running":
       return {
-        card: "border-indigo-600/45 ring-1 ring-indigo-600/15 dark:border-indigo-500/40",
+        card: "animate-pulse border-indigo-600/60 ring-2 ring-indigo-600/35 shadow-[0_0_18px_-2px_rgba(79,70,229,0.55)] dark:border-indigo-500/55 dark:ring-indigo-500/45",
         header:
-          "border-b border-indigo-600/25 bg-indigo-600/12 dark:bg-indigo-500/14 dark:border-indigo-500/25",
+          "border-b border-indigo-600/35 bg-indigo-600/20 dark:bg-indigo-500/22 dark:border-indigo-500/35",
       };
     case "resolved":
       return {
@@ -774,14 +774,12 @@ function buildFlow(
   nodeInlineActions:
     | Record<string, { approve: () => void; reject: () => void }>
     | undefined,
+  runningIds: ReadonlySet<string>,
 ): { nodes: Node[]; edges: Edge[] } {
   const ids = visibleIds;
   const animate = animatedEdgesFromState(runState);
   const queuedIds = new Set(
     (queue?.pending ?? []).map((item) => queueNodeId(item.event)),
-  );
-  const runningIds = new Set(
-    (queue?.running ?? []).map((item) => queueNodeId(item.event)),
   );
 
   const nodes: Node[] = ids.map((id) => {
@@ -871,6 +869,7 @@ function FlowInner({
   registry,
   manifest,
   nodeInlineActions,
+  executingNodeId,
   onNodeClick,
 }: {
   runState: RunState | undefined;
@@ -881,6 +880,7 @@ function FlowInner({
     string,
     { approve: () => void; reject: () => void }
   >;
+  executingNodeId?: string | null;
   onNodeClick?: (nodeId: string) => void;
 }) {
   const [legendOpen, setLegendOpen] = useState(false);
@@ -912,6 +912,45 @@ function FlowInner({
     const vis = new Set(visibleIds);
     return raw.filter((e) => vis.has(e.source) && vis.has(e.target));
   }, [runState, visibleIds]);
+
+  /**
+   * Nodes the visualizer should render with the "running" visual. Seeded with
+   * any items in `queue.running`, plus `executingNodeId`. If the executing
+   * node is filtered out (e.g. a `@workflow/integrations-*` atom), we walk
+   * its dependents through hidden intermediaries so the nearest visible child
+   * (the one the user actually sees, like `notion`) pulses instead.
+   */
+  const visibleRunningIds = useMemo(() => {
+    const result = new Set<string>();
+    for (const item of queue?.running ?? []) {
+      result.add(queueNodeId(item.event));
+    }
+    if (!executingNodeId) return result;
+    const vis = new Set(visibleIds);
+    if (vis.has(executingNodeId)) {
+      result.add(executingNodeId);
+      return result;
+    }
+    const adjacency = new Map<string, string[]>();
+    for (const edge of edgesFromObservedDeps(runState)) {
+      const next = adjacency.get(edge.source);
+      if (next) next.push(edge.target);
+      else adjacency.set(edge.source, [edge.target]);
+    }
+    const frontier = [executingNodeId];
+    const seen = new Set<string>([executingNodeId]);
+    while (frontier.length > 0) {
+      const current = frontier.shift();
+      if (current === undefined) break;
+      for (const next of adjacency.get(current) ?? []) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        if (vis.has(next)) result.add(next);
+        else frontier.push(next);
+      }
+    }
+    return result;
+  }, [executingNodeId, queue, runState, visibleIds]);
 
   const edgeSig = useMemo(
     () =>
@@ -947,6 +986,7 @@ function FlowInner({
         runState,
         queue,
         nodeInlineActions,
+        visibleRunningIds,
       ),
     [
       registry,
@@ -958,6 +998,7 @@ function FlowInner({
       runState,
       queue,
       nodeInlineActions,
+      visibleRunningIds,
     ],
   );
 
@@ -977,7 +1018,7 @@ function FlowInner({
     prevNodeIdsRef.current = nextNodeIds;
 
     setNodes((current) => {
-      if (isFirst || edgesChanged) return nextNodes;
+      if (isFirst || edgesChanged || nodeIdsChanged) return nextNodes;
       return nextNodes.map((fresh) => {
         const existing = current.find((c) => c.id === fresh.id);
         return existing ? { ...fresh, position: existing.position } : fresh;
@@ -1120,6 +1161,12 @@ export type QueueVisualizerProps = {
     string,
     { approve: () => void; reject: () => void }
   >;
+  /**
+   * Node currently being evaluated by a live advance/submit request. Driven
+   * from the client because the runtime's `queue.running` window is too short
+   * to survive the poll interval.
+   */
+  executingNodeId?: string | null;
   /** When set, clicking a workflow node opens details (e.g. sheet in parent). */
   onNodeClick?: (nodeId: string) => void;
   className?: string;
@@ -1131,6 +1178,7 @@ export function QueueVisualizer({
   registry,
   manifest,
   nodeInlineActions,
+  executingNodeId,
   onNodeClick,
   className,
 }: QueueVisualizerProps) {
@@ -1143,6 +1191,7 @@ export function QueueVisualizer({
           registry={registry}
           manifest={manifest}
           nodeInlineActions={nodeInlineActions}
+          executingNodeId={executingNodeId}
           onNodeClick={onNodeClick}
         />
       </ReactFlowProvider>

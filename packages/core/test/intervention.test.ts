@@ -65,7 +65,7 @@ describe("requestIntervention", () => {
     expect(run1.state.waiters[interventionId]).toEqual(["deploy"]);
 
     const resumedState = structuredClone(run1.state);
-    resumedState.interventionResponses[interventionId] = { approved: true };
+    resumedState.inputs[interventionId] = { approved: true };
     resumedState.interventions[interventionId] = {
       ...resumedState.interventions[interventionId],
       status: "resolved",
@@ -84,6 +84,7 @@ describe("requestIntervention", () => {
     );
 
     assertResolved(run2.trace, "deploy", "approved:Ada");
+    expect(run2.state.inputs[interventionId]).toEqual({ approved: true });
   });
 
   it("passes run context to intervention-producing atoms", async () => {
