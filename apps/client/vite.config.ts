@@ -203,12 +203,8 @@ function workflowRegistry() {
   }
 
   return {
-    defaultWorkflow: "workflow.nextjs",
+    defaultWorkflow: "workflow.cloudflareWorker",
     workflows: {
-      "workflow.nextjs": {
-        label: "Next.js",
-        url: "/api/nextjs",
-      },
       "workflow.cloudflareWorker": {
         label: "Cloudflare Worker",
         url: "/api/cloudflare",

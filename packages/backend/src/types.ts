@@ -10,6 +10,7 @@ export type BackendAppEnv = {
   HYLO_API_KEY?: string;
   HYLO_BACKEND_PUBLIC_URL?: string;
   HYLO_BROKER_BASE_URL?: string;
+  HYLO_LOCAL_WORKFLOW_URL_TEMPLATE?: string;
   HYPERDRIVE?: HyperdriveBinding;
   DATABASE_URL?: string;
   POSTGRES_URL?: string;
@@ -24,6 +25,8 @@ export type BackendAppEnv = {
   WORKOS_CLIENT_ID?: string;
   WORKOS_ISSUER?: string;
   WORKOS_JWKS_URL?: string;
+  VITE_WORKOS_API_HOSTNAME?: string;
+  VITE_WORKOS_CLIENT_ID?: string;
 };
 
 export type HyperdriveBinding = {

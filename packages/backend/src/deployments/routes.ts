@@ -15,17 +15,12 @@ import {
   typedRouteResponse,
 } from "../openapi";
 import type { BackendAppEnv } from "../types";
-import {
-  cloudflareApiRequest,
-  createDeploymentMetadata,
-  resolveCloudflarePlatformConfig,
-} from "./cloudflare";
+import type { DeploymentBackend } from "./backend";
 import { assertWorkerTags, tagForTenant } from "./ids";
 import {
   requireWorkflowDeploymentRegistry,
   type WorkflowDeploymentRegistry,
 } from "./registry";
-import type { CloudflareEnvelope } from "./types";
 import {
   parseDeploymentIdParam,
   parseProvisionDeploymentInput,
@@ -313,7 +308,8 @@ export function mountDeploymentApi(
   app: OpenAPIHono,
   env: BackendAppEnv,
   apiKey: string,
-  deploymentRegistry?: WorkflowDeploymentRegistry,
+  deploymentRegistry: WorkflowDeploymentRegistry | undefined,
+  deploymentBackend: DeploymentBackend,
 ) {
   app.openapi(ListTenantDeploymentsRoute, async (c) => {
     try {
@@ -382,30 +378,19 @@ export function mountDeploymentApi(
   app.openapi(ListDeploymentsRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
-      const config = resolveCloudflarePlatformConfig(env);
       const query = c.req.valid("query");
       const tagFilter =
         auth.kind === "workos"
           ? tagForTenant(resolveAuthorizedTenant(c, auth, query.tenantId))
           : parseDeploymentTagFilter(c);
-      const suffix = tagFilter
-        ? `?tags=${encodeURIComponent(`${tagFilter}:yes`)}`
-        : "";
-      const response = await cloudflareApiRequest<unknown[]>(
-        config,
-        `/accounts/${encodeURIComponent(
-          config.accountId,
-        )}/workers/dispatch/namespaces/${encodeURIComponent(
-          config.dispatchNamespace,
-        )}/scripts${suffix}`,
-      );
+      const response = await deploymentBackend.list(tagFilter);
       return typedRouteResponse(
         c.json(
           {
             ok: true,
-            namespace: config.dispatchNamespace,
-            deployments: response.result ?? [],
-            resultInfo: response.result_info,
+            namespace: deploymentBackend.namespace,
+            deployments: response.deployments,
+            resultInfo: response.resultInfo,
           },
           200,
         ),
@@ -418,10 +403,12 @@ export function mountDeploymentApi(
   app.openapi(CreateDeploymentRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
-      const config = resolveCloudflarePlatformConfig(env);
+      const requestUrl = new URL(c.req.url);
       const requestConfig = {
-        ...config,
-        workerDispatchBaseUrl: `${new URL(c.req.url).origin}/workers`,
+        ...deploymentBackend.config,
+        workerDispatchBaseUrl:
+          deploymentBackend.config.workerDispatchBaseUrl ??
+          `${requestUrl.origin}/workers`,
       };
       const input = parseProvisionDeploymentInput(
         c.req.valid("json"),
@@ -432,49 +419,23 @@ export function mountDeploymentApi(
       if (auth.kind === "workos") {
         resolveAuthorizedTenant(c, auth, input.tenantId);
       }
-      const metadata = createDeploymentMetadata(
-        input,
-        new URL(c.req.url).origin,
-      );
-      const formData = new FormData();
-      formData.append(
-        "metadata",
-        new Blob([JSON.stringify(metadata)], { type: "application/json" }),
-      );
-      formData.append(
-        input.moduleName,
-        new Blob([input.moduleCode], {
-          type: "application/javascript+module",
-        }),
-        input.moduleName,
-      );
 
       const registry = deploymentRegistry;
+      const workflowApiUrl = deploymentBackend.resolveWorkflowApiUrl(input);
       if (registry) {
         await registry.upsert({
           tenantId: input.tenantId,
           deploymentId: input.deploymentId,
           label: input.label,
-          workflowApiUrl: input.workflowApiUrl,
-          dispatchNamespace: config.dispatchNamespace,
+          workflowApiUrl,
+          dispatchNamespace: deploymentBackend.namespace,
           tags: input.tags,
         });
       }
 
-      let response: CloudflareEnvelope<unknown>;
+      let result: unknown;
       try {
-        response = await cloudflareApiRequest<unknown>(
-          config,
-          `/accounts/${encodeURIComponent(
-            config.accountId,
-          )}/workers/dispatch/namespaces/${encodeURIComponent(
-            config.dispatchNamespace,
-          )}/scripts/${encodeURIComponent(input.deploymentId)}`,
-          {
-            method: "PUT",
-            body: formData,
-          },
-        );
+        result = await deploymentBackend.create(input, requestUrl.origin);
       } catch (error) {
         if (registry) {
           await registry.delete(input.deploymentId);
@@ -488,10 +449,10 @@ export function mountDeploymentApi(
             ok: true,
             tenantId: input.tenantId,
             deploymentId: input.deploymentId,
-            namespace: config.dispatchNamespace,
-            workflowApiUrl: input.workflowApiUrl,
+            namespace: deploymentBackend.namespace,
+            workflowApiUrl,
             tags: input.tags,
-            result: response.result ?? null,
+            result,
           },
           201,
         ),
@@ -504,7 +465,6 @@ export function mountDeploymentApi(
   app.openapi(DeleteDeploymentsRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
-      const config = resolveCloudflarePlatformConfig(env);
       const query = c.req.valid("query");
       const tagFilter =
         auth.kind === "workos"
@@ -518,15 +478,7 @@ export function mountDeploymentApi(
         );
       }
 
-      const response = await cloudflareApiRequest<unknown>(
-        config,
-        `/accounts/${encodeURIComponent(
-          config.accountId,
-        )}/workers/dispatch/namespaces/${encodeURIComponent(
-          config.dispatchNamespace,
-        )}/scripts?tags=${encodeURIComponent(`${tagFilter}:yes`)}`,
-        { method: "DELETE" },
-      );
+      const result = await deploymentBackend.deleteMany(tagFilter);
       if (deploymentRegistry) {
         const registry = deploymentRegistry;
         const tenantId =
@@ -542,9 +494,9 @@ export function mountDeploymentApi(
         c.json(
           {
             ok: true,
-            namespace: config.dispatchNamespace,
+            namespace: deploymentBackend.namespace,
             tag: tagFilter,
-            result: response.result ?? null,
+            result,
           },
           200,
         ),
@@ -557,28 +509,21 @@ export function mountDeploymentApi(
   app.openapi(GetDeploymentRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
-      const config = resolveCloudflarePlatformConfig(env);
       const deploymentId = parseDeploymentIdParam(
         c.req.valid("param").deploymentId,
       );
       if (auth.kind === "workos") {
         await requireDeploymentAccess(deploymentRegistry, deploymentId, auth);
       }
-      const response = await cloudflareApiRequest<unknown>(
-        config,
-        `/accounts/${encodeURIComponent(
-          config.accountId,
-        )}/workers/dispatch/namespaces/${encodeURIComponent(
-          config.dispatchNamespace,
-        )}/scripts/${encodeURIComponent(deploymentId)}`,
-      );
+
+      const deployment = await deploymentBackend.get(deploymentId);
       return typedRouteResponse(
         c.json(
           {
             ok: true,
-            namespace: config.dispatchNamespace,
+            namespace: deploymentBackend.namespace,
             deploymentId,
-            deployment: response.result ?? null,
+            deployment,
           },
           200,
         ),
@@ -591,22 +536,14 @@ export function mountDeploymentApi(
   app.openapi(DeleteDeploymentRoute, async (c) => {
     try {
       const auth = await requireDeploymentAuth(c, env, apiKey);
-      const config = resolveCloudflarePlatformConfig(env);
       const deploymentId = parseDeploymentIdParam(
         c.req.valid("param").deploymentId,
       );
       if (auth.kind === "workos") {
         await requireDeploymentAccess(deploymentRegistry, deploymentId, auth);
       }
-      const response = await cloudflareApiRequest<unknown>(
-        config,
-        `/accounts/${encodeURIComponent(
-          config.accountId,
-        )}/workers/dispatch/namespaces/${encodeURIComponent(
-          config.dispatchNamespace,
-        )}/scripts/${encodeURIComponent(deploymentId)}`,
-        { method: "DELETE" },
-      );
+
+      const result = await deploymentBackend.delete(deploymentId);
       if (deploymentRegistry) {
         await deploymentRegistry.delete(deploymentId);
       }
@@ -614,9 +551,9 @@ export function mountDeploymentApi(
         c.json(
           {
             ok: true,
-            namespace: config.dispatchNamespace,
+            namespace: deploymentBackend.namespace,
             deploymentId,
-            result: response.result ?? null,
+            result,
           },
           200,
         ),

@@ -5,7 +5,6 @@ import net from "node:net";
 const host = "127.0.0.1";
 const portSpecs = [
   ["HYLO_BACKEND_PORT", 8787],
-  ["HYLO_CLOUDFLARE_WORKER_PORT", 8788],
   ["HYLO_BACKEND_INSPECTOR_PORT", 9230],
   ["HYLO_CLOUDFLARE_WORKER_INSPECTOR_PORT", 9231],
 ];
@@ -18,9 +17,10 @@ for (const [name, fallback] of portSpecs) {
 }
 
 console.log("pnpm dev using local ports:");
-console.log(`  backend-cloudflare: http://${host}:${env.HYLO_BACKEND_PORT}`);
+console.log("  client: https://hylo-client.localhost");
+console.log(`  backend-node: http://${host}:${env.HYLO_BACKEND_PORT}`);
 console.log(
-  `  workflow-cloudflare-worker-example: http://${host}:${env.HYLO_CLOUDFLARE_WORKER_PORT}`,
+  "  workflow-cloudflare-worker-example: https://workflow-cloudflare-worker-example.localhost",
 );
 console.log(`  backend inspector: ${env.HYLO_BACKEND_INSPECTOR_PORT}`);
 console.log(
@@ -34,7 +34,7 @@ const child = spawn(
     "turbo",
     "run",
     "dev",
-    "--filter=backend-cloudflare",
+    "--filter=backend-node",
     "--filter=workflow-cloudflare-worker-example",
     "--filter=client",
   ],

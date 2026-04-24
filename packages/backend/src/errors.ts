@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 
-export type PlatformErrorStatus = 400 | 401 | 403 | 500 | 502 | 503;
+export type PlatformErrorStatus = 400 | 401 | 403 | 404 | 500 | 502 | 503;
 
 export class PlatformApiError extends Error {
   constructor(

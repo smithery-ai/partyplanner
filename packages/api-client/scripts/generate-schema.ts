@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { createBackendOpenApiDocument } from "@hylo/backend";
 import openapiTS, { astToString, COMMENT_HEADER } from "openapi-typescript";
-import { createBackendOpenApiDocument } from "../../../apps/backend-cloudflare/src/app";
 
 const outputUrl = new URL("../src/generated/schema.d.ts", import.meta.url);
 const document = createBackendOpenApiDocument();

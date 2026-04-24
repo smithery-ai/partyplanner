@@ -52,7 +52,7 @@ function ClientApp({
   sidebarFooter: ReactNode;
 }) {
   const showBackendSwitcher = shouldShowBackendSwitcher();
-  const [backendTarget, setBackendTarget] = useState<BackendTarget>(() =>
+  const [backendTarget] = useState<BackendTarget>(() =>
     requestedBackendTarget(),
   );
   const registryBackendTarget = showBackendSwitcher ? backendTarget : undefined;
@@ -126,7 +126,11 @@ function ClientApp({
     <ClientSwitcher
       showBackendSwitcher={showBackendSwitcher}
       backendTarget={backendTarget}
-      onBackendTargetChange={setBackendTarget}
+      onBackendTargetChange={(target) => {
+        if (target === backendTarget) return;
+        writeBackendTargetConfig(target);
+        window.location.reload();
+      }}
       selectedWorker={worker}
       onWorkerChange={setWorker}
       workflows={registry ? Object.entries(registry.workflows) : []}
@@ -296,10 +300,6 @@ function workflowRegistryConfig(
         ? explicitUrl.replaceAll("{tenantId}", encodeURIComponent(tenantId))
         : explicitUrl,
     };
-  }
-
-  if (backendTarget === "local") {
-    return { registry: normalizeWorkflowRegistry(__HYLO_WORKFLOWS__) };
   }
 
   const backendUrl =
