@@ -8,6 +8,7 @@ import type {
   SubmitWorkflowInputArgs,
   SubmitWorkflowInterventionArgs,
 } from "../lib/workflow-runtimes";
+import { collectUnresolvedWaitingOn } from "../lib/pending-wait";
 import type {
   BindRunSecretRequest,
   CreateSecretVaultEntryRequest,
@@ -553,7 +554,6 @@ function sortRunsByStartedAtDesc(runs: RunSummary[]): RunSummary[] {
 
 function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
   const snapshot = result.snapshot;
-  const waitingOn = new Set<string>();
   let terminalNodeCount = 0;
   let failedNodeCount = 0;
 
@@ -561,8 +561,6 @@ function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
     if (snapshot && isTerminalSummaryNode(snapshot, node))
       terminalNodeCount += 1;
     if (node.status === "errored") failedNodeCount += 1;
-    if (node.status === "waiting" && node.waitingOn)
-      waitingOn.add(node.waitingOn);
   }
 
   return {
@@ -575,7 +573,7 @@ function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
     version: snapshot?.version ?? 0,
     nodeCount: snapshot?.nodes.length ?? Object.keys(result.state.nodes).length,
     terminalNodeCount,
-    waitingOn: [...waitingOn],
+    waitingOn: collectUnresolvedWaitingOn(result.state),
     failedNodeCount,
   };
 }

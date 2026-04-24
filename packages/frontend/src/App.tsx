@@ -47,6 +47,7 @@ import {
   useWorkflowRun,
 } from "./hooks/use-workflow";
 import { cn } from "./lib/utils";
+import { findPendingWait } from "./lib/pending-wait";
 import { workflowInputLabel } from "./lib/workflow-labels";
 import type {
   RunSummary,
@@ -94,30 +95,6 @@ function findManifestInput(
 ): WorkflowInputManifest | undefined {
   if (!inputId) return undefined;
   return manifest?.inputs.find((input) => input.id === inputId);
-}
-
-type PendingWait =
-  | { stepId: string; kind: "input"; inputId: string }
-  | { stepId: string; kind: "intervention"; interventionId: string };
-
-function findPendingWait(
-  manifest: WorkflowManifest | undefined,
-  state: RunState | undefined,
-): PendingWait | undefined {
-  if (!state?.nodes) return undefined;
-  for (const [stepId, n] of Object.entries(state.nodes)) {
-    if (n.status === "waiting" && n.waitingOn) {
-      const intervention = state.interventions?.[n.waitingOn];
-      if (intervention && intervention.status !== "resolved") {
-        return { stepId, kind: "intervention", interventionId: n.waitingOn };
-      }
-      const waitingOn = findManifestInput(manifest, n.waitingOn);
-      if (!waitingOn?.secret && state.nodes[n.waitingOn]?.status === "resolved")
-        continue;
-      return { stepId, kind: "input", inputId: n.waitingOn };
-    }
-  }
-  return undefined;
 }
 
 function pendingFormForIntervention(
@@ -735,11 +712,16 @@ export function WorkflowRunnerApp({
     }
 
     try {
-      await workflowRun.submitInput({
+      const result = await workflowRun.submitInput({
         state: runState,
         inputId,
         payload,
       });
+      if ((result.queue?.pending.length ?? 0) > 0) {
+        await workflowRun.advance({
+          state: result.state,
+        });
+      }
       setPane(null);
     } catch (e) {
       setPayloadError(
@@ -768,11 +750,16 @@ export function WorkflowRunnerApp({
     }
 
     try {
-      await workflowRun.submitIntervention({
+      const result = await workflowRun.submitIntervention({
         state: runState,
         interventionId: pendingInterventionId,
         payload,
       });
+      if ((result.queue?.pending.length ?? 0) > 0) {
+        await workflowRun.advance({
+          state: result.state,
+        });
+      }
       setPane(null);
     } catch (e) {
       setPayloadError(
