@@ -41,6 +41,12 @@ if (enableBackendTunnel) {
   console.log(`  public webhooks: ${backendTunnel.url}/webhooks`);
 }
 
+console.log("Preparing local workflow package builds...");
+execSync("pnpm --filter @workflow/integrations-slack build", {
+  env,
+  stdio: "inherit",
+});
+
 console.log("Applying local backend database migrations...");
 execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
   env,
