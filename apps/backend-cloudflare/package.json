@@ -4,26 +4,29 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --ip 127.0.0.1 --port ${HYLO_BACKEND_PORT:-8787} --inspector-port ${HYLO_BACKEND_INSPECTOR_PORT:-9230}",
+    "dev": "infisical run --path=/ --env=dev -- wrangler dev --ip 127.0.0.1 --port ${HYLO_BACKEND_PORT:-8787} --inspector-port ${HYLO_BACKEND_INSPECTOR_PORT:-9230}",
     "deploy": "pnpm build && wrangler deploy",
-    "db:generate": "pnpm -C ../../packages/cloudflare db:generate",
-    "db:migrate": "pnpm -C ../../packages/cloudflare build && wrangler d1 migrations apply hylo-backend --local",
-    "db:migrate:remote": "pnpm -C ../../packages/cloudflare build && wrangler d1 migrations apply hylo-backend --remote",
-    "db:studio": "pnpm -C ../../packages/cloudflare build && pnpm -C ../../packages/cloudflare exec tsx scripts/db-studio.ts",
+    "db:migrate": "pnpm -C ../../packages/postgres db:migrate",
+    "db:migrate:dev": "infisical run --path=/ --env=dev -- pnpm db:migrate",
+    "db:migrate:staging": "infisical run --path=/ --env=staging -- pnpm db:migrate",
+    "db:migrate:prod": "infisical run --path=/ --env=prod -- pnpm db:migrate",
+    "db:studio": "pnpm -C ../../packages/postgres db:studio",
     "build": "tsc --noEmit"
   },
   "dependencies": {
-    "@workflow/cloudflare": "workspace:*",
     "@workflow/core": "workspace:*",
     "@workflow/integrations-notion": "workspace:*",
     "@workflow/integrations-spotify": "workspace:*",
     "@workflow/oauth-broker": "workspace:*",
+    "@workflow/postgres": "workspace:*",
     "@workflow/remote": "workspace:*",
     "@workflow/runtime": "workspace:*",
     "@workflow/server": "workspace:*",
     "@hono/zod-openapi": "^1.3.0",
+    "drizzle-orm": "^0.45.1",
     "hono": "^4.12.14",
-    "jose": "^6.2.2"
+    "jose": "^6.2.2",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

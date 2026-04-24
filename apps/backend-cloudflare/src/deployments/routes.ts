@@ -14,7 +14,7 @@ import {
   PlatformErrorResponseSchema,
   typedRouteResponse,
 } from "../openapi";
-import type { BackendAppEnv, WorkflowDeploymentRegistryDb } from "../types";
+import type { BackendAppEnv } from "../types";
 import {
   cloudflareApiRequest,
   createDeploymentMetadata,
@@ -22,8 +22,8 @@ import {
 } from "./cloudflare";
 import { assertWorkerTags, tagForTenant } from "./ids";
 import {
-  createWorkflowDeploymentRegistry,
   requireWorkflowDeploymentRegistry,
+  type WorkflowDeploymentRegistry,
 } from "./registry";
 import type { CloudflareEnvelope } from "./types";
 import {
@@ -313,7 +313,7 @@ export function mountDeploymentApi(
   app: OpenAPIHono,
   env: BackendAppEnv,
   apiKey: string,
-  deploymentDb?: WorkflowDeploymentRegistryDb,
+  deploymentRegistry?: WorkflowDeploymentRegistry,
 ) {
   app.openapi(ListTenantDeploymentsRoute, async (c) => {
     try {
@@ -323,7 +323,7 @@ export function mountDeploymentApi(
         apiKey,
         c.req.valid("param").tenantId,
       );
-      const registry = requireWorkflowDeploymentRegistry(deploymentDb);
+      const registry = requireWorkflowDeploymentRegistry(deploymentRegistry);
       return typedRouteResponse(
         c.json(
           {
@@ -347,7 +347,7 @@ export function mountDeploymentApi(
         apiKey,
         c.req.valid("param").tenantId,
       );
-      const registry = requireWorkflowDeploymentRegistry(deploymentDb);
+      const registry = requireWorkflowDeploymentRegistry(deploymentRegistry);
       const deployments = await registry.list(tenantId);
       const workflows = Object.fromEntries(
         deployments.flatMap((deployment) =>
@@ -449,9 +449,7 @@ export function mountDeploymentApi(
         input.moduleName,
       );
 
-      const registry = deploymentDb
-        ? createWorkflowDeploymentRegistry(deploymentDb)
-        : undefined;
+      const registry = deploymentRegistry;
       if (registry) {
         await registry.upsert({
           tenantId: input.tenantId,
@@ -529,8 +527,8 @@ export function mountDeploymentApi(
         )}/scripts?tags=${encodeURIComponent(`${tagFilter}:yes`)}`,
         { method: "DELETE" },
       );
-      if (deploymentDb) {
-        const registry = createWorkflowDeploymentRegistry(deploymentDb);
+      if (deploymentRegistry) {
+        const registry = deploymentRegistry;
         const tenantId =
           auth.kind === "workos" ? auth.tenantId : query.tenantId;
         if (tenantId) {
@@ -564,7 +562,7 @@ export function mountDeploymentApi(
         c.req.valid("param").deploymentId,
       );
       if (auth.kind === "workos") {
-        await requireDeploymentAccess(deploymentDb, deploymentId, auth);
+        await requireDeploymentAccess(deploymentRegistry, deploymentId, auth);
       }
       const response = await cloudflareApiRequest<unknown>(
         config,
@@ -598,7 +596,7 @@ export function mountDeploymentApi(
         c.req.valid("param").deploymentId,
       );
       if (auth.kind === "workos") {
-        await requireDeploymentAccess(deploymentDb, deploymentId, auth);
+        await requireDeploymentAccess(deploymentRegistry, deploymentId, auth);
       }
       const response = await cloudflareApiRequest<unknown>(
         config,
@@ -609,10 +607,8 @@ export function mountDeploymentApi(
         )}/scripts/${encodeURIComponent(deploymentId)}`,
         { method: "DELETE" },
       );
-      if (deploymentDb) {
-        await createWorkflowDeploymentRegistry(deploymentDb).delete(
-          deploymentId,
-        );
+      if (deploymentRegistry) {
+        await deploymentRegistry.delete(deploymentId);
       }
       return typedRouteResponse(
         c.json(
@@ -694,12 +690,12 @@ async function requireDeploymentAuth(
 }
 
 async function requireDeploymentAccess(
-  db: WorkflowDeploymentRegistryDb | undefined,
+  registry: WorkflowDeploymentRegistry | undefined,
   deploymentId: string,
   auth: Extract<AuthContext, { kind: "workos" }>,
 ): Promise<void> {
-  const registry = requireWorkflowDeploymentRegistry(db);
-  const deployment = await registry.get(deploymentId);
+  const deployment =
+    await requireWorkflowDeploymentRegistry(registry).get(deploymentId);
   if (!deployment) {
     throw new PlatformApiError(
       403,

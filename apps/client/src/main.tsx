@@ -196,7 +196,7 @@ function ClientSwitcher({
               onBackendTargetChange(event.currentTarget.value as BackendTarget)
             }
           >
-            <option value="local">Local D1</option>
+            <option value="local">Local</option>
             <option value="hosted">Hosted</option>
           </select>
         </label>

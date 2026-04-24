@@ -10,6 +10,9 @@ export type BackendAppEnv = {
   HYLO_API_KEY?: string;
   HYLO_BACKEND_PUBLIC_URL?: string;
   HYLO_BROKER_BASE_URL?: string;
+  HYPERDRIVE?: HyperdriveBinding;
+  DATABASE_URL?: string;
+  POSTGRES_URL?: string;
   HYLO_WORKER_DISPATCH_BASE_URL?: string;
   DISPATCHER?: WorkerDispatchNamespace;
   NODE_ENV?: string;
@@ -23,8 +26,8 @@ export type BackendAppEnv = {
   WORKOS_JWKS_URL?: string;
 };
 
-export type WorkflowDeploymentRegistryDb = {
-  prepare(query: string): D1PreparedStatement;
+export type HyperdriveBinding = {
+  connectionString: string;
 };
 
 export type WorkerDispatchNamespace = {

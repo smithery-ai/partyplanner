@@ -1,17 +1,23 @@
 # Hylo Backend Cloudflare
 
-Cloudflare Worker implementation of the Hylo backend API, backed by D1.
+Cloudflare Worker implementation of the Hylo backend API, backed by Postgres.
+In deployed environments it should use Cloudflare Hyperdrive for connection
+pooling; local and preview environments can use `POSTGRES_URL`/`DATABASE_URL`
+directly.
 
 From this directory:
 
 ```sh
-pnpm db:migrate
+pnpm db:migrate:staging
+pnpm db:migrate:prod
 pnpm dev
 ```
 
-The app owns the Wrangler/D1 migration commands because the D1 binding and
-`wrangler.toml` live here. The shared Cloudflare package owns the schema and
-generated migration files.
+The app delegates schema setup to `packages/postgres`. Configure one of:
+
+- `HYPERDRIVE` binding in the Worker environment
+- `POSTGRES_URL` or `DATABASE_URL` as a Worker secret or local env var
+- `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` for `wrangler dev`
 
 ## Workers for Platforms provisioning
 
@@ -40,7 +46,7 @@ List tenant deployments with
 `DELETE /deployments/:deploymentId`, or delete all deployments for a tenant with
 `DELETE /deployments?tenantId=customer-123`.
 
-Provisioned deployments are also recorded in D1 for tenant-driven client routing:
+Provisioned deployments are also recorded in Postgres for tenant-driven client routing:
 
 ```sh
 GET /tenants/customer-123/deployments
@@ -69,11 +75,12 @@ the Workers project with:
 - Deploy command: `pnpm --filter backend-cloudflare run deploy`
 - Non-production branch deploy command:
   ```sh
-  ALIAS="$(echo "$WORKERS_CI_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/^-*//; s/-*$//; s/--*/-/g' | cut -c1-40 | sed 's/-*$//')" && pnpm --filter backend-cloudflare exec wrangler versions upload --preview-alias "${ALIAS:-preview}"
+  ALIAS="$(echo "$WORKERS_CI_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/^-*//; s/-*$//; s/--*/-/g' | cut -c1-40 | sed 's/-*$//')" && pnpm --filter backend-cloudflare exec wrangler versions upload --env preview --preview-alias "${ALIAS:-preview}"
   ```
 
 `wrangler.toml` enables Worker preview URLs, so Cloudflare non-production
 branch builds produce preview URLs without promoting the Worker to production.
+The `preview` Wrangler environment uses the staging Hyperdrive database.
 The aliased preview URL format is:
 
 ```txt

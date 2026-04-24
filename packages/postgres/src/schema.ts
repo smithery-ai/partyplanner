@@ -38,3 +38,32 @@ export const workflowQueueItems = pgTable("workflow_queue_items", {
   attempts: integer("attempts").notNull(),
   error: text("error"),
 });
+
+export const oauthPending = pgTable("oauth_pending", {
+  state: text("state").primaryKey(),
+  valueJson: text("value_json").notNull(),
+  createdAt: doublePrecision("created_at").notNull(),
+});
+
+export const oauthHandoffs = pgTable("oauth_handoffs", {
+  handoff: text("handoff").primaryKey(),
+  valueJson: text("value_json").notNull(),
+  createdAt: doublePrecision("created_at").notNull(),
+});
+
+export const oauthRefreshTokens = pgTable("oauth_refresh_tokens", {
+  sessionId: text("session_id").primaryKey(),
+  valueJson: text("value_json").notNull(),
+  createdAt: doublePrecision("created_at").notNull(),
+});
+
+export const workflowDeployments = pgTable("workflow_deployments", {
+  deploymentId: text("deployment_id").primaryKey(),
+  tenantId: text("tenant_id").notNull(),
+  label: text("label"),
+  workflowApiUrl: text("workflow_api_url"),
+  dispatchNamespace: text("dispatch_namespace").notNull(),
+  tagsJson: text("tags_json").notNull(),
+  createdAt: doublePrecision("created_at").notNull(),
+  updatedAt: doublePrecision("updated_at").notNull(),
+});

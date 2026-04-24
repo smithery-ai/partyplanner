@@ -1,14 +1,14 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
-import {
-  createCloudflareBrokerStore,
-  createCloudflareWorkflowQueue,
-  createCloudflareWorkflowStateStore,
-  type WorkflowCloudflareDbLike,
-} from "@workflow/cloudflare";
 import { notionProvider } from "@workflow/integrations-notion";
 import { spotifyProvider } from "@workflow/integrations-spotify";
 import type { BrokerProviderRegistration } from "@workflow/oauth-broker";
 import { createOAuthBrokerServer } from "@workflow/oauth-broker";
+import {
+  createPostgresBrokerStore,
+  createPostgresWorkflowQueue,
+  createPostgresWorkflowStateStore,
+  type WorkflowPostgresDb,
+} from "@workflow/postgres";
 import {
   createRemoteRuntimeOpenApiDocument,
   createRemoteRuntimeServer,
@@ -18,24 +18,25 @@ import {
 import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { mountAuthApi, registerAuthOpenApiRoutes } from "./auth/routes";
+import type { WorkflowDeploymentRegistry } from "./deployments/registry";
 import {
   mountDeploymentApi,
   registerDeploymentOpenApiRoutes,
 } from "./deployments/routes";
 import { parseDeploymentIdParam } from "./deployments/validators";
 import { apiErrorResponse, PlatformApiError } from "./errors";
-import type { BackendAppEnv, WorkflowDeploymentRegistryDb } from "./types";
+import type { BackendAppEnv } from "./types";
 
 export type { BackendAppEnv } from "./types";
 
 export function createApp(
-  db: WorkflowCloudflareDbLike,
+  db: WorkflowPostgresDb,
   env: BackendAppEnv = {},
-  deploymentDb?: WorkflowDeploymentRegistryDb,
+  deploymentRegistry?: WorkflowDeploymentRegistry,
 ) {
   const adapterOptions = { autoMigrate: false };
-  const stateStore = createCloudflareWorkflowStateStore(db, adapterOptions);
-  const queue = createCloudflareWorkflowQueue(db, adapterOptions);
+  const stateStore = createPostgresWorkflowStateStore(db, adapterOptions);
+  const queue = createPostgresWorkflowQueue(db, adapterOptions);
   const app = new OpenAPIHono();
 
   app.use(
@@ -66,14 +67,14 @@ export function createApp(
     "/oauth",
     createOAuthBrokerServer({
       brokerBaseUrl: resolveBrokerBaseUrl(env),
-      store: createCloudflareBrokerStore(db, adapterOptions),
+      store: createPostgresBrokerStore(db, adapterOptions),
       authenticateAppToken: (token) =>
         token === apiKey ? { appId: "shared" } : undefined,
       providers: curatedProviders,
     }),
   );
 
-  mountDeploymentApi(app, env, apiKey, deploymentDb);
+  mountDeploymentApi(app, env, apiKey, deploymentRegistry);
 
   return app;
 }

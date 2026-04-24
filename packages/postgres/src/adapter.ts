@@ -1,5 +1,11 @@
 import type { QueueEvent, RunState } from "@workflow/core";
 import type {
+  BrokerStore,
+  HandoffValue,
+  PendingValue,
+  RefreshValue,
+} from "@workflow/oauth-broker";
+import type {
   QueueItem,
   QueueItemStatus,
   QueueSnapshot,
@@ -17,6 +23,9 @@ import {
 import { and, asc, eq, sql } from "drizzle-orm";
 import { ensureWorkflowPostgresSchema } from "./migrate";
 import {
+  oauthHandoffs,
+  oauthPending,
+  oauthRefreshTokens,
   workflowEvents,
   workflowQueueItems,
   workflowRunDocuments,
@@ -28,6 +37,7 @@ export type WorkflowPostgresDb = {
   select: unknown;
   insert: unknown;
   update: unknown;
+  delete: unknown;
 };
 
 export type PostgresWorkflowAdapterOptions = {
@@ -47,6 +57,13 @@ export function createPostgresWorkflowQueue(
   options: PostgresWorkflowAdapterOptions = {},
 ): WorkflowQueue {
   return new PostgresWorkflowQueue(db, options);
+}
+
+export function createPostgresBrokerStore(
+  db: WorkflowPostgresDb,
+  options: PostgresWorkflowAdapterOptions = {},
+): BrokerStore {
+  return new PostgresBrokerStore(db, options);
 }
 
 class PostgresWorkflowStateStore implements WorkflowStateStore {
@@ -364,6 +381,138 @@ class PostgresWorkflowQueue implements WorkflowQueue {
   }
 }
 
+class PostgresBrokerStore implements BrokerStore {
+  private readonly pendingTtlMs = 5 * 60_000;
+  private readonly handoffTtlMs = 60_000;
+  private ready: Promise<void> | undefined;
+
+  constructor(
+    private readonly db: WorkflowPostgresDb,
+    private readonly options: PostgresWorkflowAdapterOptions,
+  ) {}
+
+  async putPending(state: string, value: PendingValue): Promise<void> {
+    await this.ensureReady();
+    await asDb(this.db)
+      .insert(oauthPending)
+      .values({
+        state,
+        valueJson: JSON.stringify(value),
+        createdAt: value.createdAt,
+      })
+      .onConflictDoUpdate({
+        target: oauthPending.state,
+        set: {
+          valueJson: JSON.stringify(value),
+          createdAt: value.createdAt,
+        },
+      });
+  }
+
+  async takePending(state: string): Promise<PendingValue | undefined> {
+    await this.ensureReady();
+    const rows = await asDb(this.db)
+      .select()
+      .from(oauthPending)
+      .where(eq(oauthPending.state, state))
+      .limit(1);
+    const row = (rows as ValueJsonRow[])[0];
+    if (!row) return undefined;
+    await asDb(this.db)
+      .delete(oauthPending)
+      .where(eq(oauthPending.state, state));
+    const value = parseJson<PendingValue>(row.valueJson);
+    if (Date.now() - value.createdAt > this.pendingTtlMs) return undefined;
+    return value;
+  }
+
+  async putHandoff(handoff: string, value: HandoffValue): Promise<void> {
+    await this.ensureReady();
+    await asDb(this.db)
+      .insert(oauthHandoffs)
+      .values({
+        handoff,
+        valueJson: JSON.stringify(value),
+        createdAt: value.createdAt,
+      })
+      .onConflictDoUpdate({
+        target: oauthHandoffs.handoff,
+        set: {
+          valueJson: JSON.stringify(value),
+          createdAt: value.createdAt,
+        },
+      });
+  }
+
+  async takeHandoff(handoff: string): Promise<HandoffValue | undefined> {
+    await this.ensureReady();
+    const rows = await asDb(this.db)
+      .select()
+      .from(oauthHandoffs)
+      .where(eq(oauthHandoffs.handoff, handoff))
+      .limit(1);
+    const row = (rows as ValueJsonRow[])[0];
+    if (!row) return undefined;
+    await asDb(this.db)
+      .delete(oauthHandoffs)
+      .where(eq(oauthHandoffs.handoff, handoff));
+    const value = parseJson<HandoffValue>(row.valueJson);
+    if (Date.now() - value.createdAt > this.handoffTtlMs) return undefined;
+    return value;
+  }
+
+  async putRefresh(sessionId: string, value: RefreshValue): Promise<void> {
+    await this.ensureReady();
+    await asDb(this.db)
+      .insert(oauthRefreshTokens)
+      .values({
+        sessionId,
+        valueJson: JSON.stringify(value),
+        createdAt: value.createdAt,
+      })
+      .onConflictDoUpdate({
+        target: oauthRefreshTokens.sessionId,
+        set: {
+          valueJson: JSON.stringify(value),
+          createdAt: value.createdAt,
+        },
+      });
+  }
+
+  async getRefresh(sessionId: string): Promise<RefreshValue | undefined> {
+    await this.ensureReady();
+    const rows = await asDb(this.db)
+      .select()
+      .from(oauthRefreshTokens)
+      .where(eq(oauthRefreshTokens.sessionId, sessionId))
+      .limit(1);
+    const row = (rows as ValueJsonRow[])[0];
+    if (!row) return undefined;
+    return parseJson<RefreshValue>(row.valueJson);
+  }
+
+  async updateRefreshToken(
+    sessionId: string,
+    refreshToken: string,
+  ): Promise<void> {
+    await this.ensureReady();
+    const existing = await this.getRefresh(sessionId);
+    if (!existing) return;
+    await asDb(this.db)
+      .update(oauthRefreshTokens)
+      .set({
+        valueJson: JSON.stringify({ ...existing, refreshToken }),
+      })
+      .where(eq(oauthRefreshTokens.sessionId, sessionId));
+  }
+
+  private ensureReady(): Promise<void> {
+    if (this.options.autoMigrate === false) return Promise.resolve();
+    this.ready ??= ensureWorkflowPostgresSchema(this.db);
+    return this.ready;
+  }
+}
+
 function rowToQueueItem(row: {
   eventJson: string;
   status: string;
@@ -406,6 +555,10 @@ type QueueRow = {
   error: string | null;
 };
 
+type ValueJsonRow = {
+  valueJson: string;
+};
+
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
 }
@@ -423,6 +576,7 @@ function asDb(db: WorkflowPostgresDb) {
     };
     insert: (table: unknown) => InsertBuilder;
     update: (table: unknown) => UpdateBuilder;
+    delete: (table: unknown) => DeleteBuilder;
   };
 }
 
@@ -463,6 +617,20 @@ type UpdateBuilder = {
   set(value: unknown): UpdateBuilder;
   where(condition: unknown): UpdateBuilder;
   returning(selection?: unknown): Promise<unknown[]>;
+  then<TResult1 = unknown, TResult2 = never>(
+    onfulfilled?:
+      | ((value: unknown) => TResult1 | PromiseLike<TResult1>)
+      | undefined
+      | null,
+    onrejected?:
+      | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+      | undefined
+      | null,
+  ): PromiseLike<TResult1 | TResult2>;
+};
+
+type DeleteBuilder = {
+  where(condition: unknown): Promise<unknown>;
   then<TResult1 = unknown, TResult2 = never>(
     onfulfilled?:
       | ((value: unknown) => TResult1 | PromiseLike<TResult1>)

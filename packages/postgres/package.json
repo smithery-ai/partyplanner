@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@workflow/core": "workspace:*",
+    "@workflow/oauth-broker": "workspace:*",
     "@workflow/runtime": "workspace:*",
     "@workflow/server": "workspace:*",
     "drizzle-orm": "^0.45.1",
