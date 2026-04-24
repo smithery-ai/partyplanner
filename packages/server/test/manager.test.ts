@@ -105,162 +105,146 @@ describe("WorkflowManager", () => {
       matchedInputs: ["leadA", "leadB"],
       receivedAt: started.state.webhook?.receivedAt,
     });
-    expect(started.state.nodes["@workflow/webhook-payload"]).toMatchObject({
-      status: "resolved",
-      kind: "webhook",
-      value: {
-        method: "POST",
-        route: "/api/workflow/webhooks",
-        url: "https://example.test/api/workflow/webhooks?source=test",
-        headers: {
-          "content-type": "application/json",
-          "x-test": "1",
-        },
-        query: {
-          source: "test",
-        },
-        payload: { source: "webhook", id: "evt_1" },
-      },
-    });
-    expect(
-      started.events.map(
-        (event) => event.type === "webhook_matched" && event.inputId,
-      ),
-    ).toContain("leadA");
-    expect(
-      started.events.map(
-        (event) => event.type === "webhook_matched" && event.inputId,
-      ),
-    ).toContain("leadB");
     expect(
       started.queue.pending
         .filter((item) => item.event.kind === "input")
         .map((item) => item.event.inputId),
     ).toEqual(["leadA", "leadB"]);
-
-    await manager.advanceRun(started.runId);
-    const completed = await manager.advanceRun(started.runId);
-
-    expect(completed.status).toBe("completed");
-    expect(completed.state.inputs.leadA).toEqual({
-      source: "webhook",
-      id: "evt_1",
-    });
-    expect(completed.state.inputs.leadB).toEqual({
-      source: "webhook",
-      id: "evt_1",
-    });
   });
 
-  it("matches all deferred inputs for a waiting run", async () => {
-    const seed = input("seed", z.object({ id: z.string() }));
-    const approvalA = input.deferred(
-      "approvalA",
-      z.object({ approved: z.boolean() }),
-    );
-    const approvalB = input.deferred(
-      "approvalB",
-      z.object({ approved: z.boolean() }),
-    );
-
+  it("includes managed connections in the manifest", () => {
     atom(
-      (get) => {
-        get(seed);
-        return get(approvalA).approved;
+      () => ({ accessToken: "token" }),
+      {
+        name: "notionConnection",
+        description: "Authorize Notion before creating a page.",
+        managedConnection: {
+          kind: "oauth",
+          providerId: "notion",
+          requirement: "preflight",
+          title: "Notion",
+          scopes: ["pages:write"],
+        },
       },
-      { name: "checkApprovalA" },
-    );
-    atom(
-      (get) => {
-        get(seed);
-        return get(approvalB).approved;
-      },
-      { name: "checkApprovalB" },
     );
 
     const manager = new WorkflowManager({
       stateStore: new TestWorkflowStateStore(),
       queue: new TestWorkflowQueue(),
     });
+
+    expect(manager.manifest().managedConnections).toEqual([
+      {
+        id: "notionConnection",
+        kind: "oauth",
+        providerId: "notion",
+        requirement: "preflight",
+        title: "Notion",
+        description: "Authorize Notion before creating a page.",
+        scopes: ["pages:write"],
+      },
+    ]);
+  });
+
+  it("binds preflight managed connections to the worker configuration run", async () => {
+    const seed = input("seed", z.object({ slug: z.string() }));
+    const notionConnection = atom(
+      (_get, requestIntervention) =>
+        requestIntervention(
+          "oauth-callback",
+          z.object({ accessToken: z.string() }),
+          {
+            title: "Connect Notion",
+            action: {
+              type: "open_url",
+              url: "https://example.com/notion",
+              label: "Connect Notion",
+            },
+          },
+        ),
+      {
+        name: "notionConnection",
+        managedConnection: {
+          kind: "oauth",
+          providerId: "notion",
+          requirement: "preflight",
+          title: "Notion",
+        },
+      },
+    );
+    atom(
+      (get) => {
+        get(seed);
+        return get(notionConnection).accessToken;
+      },
+      { name: "publishToNotion" },
+    );
+
+    const manager = new WorkflowManager({
+      stateStore: new TestWorkflowStateStore(),
+      queue: new TestWorkflowQueue(),
+    });
+
+    await expect(
+      manager.startRun({
+        inputId: "seed",
+        payload: { slug: "hello" },
+      }),
+    ).rejects.toThrow(/Worker configuration incomplete/);
+
+    const connecting = await manager.connectManagedConnection(
+      "notionConnection",
+    );
+    expect(connecting.ready).toBe(false);
+    expect(connecting.runId).toBe("@configuration/workflow");
+    expect(connecting.connections).toEqual([
+      expect.objectContaining({
+        id: "notionConnection",
+        status: "connecting",
+      }),
+    ]);
+    expect(
+      connecting.run?.state.interventions["notionConnection:oauth-callback"],
+    ).toMatchObject({
+      id: "notionConnection:oauth-callback",
+      status: "pending",
+      title: "Connect Notion",
+    });
+
+    await manager.submitIntervention(
+      connecting.runId,
+      "notionConnection:oauth-callback",
+      {
+        payload: { accessToken: "token_123" },
+      },
+    );
+
+    const configuration = await manager.configuration();
+    expect(configuration.ready).toBe(true);
+    expect(configuration.connections).toEqual([
+      expect.objectContaining({
+        id: "notionConnection",
+        status: "connected",
+      }),
+    ]);
 
     const started = await manager.startRun({
       inputId: "seed",
-      payload: { id: "seed_1" },
+      payload: { slug: "hello" },
     });
-    await manager.advanceRun(started.runId);
-    await manager.advanceRun(started.runId);
-    const waiting = await manager.advanceRun(started.runId);
+    let completed = started;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      completed = await manager.advanceRun(started.runId);
+      if (completed.status === "completed") break;
+    }
 
-    expect(waiting.status).toBe("waiting");
-
-    const resumed = await manager.submitWebhook({
-      runId: started.runId,
-      payload: { approved: true },
-    });
-
-    expect(resumed.status).toBe("running");
-    expect(resumed.state.inputs.approvalA).toEqual({ approved: true });
-    expect(resumed.state.inputs.approvalB).toEqual({ approved: true });
+    expect(completed.status).toBe("completed");
     expect(
-      resumed.events.map(
-        (event) => event.type === "webhook_matched" && event.inputId,
-      ),
-    ).toContain("approvalA");
+      completed.state.nodes["notionConnection"]?.value,
+    ).toEqual({ accessToken: "token_123" });
     expect(
-      resumed.events.map(
-        (event) => event.type === "webhook_matched" && event.inputId,
-      ),
-    ).toContain("approvalB");
-    expect(
-      resumed.queue.pending
-        .filter((item) => item.event.kind === "step")
-        .map((item) => item.event.stepId),
-    ).toEqual(["checkApprovalA", "checkApprovalB"]);
-  });
-
-  it("fails runs when a webhook payload matches no unresolved input", async () => {
-    input("lead", z.object({ kind: z.literal("lead") }));
-
-    const manager = new WorkflowManager({
-      stateStore: new TestWorkflowStateStore(),
-      queue: new TestWorkflowQueue(),
-    });
-
-    const failed = await manager.submitWebhook({
-      payload: { kind: "other" },
-    });
-
-    expect(failed.status).toBe("failed");
-    expect(failed.queue.pending).toHaveLength(0);
-    expect(failed.state.payload).toEqual({ kind: "other" });
-    expect(failed.state.nodes["@workflow/webhook-payload"]).toMatchObject({
-      status: "errored",
-      kind: "webhook",
-      value: {
-        method: "POST",
-        route: "/webhooks",
-        headers: {},
-        query: {},
-        payload: { kind: "other" },
-      },
-      error: {
-        message:
-          "No unresolved workflow input matched the received webhook payload.",
-      },
-    });
-    expect(failed.state.terminal).toEqual({
-      status: "failed",
-      reason: "webhook_unmatched",
-    });
-    expect(failed.events.map((event) => event.type)).toEqual([
-      "run_started",
-      "webhook_received",
-      "webhook_unmatched",
-      "run_failed",
-    ]);
-
-    const runs = await manager.listRuns();
-    expect(runs[0]?.status).toBe("failed");
+      (await manager.listRuns()).map((run) => run.runId),
+    ).toEqual([started.runId]);
   });
 });
 

@@ -13,6 +13,16 @@ export type InputDef = {
   internal?: boolean;
 };
 
+export type ManagedConnectionRequirement = "lazy" | "preflight";
+
+export type ManagedConnectionDef = {
+  kind: "oauth";
+  providerId: string;
+  requirement: ManagedConnectionRequirement;
+  title?: string;
+  scopes?: string[];
+};
+
 type StepFn = (
   get: Get,
   requestIntervention: RequestIntervention,
@@ -24,6 +34,7 @@ export type AtomDef = {
   id: string;
   fn: StepFn;
   description?: string;
+  managedConnection?: ManagedConnectionDef;
   internal?: boolean;
 };
 

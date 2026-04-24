@@ -15,8 +15,17 @@
 //       worker app.
 
 // Brokered connection primitive.
-export type { BrokerCredentials, CreateConnectionOptions } from "./atom";
-export { createConnection, defaultAppBaseUrl, defaultBroker } from "./atom";
+export type {
+  BrokerCredentials,
+  CreateConnectionOptions,
+  ManagedConnectionOptions,
+} from "./atom";
+export {
+  createConnection,
+  defaultAppBaseUrl,
+  defaultBroker,
+  managedConnection,
+} from "./atom";
 // Self-hosted connection primitive + the callback route it pairs with.
 export type { CreateCustomConnectionOptions } from "./custom";
 export { createCustomConnection } from "./custom";

@@ -1,8 +1,9 @@
 import type { RunEvent, RunSnapshot } from "@workflow/runtime";
+import type { WorkflowManagedConnectionManifest } from "./manifest";
 
 export type StartWorkflowRunRequest = {
-  inputId: string;
-  payload: unknown;
+  inputId?: string;
+  payload?: unknown;
   additionalInputs?: {
     inputId: string;
     payload: unknown;
@@ -11,6 +12,22 @@ export type StartWorkflowRunRequest = {
   secretValues?: Record<string, string>;
   runId?: string;
 };
+
+export type ConnectManagedConnectionRequest = {
+  secretValues?: Record<string, string>;
+};
+
+export type WorkflowManagedConnectionStatus =
+  | "not_connected"
+  | "connecting"
+  | "connected"
+  | "error";
+
+export type WorkflowManagedConnectionConfiguration =
+  WorkflowManagedConnectionManifest & {
+    status: WorkflowManagedConnectionStatus;
+    waitingOn?: string;
+  };
 
 export type SubmitBackendInputRequest = {
   inputId: string;
@@ -73,6 +90,13 @@ export type BindRunSecretRequest = {
 export type RunStateDocument = RunSnapshot & {
   events: RunEvent[];
   publishedAt: number;
+};
+
+export type WorkflowConfigurationDocument = {
+  runId: string;
+  ready: boolean;
+  connections: WorkflowManagedConnectionConfiguration[];
+  run?: RunStateDocument;
 };
 
 export type RunSummary = {

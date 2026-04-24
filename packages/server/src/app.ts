@@ -1,6 +1,10 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import {
+  RuntimeExecutor,
+  type SecretResolver,
+} from "@workflow/runtime";
+import {
   type BackendApiClientOptions,
   createBackendApiWorkflowQueue,
   createBackendApiWorkflowStateStore,
@@ -16,6 +20,7 @@ import {
   type WorkflowOpenApiOptions,
 } from "./openapi";
 import type {
+  ConnectManagedConnectionRequest,
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
@@ -38,7 +43,8 @@ export function createWorkflow(options: CreateWorkflowOptions) {
     stateStore,
     queue,
     registry: options.registry,
-    executor: options.executor,
+    executor:
+      options.executor ?? new RuntimeExecutor(defaultSecretResolver(options.backendApi)),
     workflow: options.workflow,
   });
   const app = new OpenAPIHono({
@@ -64,6 +70,9 @@ export function createWorkflow(options: CreateWorkflowOptions) {
   app.openapi(routes.manifest, (c) => c.json(manager.manifest(), 200));
   app.openapi(routes.listRuns, async (c) =>
     c.json(await manager.listRuns(), 200),
+  );
+  app.openapi(routes.configuration, async (c) =>
+    c.json(await manager.configuration(), 200),
   );
 
   app.openapi(routes.startRun, async (c) => {
@@ -104,6 +113,21 @@ export function createWorkflow(options: CreateWorkflowOptions) {
       const body = c.req.valid("json") as SubmitWorkflowWebhookRequest;
       return c.json(
         await manager.submitWebhook(body, webhookRequestContext(c.req.raw)),
+        200,
+      );
+    } catch (e) {
+      return c.json({ message: errorMessage(e) }, 400);
+    }
+  });
+
+  app.openapi(routes.connectManagedConnection, async (c) => {
+    try {
+      const body = c.req.valid("json") as ConnectManagedConnectionRequest;
+      return c.json(
+        await manager.connectManagedConnection(
+          requireParam(c.req.param("connectionId")),
+          body,
+        ),
         200,
       );
     } catch (e) {
@@ -177,4 +201,25 @@ function webhookRequestContext(
   };
 }
 
+function defaultSecretResolver(
+  backendApi: string | BackendApiClientOptions,
+): SecretResolver {
+  const backendUrl = baseBackendUrl(backendApi);
+  return {
+    resolve: async ({ logicalName }) => {
+      if (logicalName === "HYLO_BACKEND_URL") return backendUrl;
+      return undefined;
+    },
+  };
+}
+
+function baseBackendUrl(
+  backendApi: string | BackendApiClientOptions,
+): string {
+  const raw = typeof backendApi === "string" ? backendApi : backendApi.url;
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  return trimmed.endsWith("/runtime")
+    ? trimmed.slice(0, -"/runtime".length)
+    : trimmed;
+}
 export type WorkflowApp = ReturnType<typeof createWorkflow>;

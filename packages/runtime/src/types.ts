@@ -155,6 +155,18 @@ export interface SecretResolver {
   resolve(request: SecretResolutionRequest): Promise<string | undefined>;
 }
 
+export type ManagedConnectionResolutionRequest = {
+  workflow: WorkflowRef;
+  runId: string;
+  connectionId: string;
+};
+
+export interface ManagedConnectionResolver {
+  resolve(
+    request: ManagedConnectionResolutionRequest,
+  ): Promise<unknown | undefined>;
+}
+
 export interface Executor {
   execute(request: ExecuteRequest): Promise<ExecuteResult>;
 }
@@ -221,6 +233,12 @@ export type StartRunRequest = {
   }[];
 };
 
+export type SubmitManagedConnectionRequest = {
+  runId: string;
+  connectionId: string;
+  workflow?: WorkflowRef;
+};
+
 export type SubmitInputRequest = {
   runId: string;
   inputId: string;
@@ -238,6 +256,9 @@ export type SubmitInterventionRequest = {
 
 export interface Scheduler {
   startRun(request: StartRunRequest): Promise<RunSnapshot>;
+  submitManagedConnection(
+    request: SubmitManagedConnectionRequest,
+  ): Promise<RunSnapshot>;
   submitInput(request: SubmitInputRequest): Promise<RunSnapshot>;
   submitIntervention(request: SubmitInterventionRequest): Promise<RunSnapshot>;
   processNext(): Promise<void>;

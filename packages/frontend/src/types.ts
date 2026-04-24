@@ -2,6 +2,7 @@ import type { RunState } from "@workflow/core";
 import type { QueueSnapshot, RunEvent, RunSnapshot } from "@workflow/runtime";
 import type {
   BindRunSecretRequest,
+  ConnectManagedConnectionRequest,
   CreateSecretVaultEntryRequest,
   JsonSchema,
   RunSecretBinding,
@@ -13,7 +14,9 @@ import type {
   SubmitBackendInterventionRequest,
   SubmitBackendWebhookRequest,
   UpdateSecretVaultEntryRequest,
+  WorkflowConfigurationDocument,
   WorkflowInputManifest,
+  WorkflowManagedConnectionManifest,
   WorkflowManifest,
 } from "@workflow/server";
 
@@ -27,6 +30,7 @@ export type JsonPayload =
 
 export type {
   BindRunSecretRequest,
+  ConnectManagedConnectionRequest,
   CreateSecretVaultEntryRequest,
   JsonSchema,
   RunSecretBinding,
@@ -38,7 +42,9 @@ export type {
   SubmitBackendInterventionRequest,
   SubmitBackendWebhookRequest,
   UpdateSecretVaultEntryRequest,
+  WorkflowConfigurationDocument,
   WorkflowInputManifest,
+  WorkflowManagedConnectionManifest,
   WorkflowManifest,
 };
 

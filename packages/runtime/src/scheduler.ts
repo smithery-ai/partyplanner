@@ -11,11 +11,13 @@ import type {
   GraphEdge,
   GraphNode,
   InspectableWorkQueue,
+  ManagedConnectionResolver,
   RunEvent,
   RunSnapshot,
   Scheduler,
   StartRunRequest,
   StateStore,
+  SubmitManagedConnectionRequest,
   SubmitInputRequest,
   SubmitInterventionRequest,
   WorkflowDefinition,
@@ -29,6 +31,7 @@ export type LocalSchedulerOptions = {
   queue: InspectableWorkQueue;
   events: EventSink;
   executor: Executor;
+  managedConnectionResolver?: ManagedConnectionResolver;
 };
 
 export class LocalScheduler implements Scheduler {
@@ -104,7 +107,9 @@ export class LocalScheduler implements Scheduler {
     }
 
     const stored = await this.opts.stateStore.load(request.runId);
-    if (!stored) throw new Error(`Unknown run: ${request.runId}`);
+    if (!stored) {
+      throw new Error(`Unknown run: ${request.runId}`);
+    }
 
     const state = structuredClone(stored.state);
     const resolvedValue = inputDef.schema.parse(request.payload);
@@ -157,6 +162,32 @@ export class LocalScheduler implements Scheduler {
       state,
       saved.version,
     );
+  }
+
+  async submitManagedConnection(
+    request: SubmitManagedConnectionRequest,
+  ): Promise<RunSnapshot> {
+    const workflow = request.workflow ?? this.workflowForRun(request.runId);
+    const definition = await this.opts.loader.load(workflow);
+    this.runWorkflows.set(request.runId, workflow);
+
+    const stepDef = definition.registry.getAtom(request.connectionId);
+    if (!stepDef?.managedConnection) {
+      throw new Error(`Unknown managed connection: ${request.connectionId}`);
+    }
+
+    const stored = await this.opts.stateStore.load(request.runId);
+    if (!stored) throw new Error(`Unknown run: ${request.runId}`);
+
+    await this.processEvent({
+      kind: "step",
+      eventId: `evt_${randomId()}`,
+      runId: request.runId,
+      stepId: request.connectionId,
+      reason: "managed_connection",
+    });
+
+    return this.snapshot(request.runId);
   }
 
   async submitIntervention(
@@ -236,6 +267,8 @@ export class LocalScheduler implements Scheduler {
     const workflow = this.workflowForRun(event.runId);
     const definition = await this.opts.loader.load(workflow);
     const stored = await this.opts.stateStore.load(event.runId);
+    const stepDef =
+      event.kind === "step" ? definition.registry.getAtom(event.stepId) : undefined;
     let previous = stored?.state ?? makeEmptyRunState(event.runId);
     let previousVersion = stored?.version ?? 0;
 
@@ -248,7 +281,12 @@ export class LocalScheduler implements Scheduler {
       });
     }
 
-    if (event.kind === "step" && previous.trigger === undefined) {
+    if (
+      event.kind === "step" &&
+      previous.trigger === undefined &&
+      event.reason !== "managed_connection" &&
+      !stepDef?.managedConnection
+    ) {
       const recovered = await this.recoverMissingTrigger({
         workflow,
         definition,
@@ -257,6 +295,17 @@ export class LocalScheduler implements Scheduler {
       });
       previous = recovered.state;
       previousVersion = recovered.version;
+    }
+
+    const managedConnectionHandled = await this.resolveManagedConnection({
+      event,
+      workflow,
+      definition,
+      state: previous,
+      version: previousVersion,
+    });
+    if (managedConnectionHandled) {
+      return;
     }
 
     const result = await this.opts.executor.execute({
@@ -276,6 +325,91 @@ export class LocalScheduler implements Scheduler {
     await this.publishStateDelta(event, previous, result.state);
     await this.enqueueAndPublishMany(result.emitted);
     await this.publishRunStatus(event.runId, result.state);
+  }
+
+  private async resolveManagedConnection(request: {
+    event: QueueEvent;
+    workflow: WorkflowRef;
+    definition: WorkflowDefinition;
+    state: RunState;
+    version: number;
+  }): Promise<boolean> {
+    if (
+      request.event.kind !== "step" ||
+      request.event.reason === "managed_connection" ||
+      !this.opts.managedConnectionResolver
+    ) {
+      return false;
+    }
+
+    const stepDef = request.definition.registry.getAtom(request.event.stepId);
+    if (!stepDef?.managedConnection) return false;
+
+    const resolvedValue = await this.opts.managedConnectionResolver.resolve({
+      workflow: request.workflow,
+      runId: request.event.runId,
+      connectionId: request.event.stepId,
+    });
+    const previous = request.state.nodes[request.event.stepId];
+    const next = structuredClone(request.state);
+
+    if (resolvedValue === undefined) {
+      next.nodes[request.event.stepId] = {
+        status: "blocked",
+        kind: stepDef.kind,
+        deps: [],
+        duration_ms: 0,
+        attempts: (previous?.attempts ?? 0) + 1,
+        blockedOn: `@configuration/${request.event.stepId}`,
+      };
+    } else {
+      next.nodes[request.event.stepId] = {
+        status: "resolved",
+        kind: stepDef.kind,
+        value: resolvedValue,
+        deps: [],
+        duration_ms: 0,
+        attempts: (previous?.attempts ?? 0) + 1,
+      };
+      const waiters = waitersForDependency(next, request.event.stepId);
+      delete next.waiters[request.event.stepId];
+      await this.saveResolvedManagedConnection(
+        request.event,
+        request.state,
+        next,
+        request.version,
+        waiters,
+      );
+      return true;
+    }
+
+    const saved = await this.opts.stateStore.save(
+      request.event.runId,
+      next,
+      request.version,
+    );
+    if (!saved.ok) throw new Error(`Unable to save run: ${saved.reason}`);
+
+    await this.publishStateDelta(request.event, request.state, next);
+    await this.publishRunStatus(request.event.runId, next);
+    return true;
+  }
+
+  private async saveResolvedManagedConnection(
+    event: Extract<QueueEvent, { kind: "step" }>,
+    previous: RunState,
+    next: RunState,
+    version: number,
+    waiters: string[],
+  ): Promise<void> {
+    const saved = await this.opts.stateStore.save(event.runId, next, version);
+    if (!saved.ok) throw new Error(`Unable to save run: ${saved.reason}`);
+
+    await this.publishStateDelta(event, previous, next);
+    await this.enqueueAndPublishMany(
+      waiters.flatMap((stepId) => emitStepEvent(next, stepId)),
+    );
+    await this.publishRunStatus(event.runId, next);
   }
 
   private async recoverMissingTrigger(request: {
@@ -666,6 +800,7 @@ function emitStepEvent(state: RunState, stepId: string): QueueEvent[] {
       eventId: `evt_${randomId()}`,
       runId: state.runId,
       stepId,
+      reason: "dependency",
     },
   ];
 }

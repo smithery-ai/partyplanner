@@ -1,4 +1,4 @@
-import type { Registry } from "@workflow/core";
+import type { ManagedConnectionRequirement, Registry } from "@workflow/core";
 import { z } from "zod";
 
 export type JsonSchema = Record<string, unknown>;
@@ -22,6 +22,17 @@ export type WorkflowStepManifest = {
   internal?: boolean;
 };
 
+export type WorkflowManagedConnectionManifest = {
+  id: string;
+  kind: "oauth";
+  providerId: string;
+  requirement: ManagedConnectionRequirement;
+  title?: string;
+  description?: string;
+  scopes?: string[];
+  internal?: boolean;
+};
+
 export type WorkflowManifest = {
   workflowId: string;
   organizationId?: string;
@@ -30,6 +41,7 @@ export type WorkflowManifest = {
   name?: string;
   createdAt: number;
   inputs: WorkflowInputManifest[];
+  managedConnections: WorkflowManagedConnectionManifest[];
   atoms: WorkflowStepManifest[];
   actions: WorkflowStepManifest[];
 };
@@ -67,6 +79,24 @@ export function buildWorkflowManifest(args: {
         : {}),
       ...(input.internal ? { internal: true } : {}),
     })),
+    managedConnections: args.registry
+      .allAtoms()
+      .flatMap((atom) =>
+        atom.managedConnection
+          ? [
+              {
+                id: atom.id,
+                kind: atom.managedConnection.kind,
+                providerId: atom.managedConnection.providerId,
+                requirement: atom.managedConnection.requirement,
+                title: atom.managedConnection.title,
+                description: atom.description,
+                scopes: atom.managedConnection.scopes,
+                ...(atom.internal ? { internal: true } : {}),
+              },
+            ]
+          : [],
+      ),
     atoms: args.registry.allAtoms().map((a) => ({
       id: a.id,
       kind: "atom",

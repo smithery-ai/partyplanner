@@ -1,6 +1,10 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
-import type { WorkflowInputManifest, WorkflowManifest } from "./manifest";
+import type {
+  WorkflowInputManifest,
+  WorkflowManagedConnectionManifest,
+  WorkflowManifest,
+} from "./manifest";
 import type { WorkflowServerDefinition } from "./types";
 
 const JsonContentType = "application/json";
@@ -60,6 +64,25 @@ const WorkflowStepManifestSchema = z
   })
   .openapi("WorkflowStepManifest");
 
+const WorkflowManagedConnectionManifestSchema = z
+  .object({
+    id: z.string(),
+    kind: z.literal("oauth"),
+    providerId: z.string(),
+    requirement: z.enum(["lazy", "preflight"]),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    scopes: z.array(z.string()).optional(),
+    internal: z.boolean().optional(),
+  })
+  .openapi("WorkflowManagedConnectionManifest");
+
+const WorkflowManagedConnectionConfigurationSchema =
+  WorkflowManagedConnectionManifestSchema.extend({
+    status: z.enum(["not_connected", "connecting", "connected", "error"]),
+    waitingOn: z.string().optional(),
+  }).openapi("WorkflowManagedConnectionConfiguration");
+
 const WorkflowManifestSchema = z
   .object({
     workflowId: z.string(),
@@ -69,6 +92,7 @@ const WorkflowManifestSchema = z
     name: z.string().optional(),
     createdAt: z.number(),
     inputs: z.array(WorkflowInputManifestSchema),
+    managedConnections: z.array(WorkflowManagedConnectionManifestSchema),
     atoms: z.array(WorkflowStepManifestSchema),
     actions: z.array(WorkflowStepManifestSchema),
   })
@@ -194,6 +218,15 @@ const WorkflowRunSummarySchema = z
   })
   .openapi("WorkflowRunSummary");
 
+const WorkflowConfigurationDocumentSchema = z
+  .object({
+    runId: z.string(),
+    ready: z.boolean(),
+    connections: z.array(WorkflowManagedConnectionConfigurationSchema),
+    run: WorkflowRunDocumentSchema.optional(),
+  })
+  .openapi("WorkflowConfigurationDocument");
+
 const SecretBindingSchema = z.union([
   z.string(),
   z.object({ vaultEntryId: z.string() }),
@@ -211,6 +244,12 @@ export const StartWorkflowRunRequestSchema = z
     runId: z.string().optional(),
   })
   .openapi("StartWorkflowRunRequest");
+
+export const ConnectManagedConnectionRequestSchema = z
+  .object({
+    secretValues: z.record(z.string(), z.string()).optional(),
+  })
+  .openapi("ConnectManagedConnectionRequest");
 
 export const SubmitWorkflowInputRequestSchema = z
   .object({
@@ -255,6 +294,12 @@ const InterventionIdParamSchema = z.object({
   }),
 });
 
+const ManagedConnectionParamSchema = z.object({
+  connectionId: z.string().openapi({
+    param: { name: "connectionId", in: "path" },
+  }),
+});
+
 export function createWorkflowRoutes(basePath = "/") {
   const normalizedBasePath = normalizeBasePath(basePath);
 
@@ -286,6 +331,18 @@ export function createWorkflowRoutes(basePath = "/") {
         200: jsonResponse(
           "Workflow run summaries",
           z.array(WorkflowRunSummarySchema),
+        ),
+      },
+    }),
+    configuration: createRoute({
+      method: "get",
+      path: path(normalizedBasePath, "/configuration"),
+      tags: ["Configuration"],
+      summary: "Load worker configuration state",
+      responses: {
+        200: jsonResponse(
+          "Worker configuration state",
+          WorkflowConfigurationDocumentSchema,
         ),
       },
     }),
@@ -352,6 +409,26 @@ export function createWorkflowRoutes(basePath = "/") {
       },
       responses: {
         200: jsonResponse("Updated workflow run", WorkflowRunDocumentSchema),
+        400: jsonResponse("Invalid request", ErrorResponseSchema),
+      },
+    }),
+    connectManagedConnection: createRoute({
+      method: "post",
+      path: path(
+        normalizedBasePath,
+        "/configuration/connections/{connectionId}/connect",
+      ),
+      tags: ["Configuration"],
+      summary: "Connect or refresh a worker-managed connection",
+      request: {
+        params: ManagedConnectionParamSchema,
+        body: jsonRequest(ConnectManagedConnectionRequestSchema),
+      },
+      responses: {
+        200: jsonResponse(
+          "Updated worker configuration",
+          WorkflowConfigurationDocumentSchema,
+        ),
         400: jsonResponse("Invalid request", ErrorResponseSchema),
       },
     }),
@@ -425,6 +502,7 @@ export function createWorkflowOpenApiDocument(
     tags: [
       { name: "Health" },
       { name: "Workflow" },
+      { name: "Configuration" },
       { name: "Runs" },
       { name: "Inputs" },
       { name: "Webhooks" },
