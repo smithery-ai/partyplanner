@@ -13,6 +13,7 @@
     "@workflow/frontend": "workspace:*",
     "@workflow/integrations-notion": "workspace:*",
     "@workflow/integrations-oauth": "workspace:*",
+    "@workflow/integrations-slack": "workspace:*",
     "@workflow/integrations-spotify": "workspace:*",
     "@workflow/server": "workspace:*",
     "hono": "^4.12.14",

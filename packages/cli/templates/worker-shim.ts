@@ -19,7 +19,7 @@ const workflowAppCache = new Map<string, WorkflowApp>();
 
 // Curated OAuth providers whose handoff routes the shim mounts so brokered
 // OAuth resumes the workflow run after the user authorizes in the browser.
-const CURATED_OAUTH_PROVIDERS = ["spotify", "notion"];
+const CURATED_OAUTH_PROVIDERS = ["spotify", "notion", "slack"];
 
 export default {
   fetch(request, env) {

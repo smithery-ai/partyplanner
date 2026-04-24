@@ -21,7 +21,7 @@ export function getWorkflowApp(request?: Request): WorkflowApp {
     },
   });
 
-  // Handoff routes for Hylo-curated OAuth connections (spotify, notion).
+  // Handoff routes for Hylo-curated OAuth connections (spotify, notion, slack).
   // The broker (mounted on the backend) redirects browsers to these paths
   // with a one-time `handoff` code; the route exchanges it for the token
   // and resumes the workflow run.
@@ -32,7 +32,7 @@ export function getWorkflowApp(request?: Request): WorkflowApp {
       workflowBasePath: "/api/workflow",
       brokerBaseUrl: `${backendApi.replace(/\/+$/, "")}/oauth`,
       getAppToken: () => process.env.HYLO_API_KEY,
-      providers: ["spotify", "notion"],
+      providers: ["spotify", "notion", "slack"],
     }),
   );
 

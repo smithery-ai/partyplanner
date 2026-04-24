@@ -19,6 +19,8 @@ export type BackendAppEnv = {
   NODE_ENV?: string;
   NOTION_CLIENT_ID?: string;
   NOTION_CLIENT_SECRET?: string;
+  SLACK_CLIENT_ID?: string;
+  SLACK_CLIENT_SECRET?: string;
   SPOTIFY_CLIENT_ID?: string;
   SPOTIFY_CLIENT_SECRET?: string;
   WORKOS_API_HOSTNAME?: string;

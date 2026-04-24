@@ -1,5 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { notionProvider } from "@workflow/integrations-notion";
+import { slackProvider } from "@workflow/integrations-slack";
 import { spotifyProvider } from "@workflow/integrations-spotify";
 import type { BrokerProviderRegistration } from "@workflow/oauth-broker";
 import { createOAuthBrokerServer } from "@workflow/oauth-broker";
@@ -194,6 +195,7 @@ function collectCuratedProviders(
   const catalog = [
     { spec: spotifyProvider, envPrefix: "SPOTIFY" },
     { spec: notionProvider, envPrefix: "NOTION" },
+    { spec: slackProvider, envPrefix: "SLACK" },
   ];
   for (const { spec, envPrefix } of catalog) {
     const rawClientId = env[`${envPrefix}_CLIENT_ID` as keyof BackendAppEnv];
