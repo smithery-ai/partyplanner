@@ -1,4 +1,12 @@
 import { createHyloApiClient } from "@hylo/api-client";
+import { Button } from "@workflow/frontend/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@workflow/frontend/components/ui/card";
 import { AuthKitProvider, type User, useAuth } from "@workos-inc/authkit-react";
 import { LogOut } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -143,25 +151,24 @@ function SignedOutScreen({
 }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-6 py-10 text-foreground">
-      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-8 shadow-sm">
-        <div className="space-y-2">
+      <Card className="w-full max-w-sm shadow-sm">
+        <CardHeader className="gap-2 px-8 pt-8">
           <p className="text-sm font-medium text-muted-foreground">Hylo</p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Sign in to continue
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Authenticate to access the client.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onSignIn}
-          disabled={isLoading}
-          className="mt-6 inline-flex h-11 w-full items-center justify-center rounded-md bg-foreground px-4 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
-        >
-          {isLoading ? "Loading..." : "Sign in"}
-        </button>
-      </div>
+          <CardTitle className="text-2xl">Sign in to continue</CardTitle>
+          <CardDescription>Authenticate to access the client.</CardDescription>
+        </CardHeader>
+        <CardContent className="px-8 pb-8">
+          <Button
+            type="button"
+            onClick={onSignIn}
+            disabled={isLoading}
+            size="lg"
+            className="mt-2 w-full"
+          >
+            {isLoading ? "Loading..." : "Sign in"}
+          </Button>
+        </CardContent>
+      </Card>
     </main>
   );
 }
