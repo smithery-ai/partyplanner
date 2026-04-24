@@ -4,6 +4,7 @@ import { parseBuildArgs } from "../args.js";
 import { resolveHyloBackendUrl } from "../config.js";
 import { info } from "../log.js";
 import { loadProject } from "../project.js";
+import { envSecretBindings } from "../secrets.js";
 import { getHyloAccessToken } from "./auth.js";
 import { buildWorkerBundle } from "./build.js";
 
@@ -36,8 +37,10 @@ export async function runDeploy(args: string[]): Promise<number> {
     });
 
     info(`Deploying ${project.workerName} via Hylo deployments API...`);
+    const bindings = await envSecretBindings(resolve(projectRoot, "src"));
     const deployment = await api.deployments.create({
       deploymentId: project.workerName,
+      ...(bindings.length > 0 ? { bindings } : {}),
       label: project.workflowName,
       moduleCode: bundle.moduleCode,
       moduleName: bundle.moduleName,
