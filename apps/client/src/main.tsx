@@ -201,14 +201,7 @@ function ClientSwitcher({
       className={`hylo-client-switcher ${embedded ? "hylo-client-switcher--pane" : "hylo-client-switcher--floating"}`}
       aria-label="Workflow routing"
     >
-      <label
-        className={embedded ? "hylo-client-switcher__label--pane" : undefined}
-      >
-        {embedded ? (
-          <span className="hylo-client-switcher__inline-label">Worker</span>
-        ) : (
-          <span>Worker</span>
-        )}
+      {embedded ? (
         <select
           value={workerValue}
           disabled={workflows.length === 0}
@@ -225,7 +218,27 @@ function ClientSwitcher({
             <option value="">No workers</option>
           )}
         </select>
-      </label>
+      ) : (
+        <label>
+          <span>Worker</span>
+          <select
+            value={workerValue}
+            disabled={workflows.length === 0}
+            onChange={(event) => onWorkerChange(event.currentTarget.value)}
+            aria-label="Worker"
+          >
+            {workflows.length > 0 ? (
+              workflows.map(([id, workflow]) => (
+                <option key={id} value={id}>
+                  {workflow.label ?? labelFromId(id)}
+                </option>
+              ))
+            ) : (
+              <option value="">No workers</option>
+            )}
+          </select>
+        </label>
+      )}
     </form>
   );
 }

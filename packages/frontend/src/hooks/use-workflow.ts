@@ -357,8 +357,9 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
           (existing: RunSummary[] = []) =>
             mergeRunSummary(existing, summarizeRunResult(result)),
         );
-        await queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: queryKeys.runs(config.apiBaseUrl),
+          refetchType: "none",
         });
         return result;
       } catch (e) {
@@ -440,8 +441,9 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
       try {
         const result = await mutation.mutateAsync(args);
         cacheResult(result);
-        await queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: queryKeys.runs(config.apiBaseUrl),
+          refetchType: "none",
         });
         return result;
       } catch (e) {

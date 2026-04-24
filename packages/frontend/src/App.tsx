@@ -100,24 +100,47 @@ type PendingWait =
   | { stepId: string; kind: "input"; inputId: string }
   | { stepId: string; kind: "intervention"; interventionId: string };
 
-function findPendingWait(
+function pendingWaitKey(wait: PendingWait): string {
+  return wait.kind === "input"
+    ? `input:${wait.inputId}`
+    : `intervention:${wait.interventionId}`;
+}
+
+function findPendingWaits(
   manifest: WorkflowManifest | undefined,
   state: RunState | undefined,
-): PendingWait | undefined {
-  if (!state?.nodes) return undefined;
+): PendingWait[] {
+  if (!state?.nodes) return [];
+  const waits: PendingWait[] = [];
+  const seen = new Set<string>();
   for (const [stepId, n] of Object.entries(state.nodes)) {
     if (n.status === "waiting" && n.waitingOn) {
       const intervention = state.interventions?.[n.waitingOn];
       if (intervention && intervention.status !== "resolved") {
-        return { stepId, kind: "intervention", interventionId: n.waitingOn };
+        const wait = {
+          stepId,
+          kind: "intervention" as const,
+          interventionId: n.waitingOn,
+        };
+        if (seen.has(pendingWaitKey(wait))) continue;
+        seen.add(pendingWaitKey(wait));
+        waits.push(wait);
+        continue;
       }
       const waitingOn = findManifestInput(manifest, n.waitingOn);
       if (!waitingOn?.secret && state.nodes[n.waitingOn]?.status === "resolved")
         continue;
-      return { stepId, kind: "input", inputId: n.waitingOn };
+      const wait = {
+        stepId,
+        kind: "input" as const,
+        inputId: n.waitingOn,
+      };
+      if (seen.has(pendingWaitKey(wait))) continue;
+      seen.add(pendingWaitKey(wait));
+      waits.push(wait);
     }
   }
-  return undefined;
+  return waits;
 }
 
 function pendingFormForIntervention(
@@ -165,7 +188,7 @@ function isRunComplete(
 ): boolean {
   if (!runState) return false;
   if (Object.keys(runState.nodes).length === 0) return false;
-  if (findPendingWait(manifest, runState)) return false;
+  if (findPendingWaits(manifest, runState).length > 0) return false;
   for (const n of Object.values(runState.nodes)) {
     if (n.status === "waiting" || n.status === "blocked") return false;
     if (n.status === "errored") return false;
@@ -542,10 +565,23 @@ export function WorkflowRunnerApp({
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [pendingAutoAdvance, setPendingAutoAdvance] = useState(false);
+  const [selectedPendingWait, setSelectedPendingWait] =
+    useState<PendingWait | null>(null);
   const autoAdvanceInFlight = useRef(false);
 
   const runState = workflowRun.runState;
-  const wait = findPendingWait(workflow.manifest, runState);
+  const pendingWaits = findPendingWaits(workflow.manifest, runState);
+  const wait =
+    selectedPendingWait &&
+    pendingWaits.some(
+      (candidate) =>
+        pendingWaitKey(candidate) === pendingWaitKey(selectedPendingWait),
+    )
+      ? pendingWaits.find(
+          (candidate) =>
+            pendingWaitKey(candidate) === pendingWaitKey(selectedPendingWait),
+        )
+      : pendingWaits[0];
   const pendingInputId = wait?.kind === "input" ? wait.inputId : undefined;
   const pendingInterventionId =
     wait?.kind === "intervention" ? wait.interventionId : undefined;
@@ -556,13 +592,17 @@ export function WorkflowRunnerApp({
   const pendingRequest =
     pendingFormForIntervention(pendingIntervention) ?? pendingInput;
   const inputPending = Boolean(wait);
-  const pendingInputLabel = pendingInterventionId
+  const primaryPendingLabel = pendingInterventionId
     ? "Needs Human Input"
     : pendingInputId
       ? pendingInput?.secret
         ? `Missing secret ${pendingInputId}`
         : workflowInputLabel(pendingInput, pendingInputId)
       : "Input pending";
+  const pendingInputLabel =
+    pendingWaits.length > 1
+      ? `${primaryPendingLabel} +${pendingWaits.length - 1} more`
+      : primaryPendingLabel;
 
   const nodes = runState?.nodes ?? {};
   const nextWork = nextQueuedWork(workflowRun.queue, globalRegistry);
@@ -582,6 +622,15 @@ export function WorkflowRunnerApp({
       (current) => current || firstManifestSeedInputId(workflow.manifest),
     );
   }, [workflow.manifest]);
+
+  useEffect(() => {
+    if (!selectedPendingWait) return;
+    const stillPending = pendingWaits.some(
+      (candidate) =>
+        pendingWaitKey(candidate) === pendingWaitKey(selectedPendingWait),
+    );
+    if (!stillPending) setSelectedPendingWait(null);
+  }, [pendingWaits, selectedPendingWait]);
 
   useEffect(() => {
     const request = pendingFormForIntervention(pendingIntervention);
@@ -664,6 +713,7 @@ export function WorkflowRunnerApp({
   function clearRun() {
     workflowRun.clear();
     setSelectedNodeId(null);
+    setSelectedPendingWait(null);
     setInputValues(buildInitialManifestInputValues(workflow.manifest));
     setSeedInputId(firstManifestSeedInputId(workflow.manifest));
     setPayloadError("");
@@ -710,9 +760,14 @@ export function WorkflowRunnerApp({
   async function submitPendingInput(explicitInputId?: string) {
     const inputId = explicitInputId ?? pendingInputId;
     if (!inputId) return;
-    if (inputId !== pendingInputId) {
+    if (!pendingInputNeedsForm(workflow.manifest, runState, inputId)) {
+      const requestedInputs = pendingWaits
+        .filter((candidate) => candidate.kind === "input")
+        .map((candidate) => candidate.inputId);
       setPayloadError(
-        `This run is waiting on "${pendingInputId ?? "—"}", not "${inputId}".`,
+        requestedInputs.length > 0
+          ? `This run is not waiting on "${inputId}". Pending inputs: ${requestedInputs.join(", ")}.`
+          : `This run is not waiting on "${inputId}".`,
       );
       return;
     }
@@ -742,6 +797,7 @@ export function WorkflowRunnerApp({
         inputId,
         payload,
       });
+      setSelectedPendingWait(null);
       setPane(null);
     } catch (e) {
       setPayloadError(
@@ -750,21 +806,40 @@ export function WorkflowRunnerApp({
     }
   }
 
-  async function submitPendingIntervention() {
-    if (!pendingInterventionId) return;
-    const request = pendingFormForIntervention(pendingIntervention);
+  async function submitPendingIntervention(explicitInterventionId?: string) {
+    const interventionId = explicitInterventionId ?? pendingInterventionId;
+    if (!interventionId) return;
+    const intervention = runState?.interventions?.[interventionId];
+    const request = pendingFormForIntervention(intervention);
     if (!request) return;
+
+    const isPendingIntervention = pendingWaits.some(
+      (candidate) =>
+        candidate.kind === "intervention" &&
+        candidate.interventionId === interventionId,
+    );
+    if (!isPendingIntervention) {
+      const pendingInterventions = pendingWaits
+        .filter((candidate) => candidate.kind === "intervention")
+        .map((candidate) => candidate.interventionId);
+      setPayloadError(
+        pendingInterventions.length > 0
+          ? `This run is not waiting on "${interventionId}". Pending interventions: ${pendingInterventions.join(", ")}.`
+          : `This run is not waiting on "${interventionId}".`,
+      );
+      return;
+    }
 
     setPayloadError("");
     let payload: unknown;
     try {
       payload = sanitizeJsonSchemaValue(
         request.schema,
-        inputValues[pendingInterventionId],
+        inputValues[interventionId],
       );
     } catch (e) {
       setPayloadError(
-        errorMessage(e, `Validation failed for "${pendingInterventionId}".`),
+        errorMessage(e, `Validation failed for "${interventionId}".`),
       );
       return;
     }
@@ -772,9 +847,10 @@ export function WorkflowRunnerApp({
     try {
       await workflowRun.submitIntervention({
         state: runState,
-        interventionId: pendingInterventionId,
+        interventionId,
         payload,
       });
+      setSelectedPendingWait(null);
       setPane(null);
     } catch (e) {
       setPayloadError(
@@ -974,7 +1050,10 @@ export function WorkflowRunnerApp({
               type="button"
               aria-label="Open pending input"
               className="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-lg border border-yellow-500/50 bg-yellow-400/15 px-2.5 text-[0.8rem] font-medium text-yellow-950 dark:border-yellow-500/45 dark:bg-yellow-500/12 dark:text-yellow-50"
-              onClick={() => setPane("pending")}
+              onClick={() => {
+                setSelectedPendingWait(null);
+                setPane("pending");
+              }}
             >
               <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
               {pendingInputLabel}
@@ -1091,9 +1170,15 @@ export function WorkflowRunnerApp({
                 : undefined;
               if (
                 rec?.status === "waiting" &&
+                waitingOn &&
                 intervention &&
                 intervention.status !== "resolved"
               ) {
+                setSelectedPendingWait({
+                  stepId: id,
+                  kind: "intervention",
+                  interventionId: waitingOn,
+                });
                 setPane("pending");
                 return;
               }
@@ -1123,7 +1208,10 @@ export function WorkflowRunnerApp({
 
           <PendingInputSheet
             open={pane === "pending" && Boolean(pendingRequest)}
-            onOpenChange={(o) => setPane(o ? "pending" : null)}
+            onOpenChange={(o) => {
+              if (!o) setSelectedPendingWait(null);
+              setPane(o ? "pending" : null);
+            }}
             input={pendingRequest}
             inputValues={inputValues}
             onInputValuesChange={setInputValue}

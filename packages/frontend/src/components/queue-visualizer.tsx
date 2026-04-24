@@ -1049,12 +1049,12 @@ function FlowInner({
         scroll to zoom
       </Panel>
       <Panel
-        className="mb-2 mr-2 flex max-w-[min(19rem,calc(100vw-1rem))] flex-col items-end gap-2"
+        className="mb-2 mr-2 flex max-w-[calc(100vw-1rem)] flex-col items-end gap-2"
         position="bottom-right"
       >
         {legendOpen && (
           <div
-            className="nodrag nopan max-h-[min(55vh,400px)] w-full overflow-y-auto rounded-lg border border-border bg-card/95 p-3 text-xs shadow-lg backdrop-blur-sm"
+            className="nodrag nopan max-h-[min(55vh,400px)] w-[min(19rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-border bg-card/95 p-3 text-xs shadow-lg backdrop-blur-sm"
             onPointerDown={(e) => e.stopPropagation()}
             role="dialog"
             aria-label="Status color legend"
