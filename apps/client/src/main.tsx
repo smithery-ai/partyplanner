@@ -123,6 +123,14 @@ function ClientApp({
       workflows={registry ? Object.entries(registry.workflows) : []}
     />
   );
+  const embeddedSwitcher = (
+    <ClientSwitcher
+      selectedWorker={worker}
+      onWorkerChange={setWorker}
+      workflows={registry ? Object.entries(registry.workflows) : []}
+      embedded
+    />
+  );
 
   useEffect(() => {
     if (!registry) return;
@@ -169,8 +177,8 @@ function ClientApp({
       <WorkflowSinglePage
         apiBaseUrl={workflowApiUrl(workflow.url, registryConfig.backendUrl)}
         sidebarFooter={sidebarFooter}
+        queueControls={embeddedSwitcher}
       />
-      {switcher}
     </>
   );
 }
@@ -179,23 +187,33 @@ function ClientSwitcher({
   selectedWorker,
   onWorkerChange,
   workflows,
+  embedded = false,
 }: {
   selectedWorker: string | undefined;
   onWorkerChange: (worker: string) => void;
   workflows: [string, { label?: string; url: string }][];
+  embedded?: boolean;
 }) {
   const workerValue = workflows.some(([id]) => id === selectedWorker)
     ? selectedWorker
     : "";
 
   return (
-    <form className="hylo-client-switcher" aria-label="Workflow routing">
-      <label>
-        <span>Worker</span>
+    <form
+      className={`hylo-client-switcher ${embedded ? "hylo-client-switcher--pane" : "hylo-client-switcher--floating"}`}
+      aria-label="Workflow routing"
+    >
+      <label className={embedded ? "hylo-client-switcher__label--pane" : undefined}>
+        {embedded ? (
+          <span className="hylo-client-switcher__inline-label">Worker</span>
+        ) : (
+          <span>Worker</span>
+        )}
         <select
           value={workerValue}
           disabled={workflows.length === 0}
           onChange={(event) => onWorkerChange(event.currentTarget.value)}
+          aria-label="Worker"
         >
           {workflows.length > 0 ? (
             workflows.map(([id, workflow]) => (

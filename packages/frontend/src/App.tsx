@@ -523,11 +523,13 @@ export function WorkflowRunnerApp({
   runId,
   navigation = noopNavigation,
   sidebarFooter,
+  queueControls,
 }: {
   workflowId: string;
   runId?: string;
   navigation?: WorkflowNavigation;
   sidebarFooter?: ReactNode;
+  queueControls?: ReactNode;
 }) {
   const workflow = useWorkflow(workflowId);
   const workflowRun = useWorkflowRun(runId);
@@ -1080,6 +1082,7 @@ export function WorkflowRunnerApp({
             queue={workflowRun.queue}
             registry={globalRegistry}
             manifest={workflow.manifest}
+            controls={queueControls}
             onNodeClick={(id) => {
               const rec = runState?.nodes[id];
               const waitingOn = rec?.waitingOn;
@@ -1150,8 +1153,10 @@ export function WorkflowRunnerApp({
 
 export function WorkflowSingleApp({
   sidebarFooter,
+  queueControls,
 }: {
   sidebarFooter?: ReactNode;
+  queueControls?: ReactNode;
 } = {}) {
   const workflow = useWorkflow(undefined);
   const [runId, setRunId] = useState<string | undefined>();
@@ -1192,6 +1197,7 @@ export function WorkflowSingleApp({
       runId={runId}
       navigation={navigation}
       sidebarFooter={sidebarFooter}
+      queueControls={queueControls}
     />
   );
 }
@@ -1199,13 +1205,18 @@ export function WorkflowSingleApp({
 export function WorkflowSinglePage({
   apiBaseUrl = "/api/workflow",
   sidebarFooter,
+  queueControls,
 }: {
   apiBaseUrl?: string;
   sidebarFooter?: ReactNode;
+  queueControls?: ReactNode;
 }) {
   return (
     <WorkflowFrontendRoot config={{ apiBaseUrl }}>
-      <WorkflowSingleApp sidebarFooter={sidebarFooter} />
+      <WorkflowSingleApp
+        sidebarFooter={sidebarFooter}
+        queueControls={queueControls}
+      />
     </WorkflowFrontendRoot>
   );
 }

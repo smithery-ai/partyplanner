@@ -1,8 +1,4 @@
 .hylo-client-switcher {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 50;
   display: grid;
   gap: 8px;
   width: min(220px, calc(100vw - 24px));
@@ -15,16 +11,45 @@
   backdrop-filter: blur(12px);
 }
 
+.hylo-client-switcher--floating {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 50;
+}
+
+.hylo-client-switcher--pane {
+  width: auto;
+  max-width: min(460px, calc(100vw - 1rem));
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 .hylo-client-switcher label {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
+.hylo-client-switcher .hylo-client-switcher__label--pane {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .hylo-client-switcher span {
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 600;
+}
+
+.hylo-client-switcher__inline-label {
+  flex: 0 0 auto;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .hylo-client-switcher select,
@@ -40,6 +65,18 @@
   font-size: 13px;
   outline: none;
   padding: 0 8px;
+}
+
+.hylo-client-switcher--pane select {
+  width: auto;
+  min-width: 180px;
+  max-width: min(260px, calc(100vw - 8rem));
+  height: 32px;
+  border-color: color-mix(in oklch, var(--border) 92%, transparent);
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--card) 95%, transparent);
+  box-shadow: 0 6px 16px color-mix(in oklch, var(--foreground) 8%, transparent);
+  padding: 0 34px 0 10px;
 }
 
 .hylo-client-switcher select:focus-visible,
