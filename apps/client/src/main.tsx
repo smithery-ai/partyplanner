@@ -22,6 +22,7 @@ type WorkflowRegistryConfig = {
 };
 
 const LOCAL_BACKEND_URL = "http://127.0.0.1:8787";
+const DEFAULT_LOCAL_WORKFLOW_ID = "workflow-cloudflare-worker-example";
 
 const root = document.getElementById("root");
 
@@ -84,7 +85,12 @@ function ClientApp({
         return normalizeWorkflowRegistry(await response.json());
       })
       .then((nextRegistry) => {
-        if (!abort.signal.aborted) setRegistry(nextRegistry);
+        if (abort.signal.aborted) return;
+        const fallback =
+          Object.keys(nextRegistry.workflows).length === 0
+            ? localWorkflowRegistry()
+            : undefined;
+        setRegistry(fallback ?? nextRegistry);
       })
       .catch((error) => {
         if (!abort.signal.aborted) {
@@ -405,6 +411,22 @@ function emptyWorkflowRegistry(): WorkflowRegistry {
   return { workflows: {} };
 }
 
+function localWorkflowRegistry(): WorkflowRegistry | undefined {
+  if (!isLocalDev()) return undefined;
+  const workflowId =
+    firstNonEmpty(requestedWorker(), import.meta.env.VITE_HYLO_WORKFLOW) ??
+    DEFAULT_LOCAL_WORKFLOW_ID;
+  return {
+    defaultWorkflow: workflowId,
+    workflows: {
+      [workflowId]: {
+        label: labelFromId(workflowId),
+        url: `https://${localWorkflowHost(workflowId)}.localhost/api/workflow`,
+      },
+    },
+  };
+}
+
 function parseWorkflowChoice(
   value: string | undefined,
   registry: WorkflowRegistry,
@@ -420,6 +442,27 @@ function requestedWorker(): string | undefined {
   return firstNonEmpty(
     new URLSearchParams(window.location.search).get("worker"),
     import.meta.env.VITE_HYLO_WORKFLOW,
+  );
+}
+
+function isLocalDev(): boolean {
+  if (!import.meta.env.DEV) return false;
+  const hostname = window.location.hostname;
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname.endsWith(".localhost")
+  );
+}
+
+function localWorkflowHost(raw: string): string {
+  return (
+    raw
+      .replace(/^@[^/]+\//, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "workflow"
   );
 }
 

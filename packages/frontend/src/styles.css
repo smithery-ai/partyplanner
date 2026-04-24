@@ -131,3 +131,16 @@
     @apply font-sans;
   }
 }
+
+@keyframes workflow-node-skipped-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.workflow-node-skipped-fade {
+  animation: workflow-node-skipped-fade 1000ms ease-out 500ms forwards;
+}

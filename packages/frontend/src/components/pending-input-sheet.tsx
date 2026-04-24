@@ -9,6 +9,10 @@ import { useState } from "react";
 import { JsonSchemaForm } from "../components/json-schema-form";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import {
+  useIsRunning,
+  useIsSubmittingPendingInput,
+} from "../hooks/workflow-run";
 import { cn } from "../lib/utils";
 import { workflowInputLabel } from "../lib/workflow-labels";
 import type { JsonSchema, WorkflowInputManifest } from "../types";
@@ -51,6 +55,8 @@ export function PendingInputSheet({
   onSubmit: () => void;
   error?: string;
 }) {
+  const disabled = useIsRunning();
+  const submitting = useIsSubmittingPendingInput();
   const [manualFormOpen, setManualFormOpen] = useState(false);
 
   if (!open || !input) return null;
@@ -132,15 +138,16 @@ export function PendingInputSheet({
                   }
                   placeholder="Secret value"
                   autoComplete="off"
+                  disabled={disabled}
                 />
               </div>
               <Button
                 type="button"
                 size="sm"
                 onClick={() => onSubmit()}
-                disabled={secretValue.length === 0}
+                disabled={disabled || secretValue.length === 0}
               >
-                Add secret
+                {submitting ? "Submitted" : "Add secret"}
               </Button>
             </div>
           ) : (
@@ -153,18 +160,30 @@ export function PendingInputSheet({
                   </p>
                 ) : null}
                 {actionUrl ? (
-                  <a
-                    href={actionUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={cn(
-                      buttonVariants({ size: "sm", variant: "default" }),
-                      "w-full justify-center",
-                    )}
-                  >
-                    <ExternalLink className="size-3.5" />
-                    {actionLabel ?? "Open to continue"}
-                  </a>
+                  disabled ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="w-full justify-center"
+                      disabled
+                    >
+                      <ExternalLink className="size-3.5" />
+                      {actionLabel ?? "Open to continue"}
+                    </Button>
+                  ) : (
+                    <a
+                      href={actionUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={cn(
+                        buttonVariants({ size: "sm", variant: "default" }),
+                        "w-full justify-center",
+                      )}
+                    >
+                      <ExternalLink className="size-3.5" />
+                      {actionLabel ?? "Open to continue"}
+                    </a>
+                  )
                 ) : null}
               </div>
               {actionUrl ? (
@@ -196,8 +215,9 @@ export function PendingInputSheet({
                         type="button"
                         size="sm"
                         onClick={() => onSubmit()}
+                        disabled={disabled}
                       >
-                        Submit
+                        {submitting ? "Submitted" : "Submit"}
                       </Button>
                     </div>
                   ) : null}
@@ -210,13 +230,25 @@ export function PendingInputSheet({
                     onChange={(value) => onInputValuesChange(input.id, value)}
                     idPrefix={input.id}
                   />
-                  <Button type="button" size="sm" onClick={() => onSubmit()}>
-                    Submit
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => onSubmit()}
+                    disabled={disabled}
+                  >
+                    {submitting ? "Submitted" : "Submit"}
                   </Button>
                 </>
               )}
             </div>
           )}
+          {submitting ? (
+            <p className="text-muted-foreground text-[11px]">Submitted.</p>
+          ) : disabled ? (
+            <p className="text-muted-foreground text-[11px]">
+              Inputs are disabled while the workflow is running.
+            </p>
+          ) : null}
           {error ? (
             <p
               className="whitespace-pre-line text-destructive text-xs"

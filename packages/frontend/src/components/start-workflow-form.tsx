@@ -4,6 +4,7 @@ import {
   Check,
   ChevronRight,
   KeyRound,
+  Loader2,
   Play,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -23,6 +24,7 @@ export function StartWorkflowForm({
   canSubmitSeed,
   onSubmitSeed,
   error,
+  starting,
 }: {
   inputs: WorkflowInputManifest[];
   inputValues: Record<string, unknown>;
@@ -30,6 +32,7 @@ export function StartWorkflowForm({
   canSubmitSeed: boolean;
   onSubmitSeed: (inputId: string) => void;
   error?: string;
+  starting?: boolean;
 }) {
   const immediate = inputs.filter(
     (input) =>
@@ -136,7 +139,8 @@ export function StartWorkflowForm({
                 onSelect={() => setSelectedInputId(expanded ? null : input.id)}
                 value={inputValues[input.id]}
                 onChange={(value) => onInputValuesChange(input.id, value)}
-                canSubmit={canSubmitSeed}
+                canSubmit={canSubmitSeed && !starting}
+                starting={starting}
                 onSubmit={() => onSubmitSeed(input.id)}
               />
             );
@@ -283,6 +287,7 @@ function InputOption({
   value,
   onChange,
   canSubmit,
+  starting,
   onSubmit,
 }: {
   input: WorkflowInputManifest;
@@ -291,6 +296,7 @@ function InputOption({
   value: unknown;
   onChange: (value: unknown) => void;
   canSubmit: boolean;
+  starting?: boolean;
   onSubmit: () => void;
 }) {
   const label = workflowInputLabel(input);
@@ -346,10 +352,23 @@ function InputOption({
               type="button"
               size="sm"
               onClick={onSubmit}
-              disabled={!canSubmit}
+              disabled={!canSubmit || starting}
+              aria-busy={starting}
             >
-              <Play className="size-3.5" aria-hidden />
-              Start
+              {starting ? (
+                <>
+                  <Loader2
+                    className="size-3.5 shrink-0 animate-spin"
+                    aria-hidden
+                  />
+                  Starting
+                </>
+              ) : (
+                <>
+                  <Play className="size-3.5" aria-hidden />
+                  Start
+                </>
+              )}
             </Button>
           </div>
         </div>

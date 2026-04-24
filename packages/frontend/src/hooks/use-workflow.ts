@@ -51,6 +51,8 @@ export type WorkflowRunState = {
   events: RunEvent[];
   workflowId: string | undefined;
   isPending: boolean;
+  /** True while a deferred input or intervention submission is in flight. */
+  isSubmittingPendingInput: boolean;
   error: Error | undefined;
   refresh(): Promise<void>;
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>;
@@ -404,7 +406,9 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
   };
 }
 
-export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
+export function useWorkflowRunQuery(
+  runId: string | undefined,
+): WorkflowRunState {
   const config = useWorkflowFrontendConfig();
   const queryClient = useQueryClient();
   const stateQuery = useRunStateQuery(runId);
@@ -507,6 +511,9 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     ],
   );
 
+  const isSubmittingPendingInput =
+    submitInputMutation.isPending || submitInterventionMutation.isPending;
+
   const activeError = error ?? normalizeError(stateQuery.error);
 
   return {
@@ -516,6 +523,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     events: stateQuery.data?.events ?? [],
     workflowId: stateQuery.data?.snapshot?.workflow.workflowId,
     isPending,
+    isSubmittingPendingInput,
     error: activeError,
     refresh,
     submitInput,
