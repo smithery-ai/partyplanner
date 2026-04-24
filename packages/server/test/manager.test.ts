@@ -113,20 +113,17 @@ describe("WorkflowManager", () => {
   });
 
   it("includes managed connections in the manifest", () => {
-    atom(
-      () => ({ accessToken: "token" }),
-      {
-        name: "notionConnection",
-        description: "Authorize Notion before creating a page.",
-        managedConnection: {
-          kind: "oauth",
-          providerId: "notion",
-          requirement: "preflight",
-          title: "Notion",
-          scopes: ["pages:write"],
-        },
+    atom(() => ({ accessToken: "token" }), {
+      name: "notionConnection",
+      description: "Authorize Notion before creating a page.",
+      managedConnection: {
+        kind: "oauth",
+        providerId: "notion",
+        requirement: "preflight",
+        title: "Notion",
+        scopes: ["pages:write"],
       },
-    );
+    });
 
     const manager = new WorkflowManager({
       stateStore: new TestWorkflowStateStore(),
@@ -192,9 +189,8 @@ describe("WorkflowManager", () => {
       }),
     ).rejects.toThrow(/Worker configuration incomplete/);
 
-    const connecting = await manager.connectManagedConnection(
-      "notionConnection",
-    );
+    const connecting =
+      await manager.connectManagedConnection("notionConnection");
     expect(connecting.ready).toBe(false);
     expect(connecting.runId).toBe("@configuration/workflow");
     expect(connecting.connections).toEqual([
@@ -239,12 +235,12 @@ describe("WorkflowManager", () => {
     }
 
     expect(completed.status).toBe("completed");
-    expect(
-      completed.state.nodes["notionConnection"]?.value,
-    ).toEqual({ accessToken: "token_123" });
-    expect(
-      (await manager.listRuns()).map((run) => run.runId),
-    ).toEqual([started.runId]);
+    expect(completed.state.nodes.notionConnection?.value).toEqual({
+      accessToken: "token_123",
+    });
+    expect((await manager.listRuns()).map((run) => run.runId)).toEqual([
+      started.runId,
+    ]);
   });
 });
 

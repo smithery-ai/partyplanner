@@ -428,7 +428,9 @@ function ManagedConnectionRow({
       <Link2
         className={cn(
           "mt-0.5 size-3.5 shrink-0",
-          blocked ? "text-yellow-700 dark:text-yellow-500" : "text-blue-700 dark:text-blue-400",
+          blocked
+            ? "text-yellow-700 dark:text-yellow-500"
+            : "text-blue-700 dark:text-blue-400",
         )}
         aria-hidden
       />
@@ -447,8 +449,8 @@ function ManagedConnectionRow({
             connected
               ? "text-emerald-700 dark:text-emerald-400"
               : blocked
-              ? "text-yellow-800 dark:text-yellow-300"
-              : "text-blue-800 dark:text-blue-300",
+                ? "text-yellow-800 dark:text-yellow-300"
+                : "text-blue-800 dark:text-blue-300",
           )}
         >
           {managedConnectionStatusText(connection, state, connecting)}

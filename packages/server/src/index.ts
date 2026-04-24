@@ -1,7 +1,7 @@
 export type {
   BindRunSecretRequest,
-  CreateSecretVaultEntryRequest,
   ConnectManagedConnectionRequest as BackendConnectManagedConnectionRequest,
+  CreateSecretVaultEntryRequest,
   RunSecretBinding,
   RunStateDocument,
   RunSummary,

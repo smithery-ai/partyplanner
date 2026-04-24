@@ -1,7 +1,7 @@
 import { type Atom, makeHandle } from "./handles";
 import { hashString } from "./hash";
-import { globalRegistry } from "./registry";
 import type { ManagedConnectionDef } from "./registry";
+import { globalRegistry } from "./registry";
 import type { AtomRuntimeContext, Get, RequestIntervention } from "./types";
 
 export type AtomOpts = {

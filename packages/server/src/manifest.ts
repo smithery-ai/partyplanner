@@ -79,24 +79,22 @@ export function buildWorkflowManifest(args: {
         : {}),
       ...(input.internal ? { internal: true } : {}),
     })),
-    managedConnections: args.registry
-      .allAtoms()
-      .flatMap((atom) =>
-        atom.managedConnection
-          ? [
-              {
-                id: atom.id,
-                kind: atom.managedConnection.kind,
-                providerId: atom.managedConnection.providerId,
-                requirement: atom.managedConnection.requirement,
-                title: atom.managedConnection.title,
-                description: atom.description,
-                scopes: atom.managedConnection.scopes,
-                ...(atom.internal ? { internal: true } : {}),
-              },
-            ]
-          : [],
-      ),
+    managedConnections: args.registry.allAtoms().flatMap((atom) =>
+      atom.managedConnection
+        ? [
+            {
+              id: atom.id,
+              kind: atom.managedConnection.kind,
+              providerId: atom.managedConnection.providerId,
+              requirement: atom.managedConnection.requirement,
+              title: atom.managedConnection.title,
+              description: atom.description,
+              scopes: atom.managedConnection.scopes,
+              ...(atom.internal ? { internal: true } : {}),
+            },
+          ]
+        : [],
+    ),
     atoms: args.registry.allAtoms().map((a) => ({
       id: a.id,
       kind: "atom",

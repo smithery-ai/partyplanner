@@ -570,10 +570,7 @@ function WorkflowRunnerBody({
       return;
     }
 
-    if (
-      connection?.status === "connected" ||
-      connection?.status === "error"
-    ) {
+    if (connection?.status === "connected" || connection?.status === "error") {
       setAwaitingManagedConnectionId(undefined);
     }
   }, [awaitingManagedConnectionId, workflow.configuration]);

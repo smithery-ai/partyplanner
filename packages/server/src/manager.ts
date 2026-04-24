@@ -17,12 +17,12 @@ import { buildWorkflowManifest, type WorkflowManifest } from "./manifest";
 import type {
   ConnectManagedConnectionRequest,
   StartWorkflowRunRequest,
-  WorkflowConfigurationDocument,
-  WorkflowManagedConnectionConfiguration,
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
   SubmitWorkflowWebhookRequest,
+  WorkflowConfigurationDocument,
   WorkflowEventSink,
+  WorkflowManagedConnectionConfiguration,
   WorkflowQueue,
   WorkflowRunDocument,
   WorkflowRunSummary,
@@ -380,11 +380,9 @@ export class WorkflowManager {
     run: WorkflowRunDocument | undefined,
   ): WorkflowManagedConnectionConfiguration[] {
     const queued = new Set(
-      [
-        ...(run?.queue.pending ?? []),
-        ...(run?.queue.running ?? []),
-      ].map((item) =>
-        item.event.kind === "input" ? item.event.inputId : item.event.stepId,
+      [...(run?.queue.pending ?? []), ...(run?.queue.running ?? [])].map(
+        (item) =>
+          item.event.kind === "input" ? item.event.inputId : item.event.stepId,
       ),
     );
     return this.definition.manifest.managedConnections.map((connection) => {
@@ -471,7 +469,9 @@ export class WorkflowManager {
     });
     await this.ensureConfigurationRun(scheduler, runId);
     for (let attempt = 0; attempt < 12; attempt += 1) {
-      const document = await this.publishSnapshot(await scheduler.snapshot(runId));
+      const document = await this.publishSnapshot(
+        await scheduler.snapshot(runId),
+      );
       const node = document.state.nodes[connectionId];
       const intervention =
         document.state.interventions?.[`${connectionId}:oauth-callback`];
@@ -495,7 +495,9 @@ export class WorkflowManager {
     runId: string,
     expectedVersion: number,
   ): Promise<void> {
-    const configurationRun = await this.stateStore.load(this.configurationRunId());
+    const configurationRun = await this.stateStore.load(
+      this.configurationRunId(),
+    );
     if (!configurationRun) return;
 
     const current = await this.stateStore.load(runId);

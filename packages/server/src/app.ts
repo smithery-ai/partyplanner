@@ -1,9 +1,6 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { RuntimeExecutor, type SecretResolver } from "@workflow/runtime";
 import { cors } from "hono/cors";
-import {
-  RuntimeExecutor,
-  type SecretResolver,
-} from "@workflow/runtime";
 import {
   type BackendApiClientOptions,
   createBackendApiWorkflowQueue,
@@ -44,7 +41,8 @@ export function createWorkflow(options: CreateWorkflowOptions) {
     queue,
     registry: options.registry,
     executor:
-      options.executor ?? new RuntimeExecutor(defaultSecretResolver(options.backendApi)),
+      options.executor ??
+      new RuntimeExecutor(defaultSecretResolver(options.backendApi)),
     workflow: options.workflow,
   });
   const app = new OpenAPIHono({
@@ -213,9 +211,7 @@ function defaultSecretResolver(
   };
 }
 
-function baseBackendUrl(
-  backendApi: string | BackendApiClientOptions,
-): string {
+function baseBackendUrl(backendApi: string | BackendApiClientOptions): string {
   const raw = typeof backendApi === "string" ? backendApi : backendApi.url;
   const trimmed = raw.trim().replace(/\/+$/, "");
   return trimmed.endsWith("/runtime")

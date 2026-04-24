@@ -1,10 +1,6 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
-import type {
-  WorkflowInputManifest,
-  WorkflowManagedConnectionManifest,
-  WorkflowManifest,
-} from "./manifest";
+import type { WorkflowInputManifest, WorkflowManifest } from "./manifest";
 import type { WorkflowServerDefinition } from "./types";
 
 const JsonContentType = "application/json";

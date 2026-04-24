@@ -397,7 +397,8 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
   const runsQuery = useRunsQuery();
   const configurationQuery = useWorkflowConfigurationQuery();
   const startMutation = useStartWorkflowRunMutation();
-  const connectManagedConnectionMutation = useConnectManagedConnectionMutation();
+  const connectManagedConnectionMutation =
+    useConnectManagedConnectionMutation();
   const [error, setError] = useState<Error | undefined>();
 
   const manifest =
@@ -442,7 +443,10 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
       try {
         const result =
           await connectManagedConnectionMutation.mutateAsync(connectionId);
-        queryClient.setQueryData(queryKeys.configuration(config.apiBaseUrl), result);
+        queryClient.setQueryData(
+          queryKeys.configuration(config.apiBaseUrl),
+          result,
+        );
         return result;
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));

@@ -17,9 +17,9 @@ import type {
   Scheduler,
   StartRunRequest,
   StateStore,
-  SubmitManagedConnectionRequest,
   SubmitInputRequest,
   SubmitInterventionRequest,
+  SubmitManagedConnectionRequest,
   WorkflowDefinition,
   WorkflowLoader,
   WorkflowRef,
@@ -268,7 +268,9 @@ export class LocalScheduler implements Scheduler {
     const definition = await this.opts.loader.load(workflow);
     const stored = await this.opts.stateStore.load(event.runId);
     const stepDef =
-      event.kind === "step" ? definition.registry.getAtom(event.stepId) : undefined;
+      event.kind === "step"
+        ? definition.registry.getAtom(event.stepId)
+        : undefined;
     let previous = stored?.state ?? makeEmptyRunState(event.runId);
     let previousVersion = stored?.version ?? 0;
 
