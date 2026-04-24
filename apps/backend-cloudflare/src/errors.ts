@@ -25,6 +25,7 @@ export function apiErrorResponse(c: Context, e: unknown): Response {
     );
   }
 
+  console.error("[hylo-backend] unhandled API error", e);
   return c.json(
     {
       error: "internal_error",
