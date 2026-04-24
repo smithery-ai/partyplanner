@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { DEFAULT_AUTO_ADVANCE } from "../lib/advance-mode";
 import { useWorkflowRunQuery, type WorkflowRunState } from "./use-workflow";
 
 export type WorkflowRunContextValue = WorkflowRunState & {
@@ -27,7 +28,7 @@ export function WorkflowRunProvider({
   children: ReactNode;
 }) {
   const run = useWorkflowRunQuery(runId);
-  const [isRunning, setRunning] = useState(false);
+  const [isRunning, setRunning] = useState(DEFAULT_AUTO_ADVANCE);
   const [executingNodeId, setExecutingNodeId] = useState<string | null>(null);
   const autoAdvanceInFlight = useRef(false);
 

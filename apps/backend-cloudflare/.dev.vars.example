@@ -9,6 +9,10 @@ POSTGRES_URL=
 # WorkOS access tokens and derive tenant IDs from the selected org_id claim.
 WORKOS_CLIENT_ID=
 WORKOS_API_HOSTNAME=api.workos.com
+# Optional public AuthKit API domain returned to browser and CLI clients.
+# Keep WORKOS_API_HOSTNAME on api.workos.com if backend JWT verification should
+# use the WorkOS API directly.
+WORKOS_CLIENT_API_HOSTNAME=
 WORKOS_ISSUER=
 WORKOS_JWKS_URL=
 

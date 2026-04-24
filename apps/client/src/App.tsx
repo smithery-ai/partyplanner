@@ -177,21 +177,34 @@ function SignedOutScreen({
   );
 }
 
+type BackendAuthConfig = Awaited<
+  ReturnType<ReturnType<typeof createHyloApiClient>["auth"]["clientConfig"]>
+>;
+
 async function getWorkOSConfig(
   signal: AbortSignal,
 ): Promise<WorkOSConfig | null> {
   const clientId = optionalEnv(import.meta.env.VITE_WORKOS_CLIENT_ID);
-  if (clientId) {
-    return {
-      clientId,
-      apiHostname: optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME),
-      redirectUri: optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI),
-      devMode:
-        optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ??
-        (import.meta.env.DEV ? true : undefined),
-    };
-  }
+  const config = await getBackendAuthConfig(signal, Boolean(clientId));
+  const backendAuth = config?.auth;
+  const resolvedClientId = clientId ?? backendAuth?.clientId;
+  if (!resolvedClientId) return null;
 
+  const apiConfig = workOSApiConfig();
+  return {
+    clientId: resolvedClientId,
+    ...apiConfig,
+    redirectUri:
+      optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI) ??
+      (import.meta.env.DEV ? window.location.origin : undefined),
+    devMode: resolveWorkOSDevMode(apiConfig),
+  };
+}
+
+async function getBackendAuthConfig(
+  signal: AbortSignal,
+  optional: boolean,
+): Promise<BackendAuthConfig | null> {
   const client = createHyloApiClient({
     baseUrl: authConfigBackendUrl(),
     fetch: (input, init) =>
@@ -200,30 +213,28 @@ async function getWorkOSConfig(
         signal,
       }),
   });
-  const config = await client.auth.clientConfig();
-  if (!config.auth) return null;
-
-  return {
-    clientId: config.auth.clientId,
-    ...workOSApiConfig(config.auth.apiHostname),
-    redirectUri:
-      optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI) ??
-      (import.meta.env.DEV ? window.location.origin : undefined),
-    devMode:
-      optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ??
-      (import.meta.env.DEV ? true : undefined),
-  };
+  try {
+    return await client.auth.clientConfig();
+  } catch (error) {
+    if (!optional) throw error;
+    console.warn("[hylo-client] failed to load backend auth config", error);
+    return null;
+  }
 }
 
-function workOSApiConfig(apiHostname: string): {
+function workOSApiConfig(): {
   apiHostname: string;
   https?: boolean;
   port?: number;
+  devMode?: boolean;
 } {
   if (!import.meta.env.DEV) {
+    // authkit-js 0.20.x hardcodes /user_management/* endpoints. The current
+    // first-party AuthKit domain serves /oauth2/* but not /user_management/*.
+    const hostname = "api.workos.com";
     return {
-      apiHostname:
-        optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ?? apiHostname,
+      apiHostname: hostname,
+      devMode: true,
     };
   }
 
@@ -233,6 +244,13 @@ function workOSApiConfig(apiHostname: string): {
     https: window.location.protocol === "https:",
     ...(Number.isInteger(port) && port > 0 ? { port } : {}),
   };
+}
+
+function resolveWorkOSDevMode(apiConfig: {
+  devMode?: boolean;
+}): boolean | undefined {
+  if (!import.meta.env.DEV) return apiConfig.devMode;
+  return optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ?? true;
 }
 
 function handleRedirectCallback({
