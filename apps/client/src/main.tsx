@@ -1,27 +1,26 @@
 /* eslint-disable react-refresh/only-export-components */
 
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import {
-  Outlet,
-  RouterProvider,
+  QueryClient,
+  QueryClientProvider,
+  useQuery,
+} from "@tanstack/react-query";
+import {
   createRootRoute,
   createRoute,
   createRouter,
+  Outlet,
+  RouterProvider,
   useNavigate,
   useParams,
   useSearch,
 } from "@tanstack/react-router";
 import {
-  WorkflowSinglePage,
   type WorkflowNavigation,
+  WorkflowSinglePage,
 } from "@workflow/frontend";
 import "@workflow/frontend/styles.css";
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useEffect,
-} from "react";
+import { createContext, type ReactNode, useContext, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
@@ -173,7 +172,10 @@ function ClientApp({ routeRunId }: { routeRunId?: string }) {
   }, [registryQuery.error]);
 
   const registry = resolvedWorkflowRegistry(registryConfig.url, registryQuery);
-  const registryError = workflowRegistryError(registryConfig.url, registryQuery);
+  const registryError = workflowRegistryError(
+    registryConfig.url,
+    registryQuery,
+  );
 
   const workflows = registry ? Object.entries(registry.workflows) : [];
   const selectedWorker =
@@ -183,7 +185,8 @@ function ClientApp({ routeRunId }: { routeRunId?: string }) {
       workflows[0]?.[0]);
 
   useEffect(() => {
-    if (!registry || !selectedWorker || search.worker === selectedWorker) return;
+    if (!registry || !selectedWorker || search.worker === selectedWorker)
+      return;
     void navigate({
       to: routeRunId ? "/runs/$runId" : "/",
       params: routeRunId ? { runId: routeRunId } : undefined,
@@ -441,7 +444,10 @@ function workflowApiUrl(apiBaseUrl: string): string {
   if (url.pathname.startsWith("/workers/")) {
     return `/worker${url.pathname.slice("/workers".length)}${url.search}${url.hash}`;
   }
-  if (url.pathname.startsWith("/worker/") || url.origin === window.location.origin) {
+  if (
+    url.pathname.startsWith("/worker/") ||
+    url.origin === window.location.origin
+  ) {
     return `${url.pathname}${url.search}${url.hash}`;
   }
   if (isLoopbackUrl(url)) {
@@ -555,7 +561,10 @@ function localWorkflowHost(raw: string): string {
   );
 }
 
-function withWorker(search: ClientSearch, worker: string | undefined): ClientSearch {
+function withWorker(
+  search: ClientSearch,
+  worker: string | undefined,
+): ClientSearch {
   if (!worker) return search;
   return {
     ...search,
