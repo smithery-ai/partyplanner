@@ -65,7 +65,11 @@ export function authClientConfig(env: BackendAppEnv): {
   return {
     provider: "workos",
     clientId,
-    apiHostname: workOSApiHostname(env.WORKOS_API_HOSTNAME),
+    apiHostname: workOSApiHostname(
+      env.WORKOS_CLIENT_API_HOSTNAME ??
+        env.VITE_WORKOS_API_HOSTNAME ??
+        env.WORKOS_API_HOSTNAME,
+    ),
   };
 }
 

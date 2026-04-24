@@ -1,6 +1,7 @@
 import type { WorkflowPostgresDb } from "@workflow/postgres";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackendApp } from "../src/app";
+import { authClientConfig } from "../src/auth/workos";
 import {
   createCloudflareDeploymentBackend,
   createDefaultCloudflareDeploymentBackend,
@@ -202,6 +203,22 @@ describe("deployment routing", () => {
     expect(dispatchFetch).toHaveBeenCalledOnce();
     expect(await response.json()).toEqual({
       url: "https://backend.example.com/api/workflow/runs?limit=1",
+    });
+  });
+});
+
+describe("auth client config", () => {
+  it("can expose a first-party AuthKit API hostname without changing backend token verification config", () => {
+    expect(
+      authClientConfig({
+        WORKOS_CLIENT_ID: "client_test",
+        WORKOS_API_HOSTNAME: "api.workos.com",
+        WORKOS_CLIENT_API_HOSTNAME: "auth.example.com",
+      }),
+    ).toEqual({
+      provider: "workos",
+      clientId: "client_test",
+      apiHostname: "auth.example.com",
     });
   });
 });

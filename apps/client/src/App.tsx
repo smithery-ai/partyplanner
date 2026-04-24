@@ -203,14 +203,16 @@ async function getWorkOSConfig(
   const config = await client.auth.clientConfig();
   if (!config.auth) return null;
 
+  const apiConfig = workOSApiConfig(config.auth.apiHostname);
   return {
     clientId: config.auth.clientId,
-    ...workOSApiConfig(config.auth.apiHostname),
+    ...apiConfig,
     redirectUri:
       optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI) ??
       (import.meta.env.DEV ? window.location.origin : undefined),
     devMode:
       optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ??
+      apiConfig.devMode ??
       (import.meta.env.DEV ? true : undefined),
   };
 }
@@ -219,11 +221,14 @@ function workOSApiConfig(apiHostname: string): {
   apiHostname: string;
   https?: boolean;
   port?: number;
+  devMode?: boolean;
 } {
   if (!import.meta.env.DEV) {
+    const hostname =
+      optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ?? apiHostname;
     return {
-      apiHostname:
-        optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ?? apiHostname,
+      apiHostname: hostname,
+      devMode: hostname === "api.workos.com" ? true : undefined,
     };
   }
 
