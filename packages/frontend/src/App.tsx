@@ -46,6 +46,7 @@ import {
   useWorkflow,
   useWorkflowRun,
 } from "./hooks/use-workflow";
+import { DEFAULT_AUTO_ADVANCE } from "./lib/advance-mode";
 import { findPendingWait } from "./lib/pending-wait";
 import { cn } from "./lib/utils";
 import { workflowInputLabel } from "./lib/workflow-labels";
@@ -516,7 +517,8 @@ export function WorkflowRunnerApp({
   const [seedInputId, setSeedInputId] = useState("");
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [pendingAutoAdvance, setPendingAutoAdvance] = useState(false);
+  const [pendingAutoAdvance, setPendingAutoAdvance] =
+    useState(DEFAULT_AUTO_ADVANCE);
   const autoAdvanceInFlight = useRef(false);
 
   const runState = workflowRun.runState;
