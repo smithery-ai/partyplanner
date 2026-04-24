@@ -48,12 +48,39 @@ const schemaStatements = [
     attempts integer not null,
     error text
   )`,
+  `create table if not exists oauth_pending (
+    state text primary key,
+    value_json text not null,
+    created_at double precision not null
+  )`,
+  `create table if not exists oauth_handoffs (
+    handoff text primary key,
+    value_json text not null,
+    created_at double precision not null
+  )`,
+  `create table if not exists oauth_refresh_tokens (
+    session_id text primary key,
+    value_json text not null,
+    created_at double precision not null
+  )`,
+  `create table if not exists workflow_deployments (
+    deployment_id text primary key,
+    tenant_id text not null,
+    label text,
+    workflow_api_url text,
+    dispatch_namespace text not null,
+    tags_json text not null,
+    created_at double precision not null,
+    updated_at double precision not null
+  )`,
   `create index if not exists workflow_run_documents_started_at_idx
     on workflow_run_documents (started_at desc)`,
   `create index if not exists workflow_events_run_id_created_at_idx
     on workflow_events (run_id, created_at)`,
   `create index if not exists workflow_queue_items_run_id_status_idx
     on workflow_queue_items (run_id, status, enqueued_at)`,
+  `create index if not exists workflow_deployments_tenant_id_updated_at_idx
+    on workflow_deployments (tenant_id, updated_at desc)`,
 ];
 
 function execute(

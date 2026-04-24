@@ -156,7 +156,7 @@ It's the "user-defined worker" from the mental model above — when the schedule
 
 A managed REST API. Owns the durable state manager (run state, events, run documents) and the mutation queue. Stateless with respect to workflow code — it addresses work by `workflowId` + `runId` and dispatches it to your worker over HTTP.
 
-The backend lives in `apps/backend-cloudflare`: a Cloudflare Worker backed by D1. The same Worker app also runs locally through Wrangler.
+The backend lives in `apps/backend-cloudflare`: a Cloudflare Worker backed by Postgres. It uses a Cloudflare Hyperdrive binding when available, and can fall back to `POSTGRES_URL` or `DATABASE_URL`.
 
 The Cloudflare backend also hosts an **OAuth broker** at `/oauth`. Provider client secrets (Spotify, Notion, …) live on the backend, not on workers — workers only ever see resolved access tokens.
 
@@ -177,7 +177,7 @@ Mixing a local worker with a cloud backend won't work without tunneling.
 
 ```
 apps/
-  backend-cloudflare/ Cloud backend (Cloudflare Worker + D1)
+  backend-cloudflare/ Cloud backend (Cloudflare Worker + Postgres)
   client/             React UI (Vite)
 
 packages/
@@ -185,7 +185,6 @@ packages/
   runtime/        Scheduler + registry + executor
   server/         Worker SDK — createWorkflow() mounts HTTP routes
   remote/         REST transport between worker and backend
-  cloudflare/     D1 adapters for apps/backend-cloudflare
   postgres/       Postgres schema + migration helpers
   oauth-broker/   Backend-hosted OAuth broker (mounted at /oauth)
   frontend/       React components (WorkflowSinglePage)
@@ -260,19 +259,18 @@ Wrangler and the browser app with Vercel.
 
 ### Backend DB
 
-For the local Cloudflare backend:
+For the Cloudflare backend:
 
 ```sh
 cd apps/backend-cloudflare
-pnpm db:migrate
-pnpm db:studio
+POSTGRES_URL=postgres://... pnpm db:migrate
+POSTGRES_URL=postgres://... pnpm db:studio
 ```
 
-For the deployed Cloudflare backend, run `pnpm db:migrate:remote` from
-`apps/backend-cloudflare`.
-
-Postgres migration helpers live in `packages/postgres` for the planned backend
-storage migration. They require `POSTGRES_URL` or `DATABASE_URL`.
+Postgres migration helpers live in `packages/postgres` and require
+`POSTGRES_URL` or `DATABASE_URL`. Local `wrangler dev` can use Hyperdrive's
+`CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE` override, or the
+Worker can read `POSTGRES_URL`/`DATABASE_URL` directly.
 
 ## Scripts
 

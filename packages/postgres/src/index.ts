@@ -3,12 +3,17 @@ export type {
   WorkflowPostgresDb,
 } from "./adapter";
 export {
+  createPostgresBrokerStore,
   createPostgresWorkflowQueue,
   createPostgresWorkflowStateStore,
 } from "./adapter";
 export { ensureWorkflowPostgresSchema } from "./migrate";
 
 export {
+  oauthHandoffs,
+  oauthPending,
+  oauthRefreshTokens,
+  workflowDeployments,
   workflowEvents,
   workflowQueueItems,
   workflowRunDocuments,
