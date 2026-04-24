@@ -219,6 +219,7 @@ describe("auth client config", () => {
       provider: "workos",
       clientId: "client_test",
       apiHostname: "auth.example.com",
+      cliApiHostname: "api.workos.com",
     });
   });
 });

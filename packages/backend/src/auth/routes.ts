@@ -22,6 +22,7 @@ const AuthClientConfigSchema = z
         provider: z.literal("workos"),
         clientId: z.string(),
         apiHostname: z.string(),
+        cliApiHostname: z.string().optional(),
       })
       .nullable(),
     api: z.object({
