@@ -135,16 +135,19 @@ it("falls back to api.workos.com when backend auth config only exposes a browser
 
 it("reports an unreachable backend with a local-dev hint", async () => {
   const backendUrl = "http://127.0.0.1:8787";
-  vi.stubGlobal("fetch", vi.fn(async () => {
-    throw new TypeError("fetch failed");
-  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }),
+  );
   const stderr = vi
     .spyOn(process.stderr, "write")
     .mockImplementation(() => true);
 
-  await expect(
-    runAuth(["login", "--backend-url", backendUrl]),
-  ).resolves.toBe(1);
+  await expect(runAuth(["login", "--backend-url", backendUrl])).resolves.toBe(
+    1,
+  );
   expect(stderr).toHaveBeenCalledWith(
     `Could not reach Hylo backend at ${backendUrl}. Start the local backend with \`pnpm dev\`, or use a reachable --backend-url.\n`,
   );
