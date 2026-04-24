@@ -13,7 +13,6 @@ import {
 import type {
   RunStateDocument,
   RunSummary,
-  SetAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
   SubmitBackendInterventionRequest,
@@ -29,7 +28,6 @@ export type StartWorkflowArgs = {
   }[];
   secretBindings?: Record<string, string | { vaultEntryId: string }>;
   secretValues?: Record<string, string>;
-  autoAdvance?: boolean;
 };
 
 export type SubmitWorkflowInputArgs = {
@@ -37,7 +35,6 @@ export type SubmitWorkflowInputArgs = {
   inputId: string;
   payload: unknown;
   secretValues?: Record<string, string>;
-  autoAdvance?: boolean;
 };
 
 export type SubmitWorkflowInterventionArgs = {
@@ -45,17 +42,10 @@ export type SubmitWorkflowInterventionArgs = {
   interventionId: string;
   payload: unknown;
   secretValues?: Record<string, string>;
-  autoAdvance?: boolean;
 };
 
 export type AdvanceWorkflowArgs = {
   state?: RunState;
-  secretValues?: Record<string, string>;
-};
-
-export type SetAutoAdvanceWorkflowArgs = {
-  state?: RunState;
-  autoAdvance: boolean;
   secretValues?: Record<string, string>;
 };
 
@@ -70,9 +60,6 @@ export interface WorkflowRuntime {
     args: SubmitWorkflowInterventionArgs,
   ): Promise<WorkflowRuntimeResult>;
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>;
-  setAutoAdvance(
-    args: SetAutoAdvanceWorkflowArgs,
-  ): Promise<WorkflowRuntimeResult>;
   listRuns?(): Promise<RunSummary[]>;
   getState?(args: PollWorkflowStateArgs): Promise<WorkflowRuntimeResult>;
   reset?(): void;
@@ -98,7 +85,6 @@ export class BackendRuntime implements WorkflowRuntime {
         additionalInputs: args.additionalInputs,
         secretBindings: args.secretBindings,
         secretValues: args.secretValues,
-        autoAdvance: args.autoAdvance,
       },
     );
     return documentResult(document);
@@ -116,7 +102,6 @@ export class BackendRuntime implements WorkflowRuntime {
       inputId: args.inputId,
       payload: args.payload,
       secretValues: args.secretValues,
-      autoAdvance: args.autoAdvance,
     });
     return documentResult(document);
   }
@@ -134,7 +119,6 @@ export class BackendRuntime implements WorkflowRuntime {
       {
         payload: args.payload,
         secretValues: args.secretValues,
-        autoAdvance: args.autoAdvance,
       },
     );
     return documentResult(document);
@@ -148,21 +132,6 @@ export class BackendRuntime implements WorkflowRuntime {
     >(`/runs/${encodeURIComponent(args.state.runId)}/advance`, {
       secretValues: args.secretValues,
     });
-    return documentResult(document);
-  }
-
-  async setAutoAdvance(
-    args: SetAutoAdvanceWorkflowArgs,
-  ): Promise<WorkflowRuntimeResult> {
-    if (!args.state)
-      throw new Error("Cannot change advance mode before a run exists.");
-    const document = await this.post<SetAutoAdvanceRequest, RunStateDocument>(
-      `/runs/${encodeURIComponent(args.state.runId)}/auto-advance`,
-      {
-        autoAdvance: args.autoAdvance,
-        secretValues: args.secretValues,
-      },
-    );
     return documentResult(document);
   }
 
@@ -208,7 +177,6 @@ function documentResult(document: RunStateDocument): WorkflowRuntimeResult {
     snapshot: document,
     queue: document.queue,
     events: document.events,
-    autoAdvance: document.autoAdvance,
   };
 }
 
@@ -221,7 +189,6 @@ export type LocalRuntimeOptions = {
 export class LocalRuntime implements WorkflowRuntime {
   private readonly registry: Registry;
   private readonly workflow: WorkflowRef;
-  private autoAdvance: boolean;
   private events = new MemoryEventSink();
   private scheduler: LocalScheduler;
 
@@ -231,7 +198,6 @@ export class LocalRuntime implements WorkflowRuntime {
       workflowId: "client-workflow",
       version: "local",
     };
-    this.autoAdvance = options.autoDrain ?? true;
     this.scheduler = this.createScheduler();
   }
 
@@ -241,7 +207,6 @@ export class LocalRuntime implements WorkflowRuntime {
   }
 
   async start(args: StartWorkflowArgs): Promise<WorkflowRuntimeResult> {
-    this.applyAutoAdvance(args.autoAdvance);
     const snapshot = await this.scheduler.startRun({
       workflow: this.workflow,
       input: {
@@ -250,7 +215,7 @@ export class LocalRuntime implements WorkflowRuntime {
       },
       additionalInputs: args.additionalInputs,
     });
-    return this.finalize(snapshot.runId, snapshot);
+    return this.result(snapshot);
   }
 
   async submitInput(
@@ -258,14 +223,13 @@ export class LocalRuntime implements WorkflowRuntime {
   ): Promise<WorkflowRuntimeResult> {
     if (!args.state)
       throw new Error("Cannot submit input before a run exists.");
-    this.applyAutoAdvance(args.autoAdvance);
     const snapshot = await this.scheduler.submitInput({
       runId: args.state.runId,
       workflow: this.workflow,
       inputId: args.inputId,
       payload: args.payload,
     });
-    return this.finalize(snapshot.runId, snapshot);
+    return this.result(snapshot);
   }
 
   async submitIntervention(
@@ -273,41 +237,19 @@ export class LocalRuntime implements WorkflowRuntime {
   ): Promise<WorkflowRuntimeResult> {
     if (!args.state)
       throw new Error("Cannot submit intervention before a run exists.");
-    this.applyAutoAdvance(args.autoAdvance);
     const snapshot = await this.scheduler.submitIntervention({
       runId: args.state.runId,
       workflow: this.workflow,
       interventionId: args.interventionId,
       payload: args.payload,
     });
-    return this.finalize(snapshot.runId, snapshot);
+    return this.result(snapshot);
   }
 
   async advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult> {
     if (!args.state) throw new Error("Cannot advance before a run exists.");
     await this.scheduler.processNext();
     const snapshot = await this.scheduler.snapshot(args.state.runId);
-    return this.result(snapshot);
-  }
-
-  async setAutoAdvance(
-    args: SetAutoAdvanceWorkflowArgs,
-  ): Promise<WorkflowRuntimeResult> {
-    if (!args.state)
-      throw new Error("Cannot change advance mode before a run exists.");
-    this.autoAdvance = args.autoAdvance;
-    const snapshot = await this.scheduler.snapshot(args.state.runId);
-    return this.finalize(snapshot.runId, snapshot);
-  }
-
-  private async finalize(
-    runId: string,
-    snapshot: RunSnapshot,
-  ): Promise<WorkflowRuntimeResult> {
-    if (this.autoAdvance) {
-      await this.scheduler.drain();
-      return this.result(await this.scheduler.snapshot(runId));
-    }
     return this.result(snapshot);
   }
 
@@ -334,9 +276,5 @@ export class LocalRuntime implements WorkflowRuntime {
       events: this.events,
       executor: new RuntimeExecutor(),
     });
-  }
-
-  private applyAutoAdvance(autoAdvance: boolean | undefined): void {
-    if (autoAdvance !== undefined) this.autoAdvance = autoAdvance;
   }
 }

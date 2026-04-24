@@ -4,6 +4,7 @@ import {
   type AuthContext,
   authClientConfig,
   authenticateRequest,
+  isWorkOSConfigured,
 } from "../auth/workos";
 import { isCloudflarePlatformConfigured } from "../deployments/cloudflare";
 import { apiErrorResponse, PlatformApiError } from "../errors";
@@ -94,7 +95,7 @@ export function mountAuthApi(
             baseUrl: resolveBackendPublicUrl(env, c),
           },
           features: {
-            cliAuth: Boolean(env.WORKOS_CLIENT_ID?.trim()),
+            cliAuth: isWorkOSConfigured(env),
             deployments: isCloudflarePlatformConfigured(env),
           },
         },

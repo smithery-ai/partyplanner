@@ -131,7 +131,7 @@ export function createOAuthCallbackRoute(
       new Request(interventionUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payload, autoAdvance: true }),
+        body: JSON.stringify({ payload }),
       }),
     );
 

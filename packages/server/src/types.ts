@@ -22,31 +22,22 @@ export type StartWorkflowRunRequest = {
   secretBindings?: Record<string, string | { vaultEntryId: string }>;
   secretValues?: Record<string, string>;
   runId?: string;
-  autoAdvance?: boolean;
 };
 
 export type SubmitWorkflowInputRequest = {
   inputId: string;
   payload: unknown;
   secretValues?: Record<string, string>;
-  autoAdvance?: boolean;
 };
 
 export type SubmitWorkflowInterventionRequest = {
   payload: unknown;
-  secretValues?: Record<string, string>;
-  autoAdvance?: boolean;
-};
-
-export type SetWorkflowAutoAdvanceRequest = {
-  autoAdvance: boolean;
   secretValues?: Record<string, string>;
 };
 
 export type WorkflowRunDocument = RunSnapshot & {
   events: RunEvent[];
   publishedAt: number;
-  autoAdvance: boolean;
 };
 
 export type WorkflowRunSummary = {

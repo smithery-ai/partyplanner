@@ -24,7 +24,7 @@ export function App({ children }: AppProps) {
     if (workos !== undefined) return;
 
     const abort = new AbortController();
-    void getApiWorkOSConfig(abort.signal)
+    void getWorkOSConfig(abort.signal)
       .then((config) => {
         if (!abort.signal.aborted) setWorkos(config);
       })
@@ -135,9 +135,21 @@ function UserFooter({
   );
 }
 
-async function getApiWorkOSConfig(
+async function getWorkOSConfig(
   signal: AbortSignal,
 ): Promise<WorkOSConfig | null> {
+  const clientId = optionalEnv(import.meta.env.VITE_WORKOS_CLIENT_ID);
+  if (clientId) {
+    return {
+      clientId,
+      apiHostname: optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME),
+      redirectUri: optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI),
+      devMode:
+        optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ??
+        (import.meta.env.DEV ? true : undefined),
+    };
+  }
+
   const client = createHyloApiClient({
     baseUrl: hyloBackendUrl() ?? window.location.origin,
     fetch: (input, init) =>

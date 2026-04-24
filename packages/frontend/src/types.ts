@@ -8,7 +8,6 @@ import type {
   RunStateDocument,
   RunSummary,
   SecretVaultEntry,
-  SetAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
   SubmitBackendInterventionRequest,
@@ -33,7 +32,6 @@ export type {
   RunStateDocument,
   RunSummary,
   SecretVaultEntry,
-  SetAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
   SubmitBackendInterventionRequest,
@@ -47,5 +45,4 @@ export type WorkflowRuntimeResult = {
   snapshot?: RunSnapshot;
   queue?: QueueSnapshot;
   events?: RunEvent[];
-  autoAdvance?: boolean;
 };

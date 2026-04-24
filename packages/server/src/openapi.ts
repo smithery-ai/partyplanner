@@ -168,7 +168,6 @@ const WorkflowRunDocumentSchema = z
     version: z.number(),
     events: z.array(RunEventSchema),
     publishedAt: z.number(),
-    autoAdvance: z.boolean(),
   })
   .openapi("WorkflowRunDocument");
 
@@ -210,7 +209,6 @@ export const StartWorkflowRunRequestSchema = z
     secretBindings: z.record(z.string(), SecretBindingSchema).optional(),
     secretValues: z.record(z.string(), z.string()).optional(),
     runId: z.string().optional(),
-    autoAdvance: z.boolean().optional(),
   })
   .openapi("StartWorkflowRunRequest");
 
@@ -219,7 +217,6 @@ export const SubmitWorkflowInputRequestSchema = z
     inputId: z.string(),
     payload: z.any(),
     secretValues: z.record(z.string(), z.string()).optional(),
-    autoAdvance: z.boolean().optional(),
   })
   .openapi("SubmitWorkflowInputRequest");
 
@@ -227,16 +224,8 @@ export const SubmitWorkflowInterventionRequestSchema = z
   .object({
     payload: z.any(),
     secretValues: z.record(z.string(), z.string()).optional(),
-    autoAdvance: z.boolean().optional(),
   })
   .openapi("SubmitWorkflowInterventionRequest");
-
-export const SetWorkflowAutoAdvanceRequestSchema = z
-  .object({
-    autoAdvance: z.boolean(),
-    secretValues: z.record(z.string(), z.string()).optional(),
-  })
-  .openapi("SetWorkflowAutoAdvanceRequest");
 
 export const AdvanceWorkflowRunRequestSchema = z
   .object({
@@ -371,20 +360,6 @@ export function createWorkflowRoutes(basePath = "/") {
       request: {
         params: RunIdParamSchema,
         body: jsonRequest(AdvanceWorkflowRunRequestSchema, false),
-      },
-      responses: {
-        200: jsonResponse("Updated workflow run", WorkflowRunDocumentSchema),
-        400: jsonResponse("Invalid request", ErrorResponseSchema),
-      },
-    }),
-    setAutoAdvance: createRoute({
-      method: "post",
-      path: path(normalizedBasePath, "/runs/{runId}/auto-advance"),
-      tags: ["Runs"],
-      summary: "Set workflow auto-advance behavior",
-      request: {
-        params: RunIdParamSchema,
-        body: jsonRequest(SetWorkflowAutoAdvanceRequestSchema),
       },
       responses: {
         200: jsonResponse("Updated workflow run", WorkflowRunDocumentSchema),

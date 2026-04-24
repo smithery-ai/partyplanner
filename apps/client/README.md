@@ -13,9 +13,16 @@ and workflow servers separately, or use the root `pnpm dev` Turbo task.
 
 ## WorkOS AuthKit
 
-The client loads public AuthKit configuration from the Hylo backend
-`/auth/client-config` endpoint at runtime. In local dev, Vite proxies that route
-to the backend worker started by the root `pnpm dev` task.
+Set the WorkOS client ID in Vite for local dev:
+
+```sh
+VITE_WORKOS_CLIENT_ID=client_01KD3FTVXPFS0D95FFD7E2XH9K
+```
+
+The client prefers `VITE_WORKOS_CLIENT_ID` when it is set. If it is not set,
+the app falls back to the Hylo backend `/auth/client-config` endpoint at
+runtime. In local dev, Vite proxies that route to the backend worker started by
+the root `pnpm dev` task.
 
 Optional AuthKit settings:
 

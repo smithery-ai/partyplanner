@@ -5,7 +5,6 @@ import { useCallback, useMemo, useState } from "react";
 import { useWorkflowFrontendConfig } from "../config";
 import type {
   AdvanceWorkflowArgs,
-  SetAutoAdvanceWorkflowArgs,
   SubmitWorkflowInputArgs,
   SubmitWorkflowInterventionArgs,
 } from "../lib/workflow-runtimes";
@@ -16,7 +15,6 @@ import type {
   RunStateDocument,
   RunSummary,
   SecretVaultEntry,
-  SetAutoAdvanceRequest,
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
   SubmitBackendInterventionRequest,
@@ -33,7 +31,6 @@ export type StartRunArgs = {
   }[];
   secretBindings?: Record<string, string | { vaultEntryId: string }>;
   secretValues?: Record<string, string>;
-  autoAdvance?: boolean;
 };
 
 export type WorkflowState = {
@@ -52,7 +49,6 @@ export type WorkflowRunState = {
   queue: QueueSnapshot | undefined;
   events: RunEvent[];
   workflowId: string | undefined;
-  autoAdvance: boolean | undefined;
   isPending: boolean;
   error: Error | undefined;
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>;
@@ -60,9 +56,6 @@ export type WorkflowRunState = {
     args: SubmitWorkflowInterventionArgs,
   ): Promise<WorkflowRuntimeResult>;
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>;
-  setAutoAdvance(
-    args: SetAutoAdvanceWorkflowArgs,
-  ): Promise<WorkflowRuntimeResult>;
   bindSecret(args: BindRunSecretArgs): Promise<WorkflowRuntimeResult>;
   clear(): void;
 };
@@ -71,7 +64,6 @@ export type BindRunSecretArgs = {
   state?: RunState;
   logicalName: string;
   vaultEntryId: string;
-  autoAdvance?: boolean;
 };
 
 export type SecretVaultState = {
@@ -144,7 +136,6 @@ function useStartWorkflowRunMutation() {
           | undefined,
         secretBindings: args.secretBindings,
         secretValues: args.secretValues,
-        autoAdvance: args.autoAdvance,
       };
       return documentResult(
         await apiPost<StartWorkflowRunRequest, RunStateDocument>(
@@ -192,7 +183,6 @@ function useBindRunSecretMutation() {
         throw new Error("Cannot bind a secret before a run exists.");
       const body: BindRunSecretRequest = {
         vaultEntryId: args.vaultEntryId,
-        autoAdvance: args.autoAdvance,
       };
       return documentResult(
         await apiPut<BindRunSecretRequest, RunStateDocument>(
@@ -216,7 +206,6 @@ function useSubmitInputMutation() {
         inputId: args.inputId,
         payload: args.payload as JsonPayload,
         secretValues: args.secretValues,
-        autoAdvance: args.autoAdvance,
       };
       return documentResult(
         await apiPost<SubmitBackendInputRequest, RunStateDocument>(
@@ -239,7 +228,6 @@ function useSubmitInterventionMutation() {
       const body: SubmitBackendInterventionRequest = {
         payload: args.payload as JsonPayload,
         secretValues: args.secretValues,
-        autoAdvance: args.autoAdvance,
       };
       return documentResult(
         await apiPost<SubmitBackendInterventionRequest, RunStateDocument>(
@@ -266,28 +254,6 @@ function useAdvanceRunMutation() {
           config.apiBaseUrl,
           `/runs/${encodeURIComponent(args.state.runId)}/advance`,
           { secretValues: args.secretValues },
-        ),
-      );
-    },
-  });
-}
-
-function useSetAutoAdvanceMutation() {
-  const config = useWorkflowFrontendConfig();
-  return useMutation({
-    mutationFn: async (args: SetAutoAdvanceWorkflowArgs) => {
-      if (!args.state)
-        throw new Error("Cannot change advance mode before a run exists.");
-
-      const body: SetAutoAdvanceRequest = {
-        autoAdvance: args.autoAdvance,
-        secretValues: args.secretValues,
-      };
-      return documentResult(
-        await apiPost<SetAutoAdvanceRequest, RunStateDocument>(
-          config.apiBaseUrl,
-          `/runs/${encodeURIComponent(args.state.runId)}/auto-advance`,
-          body,
         ),
       );
     },
@@ -445,7 +411,6 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
   const submitInputMutation = useSubmitInputMutation();
   const submitInterventionMutation = useSubmitInterventionMutation();
   const advanceMutation = useAdvanceRunMutation();
-  const setAutoAdvanceMutation = useSetAutoAdvanceMutation();
   const bindSecretMutation = useBindRunSecretMutation();
   const [error, setError] = useState<Error | undefined>();
 
@@ -504,12 +469,6 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     [advanceMutation, runMutation],
   );
 
-  const setAutoAdvance = useCallback(
-    (args: SetAutoAdvanceWorkflowArgs) =>
-      runMutation(setAutoAdvanceMutation, args),
-    [runMutation, setAutoAdvanceMutation],
-  );
-
   const bindSecret = useCallback(
     (args: BindRunSecretArgs) => runMutation(bindSecretMutation, args),
     [bindSecretMutation, runMutation],
@@ -524,13 +483,11 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
       submitInputMutation.isPending ||
       submitInterventionMutation.isPending ||
       advanceMutation.isPending ||
-      setAutoAdvanceMutation.isPending ||
       bindSecretMutation.isPending ||
       (Boolean(runId) && stateQuery.isPending),
     [
       advanceMutation.isPending,
       bindSecretMutation.isPending,
-      setAutoAdvanceMutation.isPending,
       stateQuery.isPending,
       runId,
       submitInputMutation.isPending,
@@ -546,13 +503,11 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     queue: stateQuery.data?.queue,
     events: stateQuery.data?.events ?? [],
     workflowId: stateQuery.data?.snapshot?.workflow.workflowId,
-    autoAdvance: stateQuery.data?.autoAdvance,
     isPending,
     error: activeError,
     submitInput,
     submitIntervention,
     advance,
-    setAutoAdvance,
     bindSecret,
     clear,
   };
@@ -723,6 +678,5 @@ function documentResult(document: RunStateDocument): WorkflowRuntimeResult {
     snapshot: document,
     queue: document.queue,
     events: document.events,
-    autoAdvance: document.autoAdvance,
   };
 }

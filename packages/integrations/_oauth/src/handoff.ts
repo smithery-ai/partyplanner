@@ -77,7 +77,6 @@ export function createOAuthHandoffRoutes(
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               payload: { error: errorParam },
-              autoAdvance: true,
             }),
           }),
         );
@@ -143,7 +142,7 @@ export function createOAuthHandoffRoutes(
         new Request(interventionUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payload: parsed.token, autoAdvance: true }),
+          body: JSON.stringify({ payload: parsed.token }),
         }),
       );
 

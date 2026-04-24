@@ -52,7 +52,7 @@ export function resolveAuthorizedTenant(
 }
 
 export function isWorkOSConfigured(env: BackendAppEnv): boolean {
-  return Boolean(env.WORKOS_CLIENT_ID?.trim());
+  return Boolean(resolveWorkOSClientId(env));
 }
 
 export function authClientConfig(env: BackendAppEnv): {
@@ -60,7 +60,7 @@ export function authClientConfig(env: BackendAppEnv): {
   clientId: string;
   apiHostname: string;
 } | null {
-  const clientId = env.WORKOS_CLIENT_ID?.trim();
+  const clientId = resolveWorkOSClientId(env);
   if (!clientId) return null;
   return {
     provider: "workos",
@@ -140,7 +140,7 @@ async function authenticateWorkOSToken(
 function resolveWorkOSAuthConfig(
   env: BackendAppEnv,
 ): WorkOSAuthConfig | undefined {
-  const clientId = env.WORKOS_CLIENT_ID?.trim();
+  const clientId = resolveWorkOSClientId(env);
   if (!clientId) return undefined;
   const apiOrigin = workOSApiOrigin(env.WORKOS_API_HOSTNAME);
   const issuer =
@@ -170,6 +170,10 @@ function workOSApiOrigin(hostname: string | undefined): string {
 
 function workOSApiHostname(hostname: string | undefined): string {
   return new URL(workOSApiOrigin(hostname)).hostname;
+}
+
+function resolveWorkOSClientId(env: BackendAppEnv): string | undefined {
+  return env.WORKOS_CLIENT_ID?.trim();
 }
 
 function workOSIssuerCandidates(issuer: string): string[] {

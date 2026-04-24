@@ -122,18 +122,6 @@ export function createWorkflow(options: CreateWorkflowOptions) {
     }
   });
 
-  app.openapi(routes.setAutoAdvance, async (c) => {
-    try {
-      const body = c.req.valid("json");
-      return c.json(
-        await manager.setAutoAdvance(requireParam(c.req.param("runId")), body),
-        200,
-      );
-    } catch (e) {
-      return c.json({ message: errorMessage(e) }, 400);
-    }
-  });
-
   if (options.openApi !== false) {
     mountWorkflowOpenApi(app, {
       ...options.openApi,
