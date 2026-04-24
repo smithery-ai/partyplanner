@@ -190,17 +190,14 @@ async function getWorkOSConfig(
   const resolvedClientId = clientId ?? backendAuth?.clientId;
   if (!resolvedClientId) return null;
 
-  const apiConfig = workOSApiConfig(backendAuth?.apiHostname);
+  const apiConfig = workOSApiConfig();
   return {
     clientId: resolvedClientId,
     ...apiConfig,
     redirectUri:
       optionalEnv(import.meta.env.VITE_WORKOS_REDIRECT_URI) ??
       (import.meta.env.DEV ? window.location.origin : undefined),
-    devMode:
-      optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ??
-      apiConfig.devMode ??
-      (import.meta.env.DEV ? true : undefined),
+    devMode: resolveWorkOSDevMode(apiConfig),
   };
 }
 
@@ -225,20 +222,19 @@ async function getBackendAuthConfig(
   }
 }
 
-function workOSApiConfig(apiHostname: string | undefined): {
+function workOSApiConfig(): {
   apiHostname: string;
   https?: boolean;
   port?: number;
   devMode?: boolean;
 } {
   if (!import.meta.env.DEV) {
-    const hostname =
-      optionalEnv(import.meta.env.VITE_WORKOS_API_HOSTNAME) ??
-      apiHostname ??
-      "api.workos.com";
+    // authkit-js 0.20.x hardcodes /user_management/* endpoints. The current
+    // first-party AuthKit domain serves /oauth2/* but not /user_management/*.
+    const hostname = "api.workos.com";
     return {
       apiHostname: hostname,
-      devMode: hostname === "api.workos.com" ? true : undefined,
+      devMode: true,
     };
   }
 
@@ -248,6 +244,13 @@ function workOSApiConfig(apiHostname: string | undefined): {
     https: window.location.protocol === "https:",
     ...(Number.isInteger(port) && port > 0 ? { port } : {}),
   };
+}
+
+function resolveWorkOSDevMode(apiConfig: {
+  devMode?: boolean;
+}): boolean | undefined {
+  if (!import.meta.env.DEV) return apiConfig.devMode;
+  return optionalBooleanEnv(import.meta.env.VITE_WORKOS_DEV_MODE) ?? true;
 }
 
 function handleRedirectCallback({
