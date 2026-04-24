@@ -21,6 +21,8 @@ type WorkflowRegistryConfig = {
   url?: string;
 };
 
+const LOCAL_BACKEND_URL = "http://127.0.0.1:8787";
+
 const root = document.getElementById("root");
 
 if (!root) {
@@ -135,6 +137,7 @@ function ClientApp({
     return (
       <>
         <TenantWorkersEmptyState
+          backendUrl={registryConfig.backendUrl}
           registryError={registryError}
           sidebarFooter={sidebarFooter}
         />
@@ -204,22 +207,25 @@ function ClientStateMessage({ children }: { children: ReactNode }) {
 }
 
 function TenantWorkersEmptyState({
+  backendUrl,
   registryError,
   sidebarFooter,
 }: {
+  backendUrl?: string;
   registryError?: string;
   sidebarFooter: ReactNode;
 }) {
+  const deployCommand = workflowDeployCommand(backendUrl);
   return (
     <div className="grid min-h-dvh grid-rows-[1fr_auto] bg-background p-6 text-foreground">
       <div className="grid place-items-center">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-sm">
+        <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-sm">
           <h1 className="text-lg font-semibold">No workers deployed</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Deploy a worker for this account from a Hylo workflow project.
           </p>
           <pre className="mt-4 overflow-x-auto rounded-md bg-muted p-3 text-left text-xs">
-            <code>pnpm hylo deploy path/to/workflow-project</code>
+            <code>{deployCommand}</code>
           </pre>
           {registryError ? (
             <p className="mt-3 text-xs text-destructive">{registryError}</p>
@@ -229,6 +235,36 @@ function TenantWorkersEmptyState({
       <div className="w-64 justify-self-start">{sidebarFooter}</div>
     </div>
   );
+}
+
+function workflowDeployCommand(backendUrl: string | undefined): string {
+  const backendOption = deployBackendOption(backendUrl);
+  return [
+    backendOption ? `pnpm hylo auth login \\` : "pnpm hylo auth login",
+    ...(backendOption ? [`  ${backendOption}`] : []),
+    "",
+    backendOption
+      ? "pnpm hylo deploy examples/cloudflare-worker \\"
+      : "pnpm hylo deploy examples/cloudflare-worker",
+    ...(backendOption ? [`  ${backendOption}`] : []),
+  ].join("\n");
+}
+
+function deployBackendOption(backendUrl: string | undefined): string | null {
+  const resolvedBackendUrl = backendUrl ?? LOCAL_BACKEND_URL;
+  return isDefaultBackendUrl(resolvedBackendUrl)
+    ? null
+    : `--backend-url ${resolvedBackendUrl}`;
+}
+
+function isDefaultBackendUrl(backendUrl: string): boolean {
+  try {
+    return (
+      new URL(backendUrl).origin === "https://hylo-backend.smithery.workers.dev"
+    );
+  } catch {
+    return false;
+  }
 }
 
 function workflowRegistryConfig(): WorkflowRegistryConfig {
@@ -307,11 +343,23 @@ function isBackendUrl(value: string, backendUrl: string | undefined): boolean {
 function workflowApiUrl(apiBaseUrl: string, backendUrl: string | undefined) {
   if (!backendUrl) return apiBaseUrl;
 
-  const url = new URL(apiBaseUrl, window.location.origin);
+  let url = new URL(apiBaseUrl, window.location.origin);
+  if (isLoopbackUrl(url)) {
+    const backend = new URL(backendUrl);
+    url = new URL(`${url.pathname}${url.search}${url.hash}`, backend.origin);
+  }
   url.searchParams.set("backendUrl", backendUrl);
   return url.origin === window.location.origin
     ? `${url.pathname}${url.search}${url.hash}`
     : url.toString();
+}
+
+function isLoopbackUrl(url: URL): boolean {
+  return (
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "::1"
+  );
 }
 
 function normalizeWorkflowRegistry(value: unknown): WorkflowRegistry {

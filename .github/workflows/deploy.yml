@@ -72,6 +72,8 @@ jobs:
               exit "$STATUS"
             fi
           fi
+          printf '%s' "$CLOUDFLARE_API_TOKEN" | pnpm --filter backend-cloudflare exec wrangler versions secret put CLOUDFLARE_API_TOKEN --env preview
+          pnpm --filter backend-cloudflare exec wrangler versions upload --env preview --preview-alias "${ALIAS:-preview}"
 
   deploy:
     if: github.event_name != 'pull_request'
@@ -110,4 +112,6 @@ jobs:
           exit "$missing"
 
       - name: Deploy backend worker
-        run: pnpm turbo run deploy --filter=backend-cloudflare
+        run: |
+          pnpm turbo run deploy --filter=backend-cloudflare
+          printf '%s' "$CLOUDFLARE_API_TOKEN" | pnpm --filter backend-cloudflare exec wrangler secret put CLOUDFLARE_API_TOKEN
