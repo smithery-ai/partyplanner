@@ -19,6 +19,7 @@ import type {
   StartWorkflowRunRequest,
   SubmitBackendInputRequest,
   SubmitBackendInterventionRequest,
+  SubmitBackendWebhookRequest,
   WorkflowManifest,
   WorkflowRuntimeResult,
 } from "../types";
@@ -59,6 +60,10 @@ export type WorkflowRunState = {
   submitIntervention(
     args: SubmitWorkflowInterventionArgs,
   ): Promise<WorkflowRuntimeResult>;
+  submitWebhook(args: {
+    state?: RunState;
+    payload: unknown;
+  }): Promise<WorkflowRuntimeResult>;
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>;
   bindSecret(args: BindRunSecretArgs): Promise<WorkflowRuntimeResult>;
   clear(): void;
@@ -242,6 +247,25 @@ function useSubmitInterventionMutation() {
   });
 }
 
+function useSubmitWebhookMutation() {
+  const config = useWorkflowFrontendConfig();
+  return useMutation({
+    mutationFn: async (args: { state?: RunState; payload: unknown }) => {
+      const body: SubmitBackendWebhookRequest = {
+        runId: args.state?.runId,
+        payload: args.payload as JsonPayload,
+      };
+      return documentResult(
+        await apiPost<SubmitBackendWebhookRequest, RunStateDocument>(
+          config.apiBaseUrl,
+          "/webhooks",
+          body,
+        ),
+      );
+    },
+  });
+}
+
 function useAdvanceRunMutation() {
   const config = useWorkflowFrontendConfig();
   return useMutation({
@@ -414,6 +438,7 @@ export function useWorkflowRunQuery(
   const stateQuery = useRunStateQuery(runId);
   const submitInputMutation = useSubmitInputMutation();
   const submitInterventionMutation = useSubmitInterventionMutation();
+  const submitWebhookMutation = useSubmitWebhookMutation();
   const advanceMutation = useAdvanceRunMutation();
   const bindSecretMutation = useBindRunSecretMutation();
   const [error, setError] = useState<Error | undefined>();
@@ -468,6 +493,12 @@ export function useWorkflowRunQuery(
     [runMutation, submitInterventionMutation],
   );
 
+  const submitWebhook = useCallback(
+    (args: { state?: RunState; payload: unknown }) =>
+      runMutation(submitWebhookMutation, args),
+    [runMutation, submitWebhookMutation],
+  );
+
   const advance = useCallback(
     (args: AdvanceWorkflowArgs) => runMutation(advanceMutation, args),
     [advanceMutation, runMutation],
@@ -498,6 +529,7 @@ export function useWorkflowRunQuery(
     () =>
       submitInputMutation.isPending ||
       submitInterventionMutation.isPending ||
+      submitWebhookMutation.isPending ||
       advanceMutation.isPending ||
       bindSecretMutation.isPending ||
       (Boolean(runId) && stateQuery.isPending),
@@ -508,11 +540,14 @@ export function useWorkflowRunQuery(
       runId,
       submitInputMutation.isPending,
       submitInterventionMutation.isPending,
+      submitWebhookMutation.isPending,
     ],
   );
 
   const isSubmittingPendingInput =
-    submitInputMutation.isPending || submitInterventionMutation.isPending;
+    submitInputMutation.isPending ||
+    submitInterventionMutation.isPending ||
+    submitWebhookMutation.isPending;
 
   const activeError = error ?? normalizeError(stateQuery.error);
 
@@ -528,6 +563,7 @@ export function useWorkflowRunQuery(
     refresh,
     submitInput,
     submitIntervention,
+    submitWebhook,
     advance,
     bindSecret,
     clear,

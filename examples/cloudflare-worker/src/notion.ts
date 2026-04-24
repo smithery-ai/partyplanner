@@ -8,9 +8,9 @@ import { z } from "zod";
 export const notionLogRequest = input(
   "notionLogRequest",
   z.object({
-    parentPageId: z.string().default(""),
-    title: z.string().default("Workflow log entry"),
-    body: z.string().default("Logged from a Hylo workflow run."),
+    parentPageId: z.string(),
+    title: z.string(),
+    body: z.string(),
   }),
   {
     title: "Create a Notion page",
@@ -48,7 +48,7 @@ export const notionCreatedPage = atom((get) => get(notionLogPage), {
 export const notionFetchRequest = input(
   "notionFetchRequest",
   z.object({
-    pageId: z.string().default(""),
+    pageId: z.string(),
   }),
   {
     title: "Fetch a Notion page",

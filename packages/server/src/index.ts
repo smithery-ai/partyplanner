@@ -8,6 +8,7 @@ export type {
   SecretVaultScope,
   SubmitBackendInputRequest,
   SubmitBackendInterventionRequest,
+  SubmitBackendWebhookRequest,
   UpdateSecretVaultEntryRequest,
 } from "./api";
 export type { CreateWorkflowOptions, WorkflowApp } from "./app";
@@ -36,6 +37,7 @@ export type {
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
+  SubmitWorkflowWebhookRequest,
   WorkflowEventSink,
   WorkflowQueue,
   WorkflowRunDocument,

@@ -5,7 +5,11 @@ import {
   createBackendApiWorkflowQueue,
   createBackendApiWorkflowStateStore,
 } from "./backend-api";
-import { WorkflowManager, type WorkflowManagerOptions } from "./manager";
+import {
+  WorkflowManager,
+  type WorkflowManagerOptions,
+  type WorkflowWebhookRequestContext,
+} from "./manager";
 import {
   createWorkflowRoutes,
   mountWorkflowOpenApi,
@@ -15,6 +19,7 @@ import type {
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
   SubmitWorkflowInterventionRequest,
+  SubmitWorkflowWebhookRequest,
 } from "./types";
 
 export type CreateWorkflowOptions = Omit<
@@ -94,6 +99,18 @@ export function createWorkflow(options: CreateWorkflowOptions) {
     }
   });
 
+  app.openapi(routes.submitWebhook, async (c) => {
+    try {
+      const body = c.req.valid("json") as SubmitWorkflowWebhookRequest;
+      return c.json(
+        await manager.submitWebhook(body, webhookRequestContext(c.req.raw)),
+        200,
+      );
+    } catch (e) {
+      return c.json({ message: errorMessage(e) }, 400);
+    }
+  });
+
   app.openapi(routes.submitIntervention, async (c) => {
     try {
       const body = c.req.valid("json") as SubmitWorkflowInterventionRequest;
@@ -145,6 +162,19 @@ function requireParam(value: string | undefined): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function webhookRequestContext(
+  request: Request,
+): WorkflowWebhookRequestContext {
+  const url = new URL(request.url);
+  return {
+    method: request.method,
+    url: request.url,
+    route: url.pathname,
+    headers: Object.fromEntries(request.headers.entries()),
+    query: Object.fromEntries(url.searchParams.entries()),
+  };
 }
 
 export type WorkflowApp = ReturnType<typeof createWorkflow>;

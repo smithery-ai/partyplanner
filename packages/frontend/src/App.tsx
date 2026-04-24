@@ -592,8 +592,10 @@ function WorkflowRunnerBody({
     }
 
     try {
-      const result = await workflow.start({
-        inputId: seed.id,
+      // Canonical UI starts should exercise the same webhook ingress path as
+      // external callers. The selected input form shapes the payload, but the
+      // server still decides which unresolved inputs the webhook matches.
+      const result = await workflowRun.submitWebhook({
         payload,
       });
       navigation.run(workflowId, result.state.runId);
@@ -721,6 +723,7 @@ function WorkflowRunnerBody({
   let nodeEditor: NodeDetailEditor | null = null;
   if (selectedNodeId) {
     const def = findManifestInput(workflow.manifest, selectedNodeId);
+    const selectedValue = inputValues[selectedNodeId];
     if (
       def &&
       immediateInputNeedsForm(workflow.manifest, selectedNodeId, runState)
@@ -731,7 +734,7 @@ function WorkflowRunnerBody({
           "Submit this payload as the seed input event (same as Start Workflow).",
         schema: def.schema,
         secret: def.secret,
-        value: inputValues[selectedNodeId],
+        value: selectedValue,
         onChange: (v) => setInputValue(selectedNodeId, v),
         onSubmit: () => void runWorkflow(selectedNodeId),
         submitLabel: workflowInputLabel(def, selectedNodeId),
@@ -748,7 +751,7 @@ function WorkflowRunnerBody({
         description:
           "Input required by a waiting step. Submit it to continue this run.",
         schema: def.schema,
-        value: inputValues[id],
+        value: selectedValue,
         onChange: (v) => setInputValue(id, v),
         onSubmit: () => void submitPendingInput(id),
         submitLabel: workflowInputLabel(def, id),

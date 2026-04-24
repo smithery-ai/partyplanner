@@ -73,7 +73,12 @@ export type NodeStatus =
   | "errored"
   | "not_reached";
 
-export type NodeKind = "input" | "deferred_input" | "atom" | "action";
+export type NodeKind =
+  | "input"
+  | "deferred_input"
+  | "atom"
+  | "action"
+  | "webhook";
 
 export type NodeRecord = {
   status: NodeStatus;
@@ -93,6 +98,15 @@ export type RunState = {
   startedAt: number;
   trigger?: string;
   payload?: unknown;
+  webhook?: {
+    nodeId: string;
+    matchedInputs: string[];
+    receivedAt: number;
+  };
+  terminal?: {
+    status: "failed" | "canceled";
+    reason?: string;
+  };
   inputs: Record<string, unknown>;
   interventions: Record<string, InterventionRequest>;
   nodes: Record<string, NodeRecord>;

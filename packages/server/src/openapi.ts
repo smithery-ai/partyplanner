@@ -119,7 +119,7 @@ const QueueSnapshotSchema = z
 const GraphNodeSchema = z
   .object({
     id: z.string(),
-    kind: z.enum(["input", "deferred_input", "atom", "action"]),
+    kind: z.enum(["input", "deferred_input", "atom", "action", "webhook"]),
     secret: z.boolean().optional(),
     description: z.string().optional(),
     status: z.enum([
@@ -219,6 +219,13 @@ export const SubmitWorkflowInputRequestSchema = z
     secretValues: z.record(z.string(), z.string()).optional(),
   })
   .openapi("SubmitWorkflowInputRequest");
+
+export const SubmitWorkflowWebhookRequestSchema = z
+  .object({
+    payload: z.any(),
+    runId: z.string().optional(),
+  })
+  .openapi("SubmitWorkflowWebhookRequest");
 
 export const SubmitWorkflowInterventionRequestSchema = z
   .object({
@@ -335,6 +342,19 @@ export function createWorkflowRoutes(basePath = "/") {
         400: jsonResponse("Invalid request", ErrorResponseSchema),
       },
     }),
+    submitWebhook: createRoute({
+      method: "post",
+      path: path(normalizedBasePath, "/webhooks"),
+      tags: ["Webhooks"],
+      summary: "Submit an arbitrary webhook payload to a workflow run",
+      request: {
+        body: jsonRequest(SubmitWorkflowWebhookRequestSchema),
+      },
+      responses: {
+        200: jsonResponse("Updated workflow run", WorkflowRunDocumentSchema),
+        400: jsonResponse("Invalid request", ErrorResponseSchema),
+      },
+    }),
     submitIntervention: createRoute({
       method: "post",
       path: path(
@@ -407,6 +427,7 @@ export function createWorkflowOpenApiDocument(
       { name: "Workflow" },
       { name: "Runs" },
       { name: "Inputs" },
+      { name: "Webhooks" },
       { name: "Interventions" },
     ],
   }) as unknown as OpenApiDocument;

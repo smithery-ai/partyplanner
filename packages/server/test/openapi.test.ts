@@ -41,6 +41,7 @@ describe("workflow OpenAPI routes", () => {
 
     const paths = asRecord(document.paths);
     expect(asRecord(paths["/api/workflow/runs"]).post).toBeTruthy();
+    expect(asRecord(paths["/api/workflow/webhooks"]).post).toBeTruthy();
     expect(
       asRecord(paths["/api/workflow/runs/{runId}/inputs"]).post,
     ).toBeTruthy();
