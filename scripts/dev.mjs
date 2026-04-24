@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { execSync, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import net from "node:net";
 
 const host = "127.0.0.1";
+const portlessCaPath = "/tmp/portless/ca.pem";
 const portSpecs = [
   ["HYLO_BACKEND_PORT", 8787],
   ["HYLO_BACKEND_INSPECTOR_PORT", 9230],
@@ -12,12 +14,23 @@ const portSpecs = [
 const reserved = new Set();
 const env = { ...process.env };
 
+if (!env.NODE_EXTRA_CA_CERTS && existsSync(portlessCaPath)) {
+  env.NODE_EXTRA_CA_CERTS = portlessCaPath;
+}
+env.NODE_TLS_REJECT_UNAUTHORIZED ??= "0";
+
 for (const [name, fallback] of portSpecs) {
   env[name] = String(await resolvePort(name, fallback));
 }
 
 execSync(`portless alias api-worker.hylo ${env.HYLO_BACKEND_PORT}`, {
   stdio: "ignore",
+});
+
+console.log("Applying local backend database migrations...");
+execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
+  env,
+  stdio: "inherit",
 });
 
 console.log("pnpm dev using local ports:");
@@ -40,9 +53,11 @@ const child = spawn(
     "turbo",
     "run",
     "dev",
+    "dev:info",
     "--filter=backend-node",
     "--filter=workflow-cloudflare-worker-example",
     "--filter=client",
+    "--filter=//",
   ],
   {
     env,

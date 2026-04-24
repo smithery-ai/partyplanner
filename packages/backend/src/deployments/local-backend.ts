@@ -1,8 +1,10 @@
 import { PlatformApiError } from "../errors";
 import type { BackendAppEnv } from "../types";
 import type { DeploymentBackend } from "./backend";
-import type { WorkflowDeploymentRegistry } from "./registry";
-import type { ProvisionDeploymentInput } from "./types";
+import type {
+  WorkflowDeploymentRecord,
+  WorkflowDeploymentRegistry,
+} from "./registry";
 
 const LOCAL_DISPATCH_NAMESPACE = "local";
 const DEFAULT_WORKFLOW_URL_TEMPLATE =
@@ -26,7 +28,17 @@ export function createLocalDeploymentBackend(
     configured: true,
     config,
     resolveWorkflowApiUrl(input) {
-      return localDeploymentWorkflowApiUrl(env, input);
+      if (input.workflowApiUrl) return input.workflowApiUrl;
+      return `/workers/${encodeURIComponent(input.deploymentId)}/api/workflow`;
+    },
+    resolveWorkflowTargetUrl(input) {
+      if (input.workflowApiUrl && !input.workflowApiUrl.startsWith("/")) {
+        return input.workflowApiUrl;
+      }
+      return targetUrl(
+        env,
+        input.workflowId ?? input.workflowName ?? input.deploymentId,
+      );
     },
     async create() {
       return null;
@@ -54,7 +66,7 @@ export function createLocalDeploymentBackend(
         );
       }
       const deployment = await registry.get(deploymentId);
-      if (!deployment?.workflowApiUrl) {
+      if (!deployment) {
         throw new PlatformApiError(
           404,
           "workflow_deployment_not_found",
@@ -62,20 +74,27 @@ export function createLocalDeploymentBackend(
         );
       }
       return await fetch(
-        rewriteWorkflowRequest(request, deployment.workflowApiUrl),
+        rewriteWorkflowRequest(request, targetUrl(env, deployment)),
       );
     },
   };
 }
 
-function localDeploymentWorkflowApiUrl(
+function targetUrl(
   env: BackendAppEnv,
-  input: ProvisionDeploymentInput,
+  deploymentOrWorkflowId: WorkflowDeploymentRecord | string,
 ): string {
-  if (input.workflowApiUrl) return input.workflowApiUrl;
+  if (
+    typeof deploymentOrWorkflowId !== "string" &&
+    deploymentOrWorkflowId.workflowTargetUrl
+  ) {
+    return deploymentOrWorkflowId.workflowTargetUrl;
+  }
 
   const workflowHost = localWorkflowHost(
-    input.workflowId ?? input.workflowName ?? input.deploymentId,
+    typeof deploymentOrWorkflowId === "string"
+      ? deploymentOrWorkflowId
+      : localWorkflowIdFromDeployment(deploymentOrWorkflowId.deploymentId),
   );
   const template =
     env.HYLO_LOCAL_WORKFLOW_URL_TEMPLATE?.trim() ||
@@ -91,6 +110,10 @@ function localWorkflowHost(raw: string): string {
       .replace(/[^a-z0-9-]+/g, "-")
       .replace(/^-+|-+$/g, "") || "workflow"
   );
+}
+
+function localWorkflowIdFromDeployment(deploymentId: string): string {
+  return deploymentId.replace(/-[a-z0-9]{10}$/, "");
 }
 
 function rewriteWorkflowRequest(request: Request, workflowApiUrl: string) {

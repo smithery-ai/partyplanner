@@ -11,6 +11,7 @@ export type WorkflowDeploymentRecord = {
   deploymentId: string;
   label?: string;
   workflowApiUrl?: string;
+  workflowTargetUrl?: string;
   dispatchNamespace: string;
   tags: string[];
   createdAt: number;
@@ -67,6 +68,7 @@ export function createWorkflowDeploymentRegistry(
           tenantId: deployment.tenantId,
           label: deployment.label ?? null,
           workflowApiUrl: deployment.workflowApiUrl ?? null,
+          workflowTargetUrl: deployment.workflowTargetUrl ?? null,
           dispatchNamespace: deployment.dispatchNamespace,
           tagsJson: JSON.stringify(deployment.tags),
           createdAt: now,
@@ -78,6 +80,7 @@ export function createWorkflowDeploymentRegistry(
             tenantId: deployment.tenantId,
             label: deployment.label ?? null,
             workflowApiUrl: deployment.workflowApiUrl ?? null,
+            workflowTargetUrl: deployment.workflowTargetUrl ?? null,
             dispatchNamespace: deployment.dispatchNamespace,
             tagsJson: JSON.stringify(deployment.tags),
             updatedAt: now,
@@ -132,6 +135,8 @@ type WorkflowDeploymentRow = {
   label: string | null;
   workflowApiUrl?: string | null;
   workflow_api_url?: string | null;
+  workflowTargetUrl?: string | null;
+  workflow_target_url?: string | null;
   dispatchNamespace?: string;
   dispatch_namespace?: string;
   tagsJson?: string;
@@ -151,6 +156,12 @@ function workflowDeploymentFromRow(
     ...(row.label ? { label: row.label } : {}),
     ...(row.workflowApiUrl || row.workflow_api_url
       ? { workflowApiUrl: row.workflowApiUrl ?? row.workflow_api_url ?? "" }
+      : {}),
+    ...(row.workflowTargetUrl || row.workflow_target_url
+      ? {
+          workflowTargetUrl:
+            row.workflowTargetUrl ?? row.workflow_target_url ?? "",
+        }
       : {}),
     dispatchNamespace: row.dispatchNamespace ?? row.dispatch_namespace ?? "",
     tags: parseJsonArray(row.tagsJson ?? row.tags_json ?? "[]"),

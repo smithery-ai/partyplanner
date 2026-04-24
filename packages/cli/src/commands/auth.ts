@@ -31,6 +31,10 @@ type TokenResponse = {
   refresh_token?: string;
 };
 
+type AccessTokenOptions = {
+  backendUrl?: string;
+};
+
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const DEFAULT_WORKOS_API_BASE_URL = "https://api.workos.com";
 
@@ -78,8 +82,10 @@ export async function runAuth(args: string[]): Promise<number> {
   }
 }
 
-export async function getHyloAccessToken(): Promise<string | undefined> {
-  const stored = await readStoredAuth();
+export async function getHyloAccessToken({
+  backendUrl,
+}: AccessTokenOptions = {}): Promise<string | undefined> {
+  const stored = await readStoredAuth(backendUrl);
   if (!stored) return undefined;
   if (!isJwtExpired(stored.accessToken)) return stored.accessToken;
   if (!stored.refreshToken) return stored.accessToken;
@@ -91,6 +97,7 @@ export async function getHyloAccessToken(): Promise<string | undefined> {
   });
   await writeStoredAuth({
     accessToken: token.access_token,
+    backendUrl: stored.backendUrl,
     clientId: stored.clientId,
     refreshToken: token.refresh_token ?? stored.refreshToken,
     workosApiBaseUrl: stored.workosApiBaseUrl,
@@ -146,6 +153,7 @@ async function login(args: string[]): Promise<void> {
   });
   await writeStoredAuth({
     accessToken: token.access_token,
+    backendUrl,
     clientId,
     refreshToken: token.refresh_token,
     workosApiBaseUrl,
@@ -154,10 +162,18 @@ async function login(args: string[]): Promise<void> {
 }
 
 async function printToken(args: string[]): Promise<void> {
-  const rest = parseAuthOptions(args).rest;
+  const options = parseAuthOptions(args);
+  const rest = options.rest;
   if (rest.length > 0) throw new Error(`Unexpected argument: ${rest[0]}`);
-  const token = await getHyloAccessToken();
-  if (!token) throw new Error("Not signed in. Run `hylo auth login` first.");
+  const backendUrl = options.backendUrl
+    ? resolveHyloBackendUrl(options.backendUrl)
+    : undefined;
+  const token = await getHyloAccessToken({ backendUrl });
+  if (!token) {
+    throw new Error(
+      `Not signed in${backendUrl ? ` for ${backendUrl}` : ""}. Run \`hylo auth login${backendUrl ? ` --backend-url ${backendUrl}` : ""}\` first.`,
+    );
+  }
   process.stdout.write(`${token}\n`);
 }
 
@@ -168,14 +184,12 @@ async function requestDeviceAuthorization({
   clientId: string;
   workosApiBaseUrl: string;
 }): Promise<DeviceAuthorizationResponse> {
-  const response = await fetch(
-    `${workosApiBaseUrl.replace(/\/+$/, "")}/user_management/authorize/device`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: formBody({ client_id: clientId }),
-    },
-  );
+  const endpoints = resolveWorkOSEndpoints(workosApiBaseUrl);
+  const response = await fetch(endpoints.deviceAuthorizationUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: formBody({ client_id: clientId }),
+  });
   return parseResponse<DeviceAuthorizationResponse>(response);
 }
 
@@ -207,24 +221,22 @@ async function pollDeviceToken({
   device: DeviceAuthorizationResponse;
   workosApiBaseUrl: string;
 }): Promise<TokenResponse> {
+  const endpoints = resolveWorkOSEndpoints(workosApiBaseUrl);
   const startedAt = Date.now();
   let intervalMs = Math.max(device.interval ?? 5, 1) * 1000;
   const expiresAt = startedAt + device.expires_in * 1000;
 
   while (Date.now() < expiresAt) {
     await sleep(intervalMs);
-    const response = await fetch(
-      `${workosApiBaseUrl.replace(/\/+$/, "")}/user_management/authenticate`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: formBody({
-          client_id: clientId,
-          device_code: device.device_code,
-          grant_type: DEVICE_GRANT_TYPE,
-        }),
-      },
-    );
+    const response = await fetch(endpoints.tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: formBody({
+        client_id: clientId,
+        device_code: device.device_code,
+        grant_type: DEVICE_GRANT_TYPE,
+      }),
+    });
 
     const payload = await response.json().catch(() => ({}));
     if (response.ok) return payload as TokenResponse;
@@ -253,18 +265,16 @@ async function refreshAccessToken({
   refreshToken: string;
   workosApiBaseUrl?: string;
 }): Promise<TokenResponse> {
-  const response = await fetch(
-    `${workosApiBaseUrl.replace(/\/+$/, "")}/user_management/authenticate`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: formBody({
-        client_id: clientId,
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-      }),
-    },
-  );
+  const endpoints = resolveWorkOSEndpoints(workosApiBaseUrl);
+  const response = await fetch(endpoints.tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: formBody({
+      client_id: clientId,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  });
   return parseResponse<TokenResponse>(response);
 }
 
@@ -324,6 +334,24 @@ function resolveWorkOSApiBaseUrl(
   if (!hostname) return DEFAULT_WORKOS_API_BASE_URL;
   if (/^https?:\/\//i.test(hostname)) return hostname.replace(/\/+$/, "");
   return `https://${hostname.replace(/^\/+|\/+$/g, "")}`;
+}
+
+function resolveWorkOSEndpoints(workosApiBaseUrl: string): {
+  deviceAuthorizationUrl: string;
+  tokenUrl: string;
+} {
+  const baseUrl = workosApiBaseUrl.replace(/\/+$/, "");
+  const hostname = new URL(baseUrl).hostname;
+  if (hostname === "api.workos.com") {
+    return {
+      deviceAuthorizationUrl: `${baseUrl}/user_management/authorize/device`,
+      tokenUrl: `${baseUrl}/user_management/authenticate`,
+    };
+  }
+  return {
+    deviceAuthorizationUrl: `${baseUrl}/oauth2/device_authorization`,
+    tokenUrl: `${baseUrl}/oauth2/token`,
+  };
 }
 
 function formBody(values: Record<string, string>): URLSearchParams {

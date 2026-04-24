@@ -8,7 +8,14 @@ export type DeploymentBackend = {
   namespace: string;
   configured: boolean;
   config: CloudflarePlatformConfig;
-  resolveWorkflowApiUrl(input: ProvisionDeploymentInput): string | undefined;
+  resolveWorkflowApiUrl(
+    input: ProvisionDeploymentInput,
+    requestOrigin: string,
+  ): string | undefined;
+  resolveWorkflowTargetUrl?(
+    input: ProvisionDeploymentInput,
+    requestOrigin: string,
+  ): string | undefined;
   create(
     input: ProvisionDeploymentInput,
     requestOrigin: string,

@@ -68,11 +68,14 @@ const schemaStatements = [
     tenant_id text not null,
     label text,
     workflow_api_url text,
+    workflow_target_url text,
     dispatch_namespace text not null,
     tags_json text not null,
     created_at double precision not null,
     updated_at double precision not null
   )`,
+  `alter table workflow_deployments
+    add column if not exists workflow_target_url text`,
   `create index if not exists workflow_run_documents_started_at_idx
     on workflow_run_documents (started_at desc)`,
   `create index if not exists workflow_events_run_id_created_at_idx

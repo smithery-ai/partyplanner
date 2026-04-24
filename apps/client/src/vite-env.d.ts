@@ -14,14 +14,3 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
-
-declare const __HYLO_WORKFLOWS__: {
-  defaultWorkflow?: string;
-  workflows: Record<
-    string,
-    {
-      label?: string;
-      url: string;
-    }
-  >;
-};

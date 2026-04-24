@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
   "globalPassThroughEnv": [
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN",
@@ -36,7 +37,9 @@
     "NOTION_PARENT_PAGE_ID",
     "NOTION_PAGE_ID",
     "OAUTH_STATE_SECRET",
-    "NEXT_PUBLIC_APP_URL"
+    "NEXT_PUBLIC_APP_URL",
+    "NODE_EXTRA_CA_CERTS",
+    "NODE_TLS_REJECT_UNAUTHORIZED"
   ],
   "tasks": {
     "build": {
@@ -52,6 +55,12 @@
     },
     "dev": {
       "cache": false,
+      "persistent": true,
+      "with": ["//#dev:info"]
+    },
+    "//#dev:info": {
+      "cache": false,
+      "inputs": ["scripts/dev-info.mjs"],
       "persistent": true
     }
   }

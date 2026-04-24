@@ -47,9 +47,7 @@ export function parseProvisionDeploymentInput(
 
   const label = optionalString(body, "label");
   const workflowApiUrl =
-    optionalString(body, "workflowApiUrl") ??
-    optionalString(body, "url") ??
-    resolveDefaultWorkflowApiUrl(config, deploymentId);
+    optionalString(body, "workflowApiUrl") ?? optionalString(body, "url");
   if (workflowApiUrl) assertWorkflowApiUrl(workflowApiUrl);
 
   const moduleName =
@@ -127,17 +125,6 @@ export function parseTenantIdParam(tenantId: string | undefined): string {
     throw new PlatformApiError(400, "missing_tenant_id", "Missing tenantId.");
   }
   return tenantId.trim();
-}
-
-function resolveDefaultWorkflowApiUrl(
-  config: CloudflarePlatformConfig,
-  deploymentId: string,
-): string | undefined {
-  if (!config.workerDispatchBaseUrl) return undefined;
-  return `${config.workerDispatchBaseUrl.replace(
-    /\/+$/,
-    "",
-  )}/${encodeURIComponent(deploymentId)}/api/workflow`;
 }
 
 function assertWorkflowApiUrl(value: string): void {

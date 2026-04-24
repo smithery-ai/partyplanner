@@ -18,9 +18,10 @@ type WorkflowRegistry = {
 
 type WorkflowRegistryConfig = {
   backendUrl?: string;
-  registry?: WorkflowRegistry;
   url?: string;
 };
+
+const LOCAL_BACKEND_URL = "http://127.0.0.1:8787";
 
 const root = document.getElementById("root");
 
@@ -58,11 +59,6 @@ function ClientApp({
     setRegistry(undefined);
     setRegistryError(undefined);
 
-    if (registryConfig.registry) {
-      setRegistry(registryConfig.registry);
-      return () => abort.abort();
-    }
-
     if (!registryConfig.url) {
       setRegistry(emptyWorkflowRegistry());
       setRegistryError("Workflow registry could not be loaded.");
@@ -88,28 +84,17 @@ function ClientApp({
         return normalizeWorkflowRegistry(await response.json());
       })
       .then((nextRegistry) => {
-        if (!abort.signal.aborted)
-          setRegistry(
-            mergeWorkflowRegistries(nextRegistry, localWorkflowRegistry()),
-          );
+        if (!abort.signal.aborted) setRegistry(nextRegistry);
       })
       .catch((error) => {
         if (!abort.signal.aborted) {
-          const fallback = localWorkflowRegistry();
-          if (fallback && Object.keys(fallback.workflows).length > 0) {
-            setRegistry(fallback);
-          } else {
-            console.warn(
-              "[hylo-client] failed to load workflow registry",
-              error,
-            );
-            setRegistry(emptyWorkflowRegistry());
-            setRegistryError(
-              error instanceof Error
-                ? error.message
-                : "Workflow registry could not be loaded.",
-            );
-          }
+          console.warn("[hylo-client] failed to load workflow registry", error);
+          setRegistry(emptyWorkflowRegistry());
+          setRegistryError(
+            error instanceof Error
+              ? error.message
+              : "Workflow registry could not be loaded.",
+          );
         }
       });
 
@@ -152,6 +137,7 @@ function ClientApp({
     return (
       <>
         <TenantWorkersEmptyState
+          backendUrl={registryConfig.backendUrl}
           registryError={registryError}
           sidebarFooter={sidebarFooter}
         />
@@ -221,22 +207,25 @@ function ClientStateMessage({ children }: { children: ReactNode }) {
 }
 
 function TenantWorkersEmptyState({
+  backendUrl,
   registryError,
   sidebarFooter,
 }: {
+  backendUrl?: string;
   registryError?: string;
   sidebarFooter: ReactNode;
 }) {
+  const deployCommand = workflowDeployCommand(backendUrl);
   return (
     <div className="grid min-h-dvh grid-rows-[1fr_auto] bg-background p-6 text-foreground">
       <div className="grid place-items-center">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-sm">
+        <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-sm">
           <h1 className="text-lg font-semibold">No workers deployed</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Deploy a worker for this account from a Hylo workflow project.
           </p>
           <pre className="mt-4 overflow-x-auto rounded-md bg-muted p-3 text-left text-xs">
-            <code>pnpm hylo deploy path/to/workflow-project</code>
+            <code>{deployCommand}</code>
           </pre>
           {registryError ? (
             <p className="mt-3 text-xs text-destructive">{registryError}</p>
@@ -246,6 +235,36 @@ function TenantWorkersEmptyState({
       <div className="w-64 justify-self-start">{sidebarFooter}</div>
     </div>
   );
+}
+
+function workflowDeployCommand(backendUrl: string | undefined): string {
+  const backendOption = deployBackendOption(backendUrl);
+  return [
+    backendOption ? `pnpm hylo auth login \\` : "pnpm hylo auth login",
+    ...(backendOption ? [`  ${backendOption}`] : []),
+    "",
+    backendOption
+      ? "pnpm hylo deploy examples/cloudflare-worker \\"
+      : "pnpm hylo deploy examples/cloudflare-worker",
+    ...(backendOption ? [`  ${backendOption}`] : []),
+  ].join("\n");
+}
+
+function deployBackendOption(backendUrl: string | undefined): string | null {
+  const resolvedBackendUrl = backendUrl ?? LOCAL_BACKEND_URL;
+  return isDefaultBackendUrl(resolvedBackendUrl)
+    ? null
+    : `--backend-url ${resolvedBackendUrl}`;
+}
+
+function isDefaultBackendUrl(backendUrl: string): boolean {
+  try {
+    return (
+      new URL(backendUrl).origin === "https://hylo-backend.smithery.workers.dev"
+    );
+  } catch {
+    return false;
+  }
 }
 
 function workflowRegistryConfig(): WorkflowRegistryConfig {
@@ -324,11 +343,23 @@ function isBackendUrl(value: string, backendUrl: string | undefined): boolean {
 function workflowApiUrl(apiBaseUrl: string, backendUrl: string | undefined) {
   if (!backendUrl) return apiBaseUrl;
 
-  const url = new URL(apiBaseUrl, window.location.origin);
+  let url = new URL(apiBaseUrl, window.location.origin);
+  if (isLoopbackUrl(url)) {
+    const backend = new URL(backendUrl);
+    url = new URL(`${url.pathname}${url.search}${url.hash}`, backend.origin);
+  }
   url.searchParams.set("backendUrl", backendUrl);
   return url.origin === window.location.origin
     ? `${url.pathname}${url.search}${url.hash}`
     : url.toString();
+}
+
+function isLoopbackUrl(url: URL): boolean {
+  return (
+    url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" ||
+    url.hostname === "::1"
+  );
 }
 
 function normalizeWorkflowRegistry(value: unknown): WorkflowRegistry {
@@ -374,26 +405,6 @@ function emptyWorkflowRegistry(): WorkflowRegistry {
   return { workflows: {} };
 }
 
-function localWorkflowRegistry(): WorkflowRegistry | undefined {
-  if (!isLocalDev()) return undefined;
-  return __HYLO_WORKFLOWS__;
-}
-
-function mergeWorkflowRegistries(
-  base: WorkflowRegistry,
-  overlay: WorkflowRegistry | undefined,
-): WorkflowRegistry {
-  if (!overlay) return base;
-  const workflows = { ...overlay.workflows, ...base.workflows };
-  return {
-    defaultWorkflow:
-      base.defaultWorkflow ??
-      overlay.defaultWorkflow ??
-      Object.keys(workflows)[0],
-    workflows,
-  };
-}
-
 function parseWorkflowChoice(
   value: string | undefined,
   registry: WorkflowRegistry,
@@ -409,15 +420,6 @@ function requestedWorker(): string | undefined {
   return firstNonEmpty(
     new URLSearchParams(window.location.search).get("worker"),
     import.meta.env.VITE_HYLO_WORKFLOW,
-  );
-}
-
-function isLocalDev(): boolean {
-  if (!import.meta.env.DEV) return false;
-  const hostname = window.location.hostname;
-  return (
-    ["localhost", "127.0.0.1", "::1"].includes(hostname) ||
-    hostname.endsWith(".localhost")
   );
 }
 

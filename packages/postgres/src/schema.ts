@@ -62,6 +62,7 @@ export const workflowDeployments = pgTable("workflow_deployments", {
   tenantId: text("tenant_id").notNull(),
   label: text("label"),
   workflowApiUrl: text("workflow_api_url"),
+  workflowTargetUrl: text("workflow_target_url"),
   dispatchNamespace: text("dispatch_namespace").notNull(),
   tagsJson: text("tags_json").notNull(),
   createdAt: doublePrecision("created_at").notNull(),
