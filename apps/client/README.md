@@ -32,6 +32,11 @@ VITE_WORKOS_REDIRECT_URI=http://localhost:5173
 VITE_WORKOS_DEV_MODE=true
 ```
 
+In deployed environments, prefer setting `WORKOS_CLIENT_API_HOSTNAME` on the
+Hylo backend to a first-party AuthKit API domain. If clients fall back to
+`api.workos.com`, the browser app uses AuthKit dev-mode storage so reloads do
+not immediately discard the session.
+
 In the WorkOS Dashboard, configure the client URL as an AuthKit Redirect URI,
 configure `/login` on that same origin as the sign-in endpoint, and add the
 client origin to the Authentication CORS allow list.

@@ -22,6 +22,7 @@ export type BackendAppEnv = {
   SPOTIFY_CLIENT_ID?: string;
   SPOTIFY_CLIENT_SECRET?: string;
   WORKOS_API_HOSTNAME?: string;
+  WORKOS_CLIENT_API_HOSTNAME?: string;
   WORKOS_CLIENT_ID?: string;
   WORKOS_ISSUER?: string;
   WORKOS_JWKS_URL?: string;
