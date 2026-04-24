@@ -59,6 +59,7 @@ export function authClientConfig(env: BackendAppEnv): {
   provider: "workos";
   clientId: string;
   apiHostname: string;
+  cliApiHostname: string;
 } | null {
   const clientId = resolveWorkOSClientId(env);
   if (!clientId) return null;
@@ -70,6 +71,7 @@ export function authClientConfig(env: BackendAppEnv): {
         env.VITE_WORKOS_API_HOSTNAME ??
         env.WORKOS_API_HOSTNAME,
     ),
+    cliApiHostname: workOSApiHostname(env.WORKOS_API_HOSTNAME),
   };
 }
 

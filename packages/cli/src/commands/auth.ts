@@ -129,7 +129,7 @@ async function login(args: string[]): Promise<void> {
   );
   const workosApiBaseUrl = resolveWorkOSApiBaseUrl(
     options,
-    clientConfig.auth?.apiHostname,
+    resolveCliWorkOSApiHostname(clientConfig.auth),
   );
   const device = await requestDeviceAuthorization({
     clientId,
@@ -207,6 +207,11 @@ async function fetchAuthClientConfig(
           ? e.error.message
           : `HTTP ${e.response.status}`;
       throw new Error(`Hylo auth config request failed: ${message}`);
+    }
+    if (e instanceof TypeError) {
+      throw new Error(
+        `Could not reach Hylo backend at ${backendUrl}. Start the local backend with \`pnpm dev\`, or use a reachable --backend-url.`,
+      );
     }
     throw e;
   }
@@ -334,6 +339,18 @@ function resolveWorkOSApiBaseUrl(
   if (!hostname) return DEFAULT_WORKOS_API_BASE_URL;
   if (/^https?:\/\//i.test(hostname)) return hostname.replace(/\/+$/, "");
   return `https://${hostname.replace(/^\/+|\/+$/g, "")}`;
+}
+
+function resolveCliWorkOSApiHostname(
+  authConfig: AuthClientConfig["auth"] | undefined,
+): string | undefined {
+  if (!authConfig) return undefined;
+  const cliApiHostname = (authConfig as { cliApiHostname?: unknown })
+    .cliApiHostname;
+  if (typeof cliApiHostname === "string" && cliApiHostname.trim()) {
+    return cliApiHostname;
+  }
+  return undefined;
 }
 
 function resolveWorkOSEndpoints(workosApiBaseUrl: string): {
