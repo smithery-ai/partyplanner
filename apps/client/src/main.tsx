@@ -123,6 +123,14 @@ function ClientApp({
       workflows={registry ? Object.entries(registry.workflows) : []}
     />
   );
+  const embeddedSwitcher = (
+    <ClientSwitcher
+      selectedWorker={worker}
+      onWorkerChange={setWorker}
+      workflows={registry ? Object.entries(registry.workflows) : []}
+      embedded
+    />
+  );
 
   useEffect(() => {
     if (!registry) return;
@@ -165,13 +173,11 @@ function ClientApp({
   const workflow = registry.workflows[selectedWorker];
 
   return (
-    <>
-      <WorkflowSinglePage
-        apiBaseUrl={workflowApiUrl(workflow.url, registryConfig.backendUrl)}
-        sidebarFooter={sidebarFooter}
-      />
-      {switcher}
-    </>
+    <WorkflowSinglePage
+      apiBaseUrl={workflowApiUrl(workflow.url, registryConfig.backendUrl)}
+      sidebarFooter={sidebarFooter}
+      queueControls={embeddedSwitcher}
+    />
   );
 }
 
@@ -179,23 +185,28 @@ function ClientSwitcher({
   selectedWorker,
   onWorkerChange,
   workflows,
+  embedded = false,
 }: {
   selectedWorker: string | undefined;
   onWorkerChange: (worker: string) => void;
   workflows: [string, { label?: string; url: string }][];
+  embedded?: boolean;
 }) {
   const workerValue = workflows.some(([id]) => id === selectedWorker)
     ? selectedWorker
     : "";
 
   return (
-    <form className="hylo-client-switcher" aria-label="Workflow routing">
-      <label>
-        <span>Worker</span>
+    <form
+      className={`hylo-client-switcher ${embedded ? "hylo-client-switcher--pane" : "hylo-client-switcher--floating"}`}
+      aria-label="Workflow routing"
+    >
+      {embedded ? (
         <select
           value={workerValue}
           disabled={workflows.length === 0}
           onChange={(event) => onWorkerChange(event.currentTarget.value)}
+          aria-label="Worker"
         >
           {workflows.length > 0 ? (
             workflows.map(([id, workflow]) => (
@@ -207,7 +218,27 @@ function ClientSwitcher({
             <option value="">No workers</option>
           )}
         </select>
-      </label>
+      ) : (
+        <label>
+          <span>Worker</span>
+          <select
+            value={workerValue}
+            disabled={workflows.length === 0}
+            onChange={(event) => onWorkerChange(event.currentTarget.value)}
+            aria-label="Worker"
+          >
+            {workflows.length > 0 ? (
+              workflows.map(([id, workflow]) => (
+                <option key={id} value={id}>
+                  {workflow.label ?? labelFromId(id)}
+                </option>
+              ))
+            ) : (
+              <option value="">No workers</option>
+            )}
+          </select>
+        </label>
+      )}
     </form>
   );
 }

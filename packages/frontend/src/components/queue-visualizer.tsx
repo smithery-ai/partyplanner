@@ -18,7 +18,7 @@ import {
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "../components/ai-elements/canvas";
 import {
   NodeContent,
@@ -872,6 +872,7 @@ function FlowInner({
   manifest,
   nodeInlineActions,
   onNodeClick,
+  controls,
 }: {
   runState: RunState | undefined;
   queue: QueueSnapshot | undefined;
@@ -882,6 +883,7 @@ function FlowInner({
     { approve: () => void; reject: () => void }
   >;
   onNodeClick?: (nodeId: string) => void;
+  controls?: ReactNode;
 }) {
   const [legendOpen, setLegendOpen] = useState(false);
   const [showSkippedNodes, setShowSkippedNodes] = useState(false);
@@ -1047,12 +1049,12 @@ function FlowInner({
         scroll to zoom
       </Panel>
       <Panel
-        className="mb-2 mr-2 flex max-w-[min(19rem,calc(100vw-1rem))] flex-col items-end gap-2"
+        className="mb-2 mr-2 flex max-w-[calc(100vw-1rem)] flex-col items-end gap-2"
         position="bottom-right"
       >
         {legendOpen && (
           <div
-            className="nodrag nopan max-h-[min(55vh,400px)] w-full overflow-y-auto rounded-lg border border-border bg-card/95 p-3 text-xs shadow-lg backdrop-blur-sm"
+            className="nodrag nopan max-h-[min(55vh,400px)] w-[min(19rem,calc(100vw-1rem))] overflow-y-auto rounded-lg border border-border bg-card/95 p-3 text-xs shadow-lg backdrop-blur-sm"
             onPointerDown={(e) => e.stopPropagation()}
             role="dialog"
             aria-label="Status color legend"
@@ -1082,6 +1084,7 @@ function FlowInner({
           </div>
         )}
         <div className="nodrag nopan flex flex-wrap items-center justify-end gap-2">
+          {controls}
           {skippedNodeCount > 0 ? (
             <label className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-border bg-card/95 px-3 text-xs font-medium text-foreground shadow-md backdrop-blur-sm">
               <input
@@ -1122,6 +1125,7 @@ export type QueueVisualizerProps = {
   >;
   /** When set, clicking a workflow node opens details (e.g. sheet in parent). */
   onNodeClick?: (nodeId: string) => void;
+  controls?: ReactNode;
   className?: string;
 };
 
@@ -1132,6 +1136,7 @@ export function QueueVisualizer({
   manifest,
   nodeInlineActions,
   onNodeClick,
+  controls,
   className,
 }: QueueVisualizerProps) {
   return (
@@ -1144,6 +1149,7 @@ export function QueueVisualizer({
           manifest={manifest}
           nodeInlineActions={nodeInlineActions}
           onNodeClick={onNodeClick}
+          controls={controls}
         />
       </ReactFlowProvider>
     </div>

@@ -1,8 +1,4 @@
 .hylo-client-switcher {
-  position: fixed;
-  right: 12px;
-  bottom: 12px;
-  z-index: 50;
   display: grid;
   gap: 8px;
   width: min(220px, calc(100vw - 24px));
@@ -13,6 +9,24 @@
   box-shadow: 0 12px 30px
     color-mix(in oklch, var(--foreground) 12%, transparent);
   backdrop-filter: blur(12px);
+}
+
+.hylo-client-switcher--floating {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  z-index: 50;
+}
+
+.hylo-client-switcher--pane {
+  display: inline-flex;
+  width: auto;
+  max-width: min(460px, calc(100vw - 1rem));
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .hylo-client-switcher label {
@@ -40,6 +54,21 @@
   font-size: 13px;
   outline: none;
   padding: 0 8px;
+}
+
+.hylo-client-switcher--pane select {
+  width: auto;
+  max-width: min(260px, calc(100vw - 8rem));
+  height: 32px;
+  border-color: var(--border);
+  border-radius: 0.375rem;
+  background: color-mix(in oklch, var(--card) 95%, transparent);
+  box-shadow:
+    0 4px 6px -1px color-mix(in oklch, var(--foreground) 10%, transparent),
+    0 2px 4px -2px color-mix(in oklch, var(--foreground) 10%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 28px 0 12px;
 }
 
 .hylo-client-switcher select:focus-visible,
