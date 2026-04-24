@@ -28,8 +28,8 @@ const pageResponseSchema = z
 export function getPage(opts: GetPageOptions): Atom<NotionPage> {
   return atom(
     async (get) => {
-      const { accessToken } = get(opts.auth);
       const pageId = normalizeNotionId(get(opts.pageId), "Notion page ID");
+      const { accessToken } = get(opts.auth);
 
       const response = await fetch(
         `https://api.notion.com/v1/pages/${encodeURIComponent(pageId)}`,

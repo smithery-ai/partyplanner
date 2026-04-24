@@ -302,8 +302,14 @@ export function summarizeRun(
   for (const node of document.nodes) {
     if (isTerminalSummaryNode(document, node)) terminalNodeCount += 1;
     if (node.status === "errored") failedNodeCount += 1;
-    if (node.status === "waiting" && node.waitingOn)
+    if (
+      node.status === "waiting" &&
+      node.waitingOn &&
+      document.state.nodes[node.waitingOn]?.status !== "resolved" &&
+      document.state.interventions?.[node.waitingOn]?.status !== "resolved"
+    ) {
       waitingOn.add(node.waitingOn);
+    }
   }
 
   return {

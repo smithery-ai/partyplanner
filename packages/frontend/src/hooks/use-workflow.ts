@@ -3,6 +3,7 @@ import type { RunState } from "@workflow/core";
 import type { QueueSnapshot, RunEvent, RunSnapshot } from "@workflow/runtime";
 import { useCallback, useMemo, useState } from "react";
 import { useWorkflowFrontendConfig } from "../config";
+import { collectUnresolvedWaitingOn } from "../lib/pending-wait";
 import type {
   AdvanceWorkflowArgs,
   SubmitWorkflowInputArgs,
@@ -51,6 +52,7 @@ export type WorkflowRunState = {
   workflowId: string | undefined;
   isPending: boolean;
   error: Error | undefined;
+  refresh(): Promise<void>;
   submitInput(args: SubmitWorkflowInputArgs): Promise<WorkflowRuntimeResult>;
   submitIntervention(
     args: SubmitWorkflowInterventionArgs,
@@ -99,7 +101,6 @@ function useRunsQuery() {
   const config = useWorkflowFrontendConfig();
   return useQuery({
     queryKey: queryKeys.runs(config.apiBaseUrl),
-    refetchInterval: 500,
     queryFn: () => apiGet<RunSummary[]>(config.apiBaseUrl, "/runs"),
   });
 }
@@ -111,7 +112,6 @@ function useRunStateQuery(runId: string | undefined) {
       ? queryKeys.runState(config.apiBaseUrl, runId)
       : ["workflow-frontend", config.apiBaseUrl, "run-state", "none"],
     enabled: Boolean(runId),
-    refetchInterval: 500,
     queryFn: async () => {
       if (!runId) throw new Error("Cannot poll before a run exists.");
       return documentResult(
@@ -474,6 +474,18 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     [bindSecretMutation, runMutation],
   );
 
+  const refresh = useCallback(async () => {
+    if (!runId) return;
+    try {
+      const result = await stateQuery.refetch();
+      if (result.error) {
+        setError(normalizeError(result.error));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error(String(e)));
+    }
+  }, [runId, stateQuery]);
+
   const clear = useCallback(() => {
     setError(undefined);
   }, []);
@@ -505,6 +517,7 @@ export function useWorkflowRun(runId: string | undefined): WorkflowRunState {
     workflowId: stateQuery.data?.snapshot?.workflow.workflowId,
     isPending,
     error: activeError,
+    refresh,
     submitInput,
     submitIntervention,
     advance,
@@ -541,7 +554,6 @@ function sortRunsByStartedAtDesc(runs: RunSummary[]): RunSummary[] {
 
 function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
   const snapshot = result.snapshot;
-  const waitingOn = new Set<string>();
   let terminalNodeCount = 0;
   let failedNodeCount = 0;
 
@@ -549,8 +561,6 @@ function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
     if (snapshot && isTerminalSummaryNode(snapshot, node))
       terminalNodeCount += 1;
     if (node.status === "errored") failedNodeCount += 1;
-    if (node.status === "waiting" && node.waitingOn)
-      waitingOn.add(node.waitingOn);
   }
 
   return {
@@ -563,7 +573,7 @@ function summarizeRunResult(result: WorkflowRuntimeResult): RunSummary {
     version: snapshot?.version ?? 0,
     nodeCount: snapshot?.nodes.length ?? Object.keys(result.state.nodes).length,
     terminalNodeCount,
-    waitingOn: [...waitingOn],
+    waitingOn: collectUnresolvedWaitingOn(result.state),
     failedNodeCount,
   };
 }
