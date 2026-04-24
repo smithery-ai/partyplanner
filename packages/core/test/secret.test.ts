@@ -4,6 +4,7 @@ import { atom } from "../src/atom";
 import { input, secret } from "../src/input";
 import { createRuntime } from "../src/runtime";
 import {
+  assertBlocked,
   assertResolved,
   assertWaiting,
   resetRegistry,
@@ -133,7 +134,7 @@ describe("secret()", () => {
     );
 
     assertWaiting(waitingTrace, "loadSecret", "API_KEY");
-    assertWaiting(waitingTrace, "useSecret", "API_KEY");
+    assertBlocked(waitingTrace, "useSecret", "loadSecret");
 
     const resumedRuntime = createRuntime({
       secretValues: {

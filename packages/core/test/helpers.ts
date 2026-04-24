@@ -62,3 +62,8 @@ export function assertWaiting(trace: RunTrace, id: string, waitingOn?: string) {
   expect(trace.nodes[id]?.status).toBe("waiting");
   if (waitingOn) expect(trace.nodes[id]?.waitingOn).toBe(waitingOn);
 }
+
+export function assertBlocked(trace: RunTrace, id: string, blockedOn?: string) {
+  expect(trace.nodes[id]?.status).toBe("blocked");
+  if (blockedOn) expect(trace.nodes[id]?.blockedOn).toBe(blockedOn);
+}
