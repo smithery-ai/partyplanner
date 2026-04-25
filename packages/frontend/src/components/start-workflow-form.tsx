@@ -36,7 +36,9 @@ export function StartWorkflowForm({
   canSubmitSeed,
   onSubmitSeed,
   onConnectManagedConnection,
+  onClearManagedConnection,
   connectingManagedConnectionId,
+  clearingManagedConnectionId,
   error,
   starting,
 }: {
@@ -47,8 +49,13 @@ export function StartWorkflowForm({
   onInputValuesChange: (id: string, value: unknown) => void;
   canSubmitSeed: boolean;
   onSubmitSeed: (inputId: string) => void;
-  onConnectManagedConnection: (connectionId: string) => void;
+  onConnectManagedConnection: (
+    connectionId: string,
+    options?: { restart?: boolean },
+  ) => void;
   connectingManagedConnectionId?: string;
+  onClearManagedConnection: (connectionId: string) => void;
+  clearingManagedConnectionId?: string;
   error?: string;
   starting?: boolean;
 }) {
@@ -166,7 +173,9 @@ export function StartWorkflowForm({
           managedConnectionStates={managedConnectionStates}
           unresolvedRequiredConnections={unresolvedRequiredConnections}
           connectingManagedConnectionId={connectingManagedConnectionId}
+          clearingManagedConnectionId={clearingManagedConnectionId}
           onConnectManagedConnection={onConnectManagedConnection}
+          onClearManagedConnection={onClearManagedConnection}
         />
         {error ? <ErrorText>{error}</ErrorText> : null}
         <div className="flex items-center justify-end gap-2 pt-1">
@@ -362,26 +371,28 @@ function ManagedConnectionsPanel({
   managedConnectionStates,
   unresolvedRequiredConnections,
   connectingManagedConnectionId,
+  clearingManagedConnectionId,
   onConnectManagedConnection,
+  onClearManagedConnection,
 }: {
   managedConnections: WorkflowManagedConnectionManifest[];
   managedConnectionStates?: Record<string, ManagedConnectionDisplayState>;
   unresolvedRequiredConnections: WorkflowManagedConnectionManifest[];
   connectingManagedConnectionId?: string;
-  onConnectManagedConnection: (connectionId: string) => void;
+  clearingManagedConnectionId?: string;
+  onConnectManagedConnection: (
+    connectionId: string,
+    options?: { restart?: boolean },
+  ) => void;
+  onClearManagedConnection: (connectionId: string) => void;
 }) {
   return (
     <div className="space-y-2 rounded-lg border border-border/80 bg-muted/20 p-3">
-      <div className="space-y-1">
-        <p className="font-medium text-sm text-foreground">
-          Managed connections
-        </p>
-        <p className="text-muted-foreground text-[11px] leading-snug">
-          {unresolvedRequiredConnections.length > 0
-            ? "Connect the required managed services before sending workflow inputs to this worker."
-            : "All managed connections are ready for this worker. Continue to the next step to trigger a new run, or reconnect here any time you need to refresh credentials."}
-        </p>
-      </div>
+      <p className="text-muted-foreground text-[11px] leading-snug">
+        {unresolvedRequiredConnections.length > 0
+          ? "Connect the required managed services before sending workflow inputs to this worker."
+          : "All managed connections are ready. Reauth or clear them here any time you need to change credentials."}
+      </p>
       <div className="space-y-2">
         {managedConnections.map((connection) => (
           <ManagedConnectionRow
@@ -389,7 +400,11 @@ function ManagedConnectionsPanel({
             connection={connection}
             state={managedConnectionStates?.[connection.id]}
             connecting={connectingManagedConnectionId === connection.id}
-            onConnect={() => onConnectManagedConnection(connection.id)}
+            clearing={clearingManagedConnectionId === connection.id}
+            onConnect={(options) =>
+              onConnectManagedConnection(connection.id, options)
+            }
+            onClear={() => onClearManagedConnection(connection.id)}
           />
         ))}
       </div>
@@ -401,20 +416,25 @@ function ManagedConnectionRow({
   connection,
   state,
   connecting,
+  clearing,
   onConnect,
+  onClear,
 }: {
   connection: WorkflowManagedConnectionManifest;
   state?: ManagedConnectionDisplayState;
   connecting: boolean;
-  onConnect: () => void;
+  clearing: boolean;
+  onConnect: (options?: { restart?: boolean }) => void;
+  onClear: () => void;
 }) {
   const blocked = connection.requirement === "preflight";
   const waitingOnOauth =
     state?.status === "connecting" &&
     state.waitingOn === `${connection.id}:oauth-callback`;
   const connected = state?.status === "connected";
+  const busy = connecting || clearing;
   const connectDisabled =
-    connecting || (state?.status === "connecting" && !waitingOnOauth);
+    busy || (state?.status === "connecting" && !waitingOnOauth);
 
   return (
     <div
@@ -455,18 +475,54 @@ function ManagedConnectionRow({
         >
           {managedConnectionStatusText(connection, state, connecting)}
         </p>
+        {waitingOnOauth ? (
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            This link should open automatically.{" "}
+            <button
+              type="button"
+              className="text-blue-800 underline underline-offset-2 dark:text-blue-300"
+              onClick={() =>
+                state?.actionUrl ? onConnect() : onConnect({ restart: true })
+              }
+            >
+              Click here if it doesn&apos;t.
+            </button>
+          </p>
+        ) : null}
       </div>
       {connected ? (
-        <span className="shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/8 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-          Connected
-        </span>
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <span className="rounded-full border border-emerald-500/40 bg-emerald-500/8 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+            Connected
+          </span>
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            disabled={busy}
+            onClick={onClear}
+          >
+            {clearing ? "Disconnecting" : "Disconnect"}
+          </Button>
+        </div>
+      ) : waitingOnOauth ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          onClick={() => onConnect({ restart: true })}
+          className="shrink-0"
+        >
+          Restart
+        </Button>
       ) : (
         <Button
           type="button"
           size="sm"
           variant={blocked ? "default" : "outline"}
           disabled={connectDisabled}
-          onClick={onConnect}
+          onClick={() => onConnect()}
           className="shrink-0"
         >
           {connecting ? (
@@ -474,8 +530,6 @@ function ManagedConnectionRow({
               <Loader2 className="size-3.5 animate-spin" aria-hidden />
               Connecting
             </>
-          ) : waitingOnOauth ? (
-            "Continue auth"
           ) : (
             "Connect"
           )}
@@ -506,7 +560,7 @@ function managedConnectionStatusText(
       return "Authorization complete for this worker.";
     case "connecting":
       if (state.waitingOn === `${connection.id}:oauth-callback`) {
-        return "Authorization is waiting in the browser. Reopen it here if needed.";
+        return "Authorization is waiting in the browser.";
       }
       return "Authorization is in progress for this worker.";
     case "error":

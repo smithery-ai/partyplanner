@@ -147,6 +147,9 @@ export class WorkflowManager {
       mode: "configuration",
     });
     await this.ensureConfigurationRun(scheduler, configRunId);
+    if (request.restart) {
+      await this.resetManagedConnection(configRunId, connectionId);
+    }
     await this.publishSnapshot(
       await scheduler.submitManagedConnection({
         runId: configRunId,
@@ -159,6 +162,48 @@ export class WorkflowManager {
       request.secretValues,
     );
     return this.loadConfiguration();
+  }
+
+  async clearManagedConnection(
+    connectionId: string,
+  ): Promise<WorkflowConfigurationDocument> {
+    const configRunId = this.configurationRunId();
+    const scheduler = this.createScheduler(configRunId, undefined, {
+      mode: "configuration",
+    });
+    await this.ensureConfigurationRun(scheduler, configRunId);
+    await this.resetManagedConnection(configRunId, connectionId);
+    await this.publishSnapshot(await scheduler.snapshot(configRunId));
+    return this.loadConfiguration();
+  }
+
+  private async resetManagedConnection(
+    runId: string,
+    connectionId: string,
+  ): Promise<void> {
+    const interventionId = `${connectionId}:oauth-callback`;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const stored = await this.stateStore.load(runId);
+      if (!stored) return;
+
+      const state = structuredClone(stored.state);
+      delete state.inputs[interventionId];
+      delete state.interventions?.[interventionId];
+      delete state.waiters[interventionId];
+      delete state.nodes[connectionId];
+
+      const saved = await this.stateStore.save(runId, state, stored.version);
+      if (saved.ok) return;
+      if (saved.reason !== "conflict") {
+        throw new Error(
+          `Unable to restart managed connection "${connectionId}": ${saved.reason}`,
+        );
+      }
+    }
+
+    throw new Error(
+      `Unable to restart managed connection "${connectionId}": conflict`,
+    );
   }
 
   async submitInput(
@@ -486,7 +531,14 @@ export class WorkflowManager {
       if (document.queue.pending.length + document.queue.running.length === 0) {
         return;
       }
-      await scheduler.processNext();
+      try {
+        await scheduler.processNext();
+      } catch (e) {
+        if (isRunSaveConflictError(e)) {
+          continue;
+        }
+        throw e;
+      }
       await this.publishSnapshot(await scheduler.snapshot(runId));
     }
   }
@@ -571,6 +623,13 @@ export class WorkflowManager {
     await this.stateStore.saveRunDocument(document);
     return structuredClone(document);
   }
+}
+
+function isRunSaveConflictError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    /Unable to save run: conflict/.test(error.message)
+  );
 }
 
 function webhookRequestValue(

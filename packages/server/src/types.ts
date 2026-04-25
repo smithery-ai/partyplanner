@@ -29,7 +29,10 @@ export type StartWorkflowRunRequest = {
 
 export type ConnectManagedConnectionRequest = {
   secretValues?: Record<string, string>;
+  restart?: boolean;
 };
+
+export type ClearManagedConnectionRequest = Record<string, never>;
 
 export type WorkflowManagedConnectionStatus =
   | "not_connected"

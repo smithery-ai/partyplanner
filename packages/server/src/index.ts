@@ -1,5 +1,6 @@
 export type {
   BindRunSecretRequest,
+  ClearManagedConnectionRequest as BackendClearManagedConnectionRequest,
   ConnectManagedConnectionRequest as BackendConnectManagedConnectionRequest,
   CreateSecretVaultEntryRequest,
   RunSecretBinding,
@@ -39,6 +40,7 @@ export {
 } from "./openapi";
 
 export type {
+  ClearManagedConnectionRequest,
   ConnectManagedConnectionRequest,
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
