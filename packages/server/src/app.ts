@@ -17,6 +17,7 @@ import {
   type WorkflowOpenApiOptions,
 } from "./openapi";
 import type {
+  ClearManagedConnectionRequest,
   ConnectManagedConnectionRequest,
   StartWorkflowRunRequest,
   SubmitWorkflowInputRequest,
@@ -125,6 +126,20 @@ export function createWorkflow(options: CreateWorkflowOptions) {
         await manager.connectManagedConnection(
           requireParam(c.req.param("connectionId")),
           body,
+        ),
+        200,
+      );
+    } catch (e) {
+      return c.json({ message: errorMessage(e) }, 400);
+    }
+  });
+
+  app.openapi(routes.clearManagedConnection, async (c) => {
+    try {
+      c.req.valid("json") as ClearManagedConnectionRequest;
+      return c.json(
+        await manager.clearManagedConnection(
+          requireParam(c.req.param("connectionId")),
         ),
         200,
       );

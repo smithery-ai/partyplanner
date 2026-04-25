@@ -242,6 +242,240 @@ describe("WorkflowManager", () => {
       started.runId,
     ]);
   });
+
+  it("restarts a pending managed connection with a fresh oauth intervention", async () => {
+    let authorizeVersion = 0;
+    atom(
+      (_get, requestIntervention) => {
+        authorizeVersion += 1;
+        return requestIntervention(
+          "oauth-callback",
+          z.object({ accessToken: z.string() }),
+          {
+            title: "Connect Notion",
+            action: {
+              type: "open_url",
+              url: `https://example.com/notion?v=${authorizeVersion}`,
+              label: "Connect Notion",
+            },
+          },
+        );
+      },
+      {
+        name: "notionConnection",
+        managedConnection: {
+          kind: "oauth",
+          providerId: "notion",
+          requirement: "preflight",
+          title: "Notion",
+        },
+      },
+    );
+
+    const manager = new WorkflowManager({
+      stateStore: new TestWorkflowStateStore(),
+      queue: new TestWorkflowQueue(),
+    });
+
+    const initial = await manager.connectManagedConnection("notionConnection");
+    expect(
+      initial.run?.state.interventions["notionConnection:oauth-callback"]
+        ?.action?.url,
+    ).toBe("https://example.com/notion?v=1");
+
+    const restarted = await manager.connectManagedConnection(
+      "notionConnection",
+      {
+        restart: true,
+      },
+    );
+    expect(
+      restarted.run?.state.interventions["notionConnection:oauth-callback"]
+        ?.action?.url,
+    ).toBe("https://example.com/notion?v=2");
+    expect(restarted.run?.state.nodes.notionConnection?.status).toBe("waiting");
+  });
+
+  it("clears an existing managed connection", async () => {
+    atom(
+      (_get, requestIntervention) =>
+        requestIntervention(
+          "oauth-callback",
+          z.object({ accessToken: z.string() }),
+          {
+            title: "Connect Notion",
+            action: {
+              type: "open_url",
+              url: "https://example.com/notion",
+              label: "Connect Notion",
+            },
+          },
+        ),
+      {
+        name: "notionConnection",
+        managedConnection: {
+          kind: "oauth",
+          providerId: "notion",
+          requirement: "preflight",
+          title: "Notion",
+        },
+      },
+    );
+
+    const manager = new WorkflowManager({
+      stateStore: new TestWorkflowStateStore(),
+      queue: new TestWorkflowQueue(),
+    });
+
+    const connecting =
+      await manager.connectManagedConnection("notionConnection");
+    await manager.submitIntervention(
+      connecting.runId,
+      "notionConnection:oauth-callback",
+      {
+        payload: { accessToken: "token_123" },
+      },
+    );
+
+    const cleared = await manager.clearManagedConnection("notionConnection");
+    expect(cleared.ready).toBe(false);
+    expect(cleared.connections).toEqual([
+      expect.objectContaining({
+        id: "notionConnection",
+        status: "not_connected",
+      }),
+    ]);
+    expect(cleared.run?.state.nodes.notionConnection).toBeUndefined();
+    expect(
+      cleared.run?.state.interventions?.["notionConnection:oauth-callback"],
+    ).toBeUndefined();
+  });
+
+  it("reauths one managed connection without regressing another", async () => {
+    const notion = atom(
+      (_get, requestIntervention) =>
+        requestIntervention(
+          "oauth-callback",
+          z.object({ accessToken: z.string() }),
+          {
+            title: "Connect Notion",
+            action: {
+              type: "open_url",
+              url: "https://example.com/notion",
+              label: "Connect Notion",
+            },
+          },
+        ),
+      {
+        name: "notionConnection",
+        managedConnection: {
+          kind: "oauth",
+          providerId: "notion",
+          requirement: "preflight",
+          title: "Notion",
+        },
+      },
+    );
+    const slack = atom(
+      (_get, requestIntervention) =>
+        requestIntervention(
+          "oauth-callback",
+          z.object({ accessToken: z.string() }),
+          {
+            title: "Connect Slack",
+            action: {
+              type: "open_url",
+              url: "https://example.com/slack",
+              label: "Connect Slack",
+            },
+          },
+        ),
+      {
+        name: "slackConnection",
+        managedConnection: {
+          kind: "oauth",
+          providerId: "slack",
+          requirement: "preflight",
+          title: "Slack",
+        },
+      },
+    );
+    atom((get) => get(notion).accessToken, { name: "usesNotion" });
+    atom((get) => get(slack).accessToken, { name: "usesSlack" });
+
+    const manager = new WorkflowManager({
+      stateStore: new TestWorkflowStateStore(),
+      queue: new TestWorkflowQueue(),
+    });
+
+    const notionConnecting =
+      await manager.connectManagedConnection("notionConnection");
+    await manager.submitIntervention(
+      notionConnecting.runId,
+      "notionConnection:oauth-callback",
+      {
+        payload: { accessToken: "notion_1" },
+      },
+    );
+
+    const slackConnecting =
+      await manager.connectManagedConnection("slackConnection");
+    await manager.submitIntervention(
+      slackConnecting.runId,
+      "slackConnection:oauth-callback",
+      {
+        payload: { accessToken: "slack_1" },
+      },
+    );
+
+    const restarted = await manager.connectManagedConnection(
+      "notionConnection",
+      {
+        restart: true,
+      },
+    );
+    expect(restarted.connections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "notionConnection",
+          status: "connecting",
+        }),
+        expect.objectContaining({
+          id: "slackConnection",
+          status: "connected",
+        }),
+      ]),
+    );
+
+    await manager.submitIntervention(
+      restarted.runId,
+      "notionConnection:oauth-callback",
+      {
+        payload: { accessToken: "notion_2" },
+      },
+    );
+
+    const configuration = await manager.configuration();
+    expect(configuration.ready).toBe(true);
+    expect(configuration.connections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "notionConnection",
+          status: "connected",
+        }),
+        expect.objectContaining({
+          id: "slackConnection",
+          status: "connected",
+        }),
+      ]),
+    );
+    expect(configuration.run?.state.nodes.notionConnection?.status).toBe(
+      "resolved",
+    );
+    expect(configuration.run?.state.nodes.slackConnection?.status).toBe(
+      "resolved",
+    );
+  });
 });
 
 class TestWorkflowStateStore implements WorkflowStateStore {

@@ -37,6 +37,10 @@ export type StartRunArgs = {
   secretValues?: Record<string, string>;
 };
 
+export type ConnectManagedConnectionArgs = {
+  restart?: boolean;
+};
+
 export type WorkflowState = {
   manifest: WorkflowManifest | undefined;
   manifestNotFound: boolean;
@@ -46,6 +50,10 @@ export type WorkflowState = {
   error: Error | undefined;
   start(args: StartRunArgs): Promise<WorkflowRuntimeResult>;
   connectManagedConnection(
+    connectionId: string,
+    args?: ConnectManagedConnectionArgs,
+  ): Promise<WorkflowConfigurationDocument>;
+  clearManagedConnection(
     connectionId: string,
   ): Promise<WorkflowConfigurationDocument>;
   refreshConfiguration(): Promise<void>;
@@ -178,8 +186,15 @@ function useStartWorkflowRunMutation() {
 function useConnectManagedConnectionMutation() {
   const config = useWorkflowFrontendConfig();
   return useMutation({
-    mutationFn: async (connectionId: string) => {
+    mutationFn: async ({
+      connectionId,
+      args,
+    }: {
+      connectionId: string;
+      args?: ConnectManagedConnectionArgs;
+    }) => {
       const body: ConnectManagedConnectionRequest = {};
+      if (args?.restart) body.restart = true;
       return apiPost<
         ConnectManagedConnectionRequest,
         WorkflowConfigurationDocument
@@ -189,6 +204,18 @@ function useConnectManagedConnectionMutation() {
         body,
       );
     },
+  });
+}
+
+function useClearManagedConnectionMutation() {
+  const config = useWorkflowFrontendConfig();
+  return useMutation({
+    mutationFn: async (connectionId: string) =>
+      apiPost<Record<string, never>, WorkflowConfigurationDocument>(
+        config.apiBaseUrl,
+        `/configuration/connections/${encodeURIComponent(connectionId)}/clear`,
+        {},
+      ),
   });
 }
 
@@ -399,6 +426,7 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
   const startMutation = useStartWorkflowRunMutation();
   const connectManagedConnectionMutation =
     useConnectManagedConnectionMutation();
+  const clearManagedConnectionMutation = useClearManagedConnectionMutation();
   const [error, setError] = useState<Error | undefined>();
 
   const manifest =
@@ -438,11 +466,13 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
   );
 
   const connectManagedConnection = useCallback(
-    async (connectionId: string) => {
+    async (connectionId: string, args?: ConnectManagedConnectionArgs) => {
       setError(undefined);
       try {
-        const result =
-          await connectManagedConnectionMutation.mutateAsync(connectionId);
+        const result = await connectManagedConnectionMutation.mutateAsync({
+          connectionId,
+          args,
+        });
         queryClient.setQueryData(
           queryKeys.configuration(config.apiBaseUrl),
           result,
@@ -468,6 +498,26 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
     }
   }, [configurationQuery]);
 
+  const clearManagedConnection = useCallback(
+    async (connectionId: string) => {
+      setError(undefined);
+      try {
+        const result =
+          await clearManagedConnectionMutation.mutateAsync(connectionId);
+        queryClient.setQueryData(
+          queryKeys.configuration(config.apiBaseUrl),
+          result,
+        );
+        return result;
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        setError(err);
+        throw err;
+      }
+    },
+    [clearManagedConnectionMutation, config.apiBaseUrl, queryClient],
+  );
+
   const refreshRuns = useCallback(async () => {
     try {
       const result = await runsQuery.refetch();
@@ -488,7 +538,8 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
     runsQuery.isPending ||
     configurationQuery.isPending ||
     startMutation.isPending ||
-    connectManagedConnectionMutation.isPending;
+    connectManagedConnectionMutation.isPending ||
+    clearManagedConnectionMutation.isPending;
 
   const activeError =
     error ??
@@ -508,6 +559,7 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
     error: activeError,
     start,
     connectManagedConnection,
+    clearManagedConnection,
     refreshConfiguration,
     refreshRuns,
   };

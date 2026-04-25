@@ -244,8 +244,13 @@ export const StartWorkflowRunRequestSchema = z
 export const ConnectManagedConnectionRequestSchema = z
   .object({
     secretValues: z.record(z.string(), z.string()).optional(),
+    restart: z.boolean().optional(),
   })
   .openapi("ConnectManagedConnectionRequest");
+
+export const ClearManagedConnectionRequestSchema = z
+  .object({})
+  .openapi("ClearManagedConnectionRequest");
 
 export const SubmitWorkflowInputRequestSchema = z
   .object({
@@ -419,6 +424,26 @@ export function createWorkflowRoutes(basePath = "/") {
       request: {
         params: ManagedConnectionParamSchema,
         body: jsonRequest(ConnectManagedConnectionRequestSchema),
+      },
+      responses: {
+        200: jsonResponse(
+          "Updated worker configuration",
+          WorkflowConfigurationDocumentSchema,
+        ),
+        400: jsonResponse("Invalid request", ErrorResponseSchema),
+      },
+    }),
+    clearManagedConnection: createRoute({
+      method: "post",
+      path: path(
+        normalizedBasePath,
+        "/configuration/connections/{connectionId}/clear",
+      ),
+      tags: ["Configuration"],
+      summary: "Clear a worker-managed connection",
+      request: {
+        params: ManagedConnectionParamSchema,
+        body: jsonRequest(ClearManagedConnectionRequestSchema),
       },
       responses: {
         200: jsonResponse(

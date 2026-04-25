@@ -13,7 +13,13 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ZodError } from "zod";
 import {
   defaultForJsonSchema,
@@ -503,8 +509,11 @@ function WorkflowRunnerBody({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [connectingManagedConnectionId, setConnectingManagedConnectionId] =
     useState<string | undefined>();
+  const [clearingManagedConnectionId, setClearingManagedConnectionId] =
+    useState<string | undefined>();
   const [awaitingManagedConnectionId, setAwaitingManagedConnectionId] =
     useState<string | undefined>();
+  const managedConnectionPopups = useRef<Record<string, Window | null>>({});
 
   const { isRunning, setRunning, executingNodeId, runComplete, runState } =
     workflowRun;
@@ -523,6 +532,31 @@ function WorkflowRunnerBody({
   const isPending = workflow.isPending || workflowRun.isPending;
   const managedConnectionStates = buildManagedConnectionStates(
     workflow.configuration,
+  );
+
+  const reserveManagedConnectionPopup = useCallback((connectionId: string) => {
+    managedConnectionPopups.current[connectionId] = window.open("", "_blank");
+  }, []);
+
+  const closeManagedConnectionPopup = useCallback((connectionId: string) => {
+    const popup = managedConnectionPopups.current[connectionId];
+    delete managedConnectionPopups.current[connectionId];
+    if (!popup || popup.closed) return;
+    popup.close();
+  }, []);
+
+  const openManagedConnectionUrl = useCallback(
+    (connectionId: string, url: string) => {
+      const popup = managedConnectionPopups.current[connectionId];
+      delete managedConnectionPopups.current[connectionId];
+      if (popup && !popup.closed) {
+        popup.location.href = url;
+        popup.focus();
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+    [],
   );
 
   useEffect(() => {
@@ -564,16 +598,22 @@ function WorkflowRunnerBody({
           ? intervention.action.url
           : undefined);
       if (url) {
-        window.open(url, "_blank", "noopener,noreferrer");
+        openManagedConnectionUrl(awaitingManagedConnectionId, url);
       }
       setAwaitingManagedConnectionId(undefined);
       return;
     }
 
     if (connection?.status === "connected" || connection?.status === "error") {
+      closeManagedConnectionPopup(awaitingManagedConnectionId);
       setAwaitingManagedConnectionId(undefined);
     }
-  }, [awaitingManagedConnectionId, workflow.configuration]);
+  }, [
+    awaitingManagedConnectionId,
+    closeManagedConnectionPopup,
+    openManagedConnectionUrl,
+    workflow.configuration,
+  ]);
 
   useEffect(() => {
     if (!awaitingManagedConnectionId) return;
@@ -623,6 +663,7 @@ function WorkflowRunnerBody({
     workflowRun.clear();
     setSelectedNodeId(null);
     setConnectingManagedConnectionId(undefined);
+    setClearingManagedConnectionId(undefined);
     setAwaitingManagedConnectionId(undefined);
     setInputValues(buildInitialManifestInputValues(workflow.manifest));
     setSeedInputId(firstManifestSeedInputId(workflow.manifest));
@@ -666,18 +707,27 @@ function WorkflowRunnerBody({
     }
   }
 
-  async function connectManagedConnection(connectionId: string) {
+  async function connectManagedConnection(
+    connectionId: string,
+    options?: { restart?: boolean },
+  ) {
     setPayloadError("");
+    const restart = options?.restart === true;
     const existingActionUrl = managedConnectionStates[connectionId]?.actionUrl;
-    if (existingActionUrl) {
+    if (existingActionUrl && !restart) {
       window.open(existingActionUrl, "_blank", "noopener,noreferrer");
       return;
     }
+    reserveManagedConnectionPopup(connectionId);
     setConnectingManagedConnectionId(connectionId);
-    setAwaitingManagedConnectionId(connectionId);
+    if (!restart) {
+      setAwaitingManagedConnectionId(connectionId);
+    }
 
     try {
-      const result = await workflow.connectManagedConnection(connectionId);
+      const result = await workflow.connectManagedConnection(connectionId, {
+        restart,
+      });
       const intervention =
         result.run?.state.interventions?.[`${connectionId}:oauth-callback`];
       if (intervention && intervention.status !== "resolved") {
@@ -687,17 +737,38 @@ function WorkflowRunnerBody({
             ? intervention.action.url
             : undefined);
         if (url) {
-          window.open(url, "_blank", "noopener,noreferrer");
+          openManagedConnectionUrl(connectionId, url);
         }
-        setAwaitingManagedConnectionId(undefined);
+        if (!restart) {
+          setAwaitingManagedConnectionId(undefined);
+        }
       }
     } catch (e) {
-      setAwaitingManagedConnectionId(undefined);
+      closeManagedConnectionPopup(connectionId);
+      if (!restart) {
+        setAwaitingManagedConnectionId(undefined);
+      }
       setPayloadError(
         errorMessage(e, "Unable to start managed connection authorization."),
       );
     } finally {
       setConnectingManagedConnectionId(undefined);
+    }
+  }
+
+  async function clearManagedConnection(connectionId: string) {
+    setPayloadError("");
+    setClearingManagedConnectionId(connectionId);
+    setAwaitingManagedConnectionId(undefined);
+
+    try {
+      await workflow.clearManagedConnection(connectionId);
+    } catch (e) {
+      setPayloadError(
+        errorMessage(e, "Unable to clear managed connection authorization."),
+      );
+    } finally {
+      setClearingManagedConnectionId(undefined);
     }
   }
 
@@ -1071,10 +1142,14 @@ function WorkflowRunnerBody({
                 onInputValuesChange={setInputValue}
                 canSubmitSeed={!runState && !runId}
                 onSubmitSeed={(inputId) => void runWorkflow(inputId)}
-                onConnectManagedConnection={(connectionId) =>
-                  void connectManagedConnection(connectionId)
+                onConnectManagedConnection={(connectionId, options) =>
+                  void connectManagedConnection(connectionId, options)
+                }
+                onClearManagedConnection={(connectionId) =>
+                  void clearManagedConnection(connectionId)
                 }
                 connectingManagedConnectionId={connectingManagedConnectionId}
+                clearingManagedConnectionId={clearingManagedConnectionId}
                 error={payloadError || undefined}
                 starting={workflow.isPending}
               />
