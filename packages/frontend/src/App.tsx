@@ -13,7 +13,13 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { ZodError } from "zod";
 import {
   defaultForJsonSchema,
@@ -528,6 +534,31 @@ function WorkflowRunnerBody({
     workflow.configuration,
   );
 
+  const reserveManagedConnectionPopup = useCallback((connectionId: string) => {
+    managedConnectionPopups.current[connectionId] = window.open("", "_blank");
+  }, []);
+
+  const closeManagedConnectionPopup = useCallback((connectionId: string) => {
+    const popup = managedConnectionPopups.current[connectionId];
+    delete managedConnectionPopups.current[connectionId];
+    if (!popup || popup.closed) return;
+    popup.close();
+  }, []);
+
+  const openManagedConnectionUrl = useCallback(
+    (connectionId: string, url: string) => {
+      const popup = managedConnectionPopups.current[connectionId];
+      delete managedConnectionPopups.current[connectionId];
+      if (popup && !popup.closed) {
+        popup.location.href = url;
+        popup.focus();
+        return;
+      }
+      window.open(url, "_blank", "noopener,noreferrer");
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!workflow.manifest) return;
     setInputValues((current) => ({
@@ -577,7 +608,12 @@ function WorkflowRunnerBody({
       closeManagedConnectionPopup(awaitingManagedConnectionId);
       setAwaitingManagedConnectionId(undefined);
     }
-  }, [awaitingManagedConnectionId, workflow.configuration]);
+  }, [
+    awaitingManagedConnectionId,
+    closeManagedConnectionPopup,
+    openManagedConnectionUrl,
+    workflow.configuration,
+  ]);
 
   useEffect(() => {
     if (!awaitingManagedConnectionId) return;
@@ -634,28 +670,6 @@ function WorkflowRunnerBody({
     setPayloadError("");
     setPane(null);
     navigation.workflow(workflowId);
-  }
-
-  function reserveManagedConnectionPopup(connectionId: string): void {
-    managedConnectionPopups.current[connectionId] = window.open("", "_blank");
-  }
-
-  function closeManagedConnectionPopup(connectionId: string): void {
-    const popup = managedConnectionPopups.current[connectionId];
-    delete managedConnectionPopups.current[connectionId];
-    if (!popup || popup.closed) return;
-    popup.close();
-  }
-
-  function openManagedConnectionUrl(connectionId: string, url: string): void {
-    const popup = managedConnectionPopups.current[connectionId];
-    delete managedConnectionPopups.current[connectionId];
-    if (popup && !popup.closed) {
-      popup.location.href = url;
-      popup.focus();
-      return;
-    }
-    window.open(url, "_blank", "noopener,noreferrer");
   }
 
   async function runWorkflow(seedOverride?: string) {

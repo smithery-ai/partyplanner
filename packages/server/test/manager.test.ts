@@ -327,7 +327,8 @@ describe("WorkflowManager", () => {
       queue: new TestWorkflowQueue(),
     });
 
-    const connecting = await manager.connectManagedConnection("notionConnection");
+    const connecting =
+      await manager.connectManagedConnection("notionConnection");
     await manager.submitIntervention(
       connecting.runId,
       "notionConnection:oauth-callback",

@@ -627,8 +627,7 @@ export class WorkflowManager {
 
 function isRunSaveConflictError(error: unknown): boolean {
   return (
-    error instanceof Error &&
-    /Unable to save run: conflict/.test(error.message)
+    error instanceof Error && /Unable to save run: conflict/.test(error.message)
   );
 }
 
