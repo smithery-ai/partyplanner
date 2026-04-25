@@ -9,6 +9,7 @@ export type BackendAppEnv = {
   CF_DISPATCH_NAMESPACE?: string;
   HYLO_API_KEY?: string;
   HYLO_BACKEND_PUBLIC_URL?: string;
+  HYLO_BACKEND_TUNNEL_URL?: string;
   HYLO_BROKER_BASE_URL?: string;
   HYLO_LOCAL_WORKFLOW_URL_TEMPLATE?: string;
   HYPERDRIVE?: HyperdriveBinding;

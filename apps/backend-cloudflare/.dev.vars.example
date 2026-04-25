@@ -31,6 +31,9 @@ HYLO_WORKER_DISPATCH_BASE_URL=
 # Used to build OAuth redirect_uri values. The default is the Hylo dev backend
 # URL, which is useful for providers like Notion that require HTTPS callbacks.
 HYLO_BACKEND_PUBLIC_URL=https://api-worker.hylo.localhost
+# Optional local override set by `pnpm dev -- --tunnel`. Prefer this for public
+# provider callbacks while keeping HYLO_BACKEND_PUBLIC_URL in shared dev secrets.
+HYLO_BACKEND_TUNNEL_URL=
 
 # Optional Hylo-curated OAuth providers. A provider is available only when both
 # its client ID and client secret are present in this Worker environment.

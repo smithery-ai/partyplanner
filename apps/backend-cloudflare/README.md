@@ -13,6 +13,28 @@ pnpm db:migrate:prod
 pnpm dev
 ```
 
+## Local public callbacks
+
+Webhook providers such as Slack need a public HTTPS URL even when the backend is
+running locally. From the repo root, start the dev stack with:
+
+```sh
+pnpm dev -- --tunnel
+```
+
+The launcher starts `cloudflared tunnel --url http://127.0.0.1:$HYLO_BACKEND_PORT`
+and exports the generated URL as `HYLO_BACKEND_TUNNEL_URL`. Backend code should
+derive provider-facing URLs with `resolveBackendPublicUrl(env, requestOrigin)`;
+that helper prefers the tunnel URL, then `HYLO_BACKEND_PUBLIC_URL`, then the
+request origin.
+
+For the backend-level ingress from PR 67, subscription creation should use that
+public backend base URL when returning provider callback URLs such as:
+
+```txt
+https://<tunnel>.trycloudflare.com/webhooks/<provider>/<subscription>
+```
+
 The app delegates schema setup to `packages/postgres`. Configure one of:
 
 - `HYPERDRIVE` binding in the Worker environment

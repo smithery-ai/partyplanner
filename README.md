@@ -243,6 +243,18 @@ the Cloudflare services, starting from `8787` for the backend and `8788` for
 the workflow example. Set `HYLO_BACKEND_PORT` or
 `HYLO_CLOUDFLARE_WORKER_PORT` to force specific ports.
 
+For provider callbacks that must reach your local backend from the public
+internet, run:
+
+```sh
+pnpm dev -- --tunnel
+```
+
+This starts a Cloudflare quick tunnel to the local backend and sets
+`HYLO_BACKEND_TUNNEL_URL`/`HYLO_BACKEND_PUBLIC_URL` for the dev stack. Use the
+printed `https://*.trycloudflare.com/webhooks` URL for backend-level webhook
+ingress, including the Slack webhook subscription flow added in PR 67.
+
 ### Hylo CLI
 
 The Hylo CLI is the customer-facing workflow CLI. It authenticates with WorkOS
