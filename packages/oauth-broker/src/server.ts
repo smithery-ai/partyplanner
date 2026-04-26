@@ -5,7 +5,7 @@ import {
 } from "@workflow/integrations-oauth";
 import { Hono } from "hono";
 import { z } from "zod";
-import type { BrokerStore } from "./store";
+import type { BrokerStore, TokenIssuedValue } from "./store";
 
 // Static credentials per provider, supplied by the host backend from env.
 export type BrokerProviderRegistration = {
@@ -27,6 +27,7 @@ export type CreateOAuthBrokerServerOptions = {
   // shared HYLO_API_KEY; later it will return per-org identity.
   authenticateAppToken: (token: string) => AuthenticatedAppIdentity | undefined;
   providers: BrokerProviderRegistration[];
+  onTokenIssued?: (value: TokenIssuedValue) => Promise<void>;
 };
 
 const startBodySchema = z.object({
@@ -179,6 +180,15 @@ export function createOAuthBrokerServer(
       ...(shaped as Record<string, unknown>),
       brokerSessionId,
     };
+
+    if (opts.onTokenIssued) {
+      await opts.onTokenIssued({
+        providerId,
+        pending,
+        rawToken,
+        token: tokenWithSession,
+      });
+    }
 
     const handoff = randomToken();
     await opts.store.putHandoff(handoff, {

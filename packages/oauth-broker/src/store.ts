@@ -40,6 +40,13 @@ export type RefreshValue = {
   createdAt: number;
 };
 
+export type TokenIssuedValue = {
+  providerId: string;
+  pending: PendingValue;
+  rawToken: unknown;
+  token: unknown;
+};
+
 export interface BrokerStore {
   putPending(state: string, value: PendingValue): Promise<void>;
   // Delete-on-read so a state can only be used once.

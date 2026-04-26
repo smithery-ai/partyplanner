@@ -63,6 +63,17 @@ const schemaStatements = [
     value_json text not null,
     created_at double precision not null
   )`,
+  `create table if not exists provider_installations (
+    installation_key text primary key,
+    provider_id text not null,
+    deployment_id text,
+    identity_json text not null,
+    runtime_handoff_url text not null,
+    created_at double precision not null,
+    updated_at double precision not null
+  )`,
+  `alter table provider_installations
+    alter column deployment_id drop not null`,
   `create table if not exists workflow_deployments (
     deployment_id text primary key,
     tenant_id text not null,
@@ -82,6 +93,8 @@ const schemaStatements = [
     on workflow_events (run_id, created_at)`,
   `create index if not exists workflow_queue_items_run_id_status_idx
     on workflow_queue_items (run_id, status, enqueued_at)`,
+  `create index if not exists provider_installations_provider_id_idx
+    on provider_installations (provider_id, updated_at desc)`,
   `create index if not exists workflow_deployments_tenant_id_updated_at_idx
     on workflow_deployments (tenant_id, updated_at desc)`,
 ];

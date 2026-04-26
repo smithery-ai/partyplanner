@@ -57,6 +57,20 @@ export const oauthRefreshTokens = pgTable("oauth_refresh_tokens", {
   createdAt: doublePrecision("created_at").notNull(),
 });
 
+export const providerInstallations = pgTable("provider_installations", {
+  installationKey: text("installation_key").primaryKey(),
+  providerId: text("provider_id").notNull(),
+  // Informational only: identifies the workflow deployment that owns this
+  // install. Webhook routing fetches `runtime_handoff_url` directly rather
+  // than dispatching by id, so this can be null when the URL doesn't carry
+  // the deployment id (e.g. dev subdomains).
+  deploymentId: text("deployment_id"),
+  identityJson: text("identity_json").notNull(),
+  runtimeHandoffUrl: text("runtime_handoff_url").notNull(),
+  createdAt: doublePrecision("created_at").notNull(),
+  updatedAt: doublePrecision("updated_at").notNull(),
+});
+
 export const workflowDeployments = pgTable("workflow_deployments", {
   deploymentId: text("deployment_id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
