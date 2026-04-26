@@ -3,6 +3,7 @@ import { createInMemoryBrokerStore } from "@workflow/oauth-broker";
 import type { WorkflowPostgresDb } from "@workflow/postgres";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackendApp } from "../src/app";
+import type { DeploymentBackend } from "../src/deployments/backend";
 import type {
   ProviderInstallationLookup,
   ProviderInstallationRecord,
@@ -220,6 +221,80 @@ describe("slack webhook routing", () => {
     });
   });
 
+  it("dispatches Slack events directly to configured tenant workers", async () => {
+    const providerInstallations = new MemoryProviderInstallationRegistry();
+    await providerInstallations.upsert({
+      installationKey: "team:T123:app:A123",
+      providerId: "slack",
+      deploymentId: "customer-worker",
+      identity: { teamId: "T123", appId: "A123" },
+      runtimeHandoffUrl:
+        "https://hylo-backend.test/workers/customer-worker/api/workflow/integrations/slack/handoff",
+    });
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    let dispatched:
+      | { deploymentId: string; url: string; body: unknown }
+      | undefined;
+    const app = createBackendApp({
+      db: fakeDb(),
+      env: {
+        HYLO_API_KEY: API_KEY,
+        SLACK_SIGNING_SECRET: SIGNING_SECRET,
+      },
+      deploymentBackend: fakeDeploymentBackend(
+        async (deploymentId, request) => {
+          dispatched = {
+            deploymentId,
+            url: request.url,
+            body: JSON.parse(await request.text()),
+          };
+          return Response.json({ ok: true });
+        },
+      ),
+      providerInstallations,
+    });
+
+    const rawBody = JSON.stringify({
+      type: "event_callback",
+      api_app_id: "A123",
+      team_id: "T123",
+      event_id: "Ev1",
+      event: {
+        type: "app_mention",
+        text: "hello",
+      },
+    });
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const response = await app.request(
+      "https://hylo-backend.test/integrations/slack/events",
+      {
+        method: "POST",
+        headers: signedSlackHeaders(timestamp, rawBody),
+        body: rawBody,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    if (!dispatched) throw new Error("Expected direct worker dispatch.");
+    expect(dispatched).toMatchObject({
+      deploymentId: "customer-worker",
+      url: "https://hylo-backend.test/workers/customer-worker/api/workflow/webhooks",
+      body: {
+        payload: {
+          source: "slack",
+          kind: "event_callback",
+          teamId: "T123",
+          appId: "A123",
+          eventId: "Ev1",
+        },
+      },
+    });
+  });
+
   it("answers Slack URL verification challenges without forwarding to a worker", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -333,6 +408,29 @@ class MemoryProviderInstallationRegistry
 
 function fakeDb(): WorkflowPostgresDb {
   return {} as WorkflowPostgresDb;
+}
+
+function fakeDeploymentBackend(
+  fetchWorkflow: DeploymentBackend["fetchWorkflow"],
+): DeploymentBackend {
+  return {
+    namespace: "test-namespace",
+    configured: true,
+    config: {
+      accountId: "account",
+      apiBaseUrl: "https://api.cloudflare.test",
+      apiToken: "token",
+      dispatchNamespace: "test-namespace",
+      defaultCompatibilityDate: "2026-04-19",
+    },
+    resolveWorkflowApiUrl: () => undefined,
+    create: async () => null,
+    list: async () => ({ deployments: [] }),
+    get: async () => null,
+    delete: async () => null,
+    deleteMany: async () => null,
+    fetchWorkflow,
+  };
 }
 
 function signedSlackHeaders(
