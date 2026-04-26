@@ -46,7 +46,7 @@ import {
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
-import { WorkflowFrontendRoot } from "./config";
+import { useWorkflowFrontendConfig, WorkflowFrontendRoot } from "./config";
 import { useSecretVault, useWorkflow } from "./hooks/use-workflow";
 import { useWorkflowRun, WorkflowRunProvider } from "./hooks/workflow-run";
 import { findPendingWait } from "./lib/pending-wait";
@@ -73,6 +73,8 @@ const noopNavigation: WorkflowNavigation = {
   workflow() {},
   run() {},
 };
+
+const MANAGED_CONNECTION_LOADING_PATH = "/managed-connections/loading";
 
 function buildInitialManifestInputValues(
   manifest: WorkflowManifest | undefined,
@@ -199,6 +201,10 @@ function formatRunTime(timestamp: number): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(timestamp));
+}
+
+function managedConnectionPopupTarget(connectionId: string): string {
+  return `hylo-managed-connection-${connectionId.replace(/[^A-Za-z0-9_-]/g, "_")}`;
 }
 
 function runStatusLabel(status: RunSummary["status"]): string {
@@ -534,9 +540,18 @@ function WorkflowRunnerBody({
     workflow.configuration,
   );
 
-  const reserveManagedConnectionPopup = useCallback((connectionId: string) => {
-    managedConnectionPopups.current[connectionId] = window.open("", "_blank");
-  }, []);
+  const { apiBaseUrl } = useWorkflowFrontendConfig();
+  const reserveManagedConnectionPopup = useCallback(
+    (connectionId: string) => {
+      const popup = window.open(
+        `${apiBaseUrl}${MANAGED_CONNECTION_LOADING_PATH}`,
+        managedConnectionPopupTarget(connectionId),
+      );
+      managedConnectionPopups.current[connectionId] = popup;
+      if (popup) popup.focus();
+    },
+    [apiBaseUrl],
+  );
 
   const closeManagedConnectionPopup = useCallback((connectionId: string) => {
     const popup = managedConnectionPopups.current[connectionId];
@@ -554,7 +569,7 @@ function WorkflowRunnerBody({
         popup.focus();
         return;
       }
-      window.open(url, "_blank", "noopener,noreferrer");
+      window.open(url, managedConnectionPopupTarget(connectionId));
     },
     [],
   );
