@@ -3,9 +3,9 @@ import { notionProvider } from "@workflow/integrations-notion";
 import { slackProvider } from "@workflow/integrations-slack";
 import { spotifyProvider } from "@workflow/integrations-spotify";
 import {
-  createOAuthBrokerServer,
   type BrokerProviderRegistration,
   type BrokerStore,
+  createOAuthBrokerServer,
 } from "@workflow/oauth-broker";
 import {
   createPostgresBrokerStore,
@@ -75,9 +75,9 @@ export function createApp(
   oauthBrokerStore: BrokerStore = createPostgresBrokerStore(db, {
     autoMigrate: false,
   }),
-  providerInstallations: ProviderInstallationRegistry | undefined = createProviderInstallationRegistry(
-    db,
-  ),
+  providerInstallations:
+    | ProviderInstallationRegistry
+    | undefined = createProviderInstallationRegistry(db),
 ) {
   const adapterOptions = { autoMigrate: false };
   const stateStore = createPostgresWorkflowStateStore(db, adapterOptions);

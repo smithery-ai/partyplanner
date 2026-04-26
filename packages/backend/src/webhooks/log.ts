@@ -10,7 +10,11 @@ export type WebhookLogger = {
 
 export function createWebhookLogger(providerId: string): WebhookLogger {
   const requestId = randomRequestId();
-  const emit = (level: LogLevel, event: string, fields?: Record<string, unknown>) => {
+  const emit = (
+    level: LogLevel,
+    event: string,
+    fields?: Record<string, unknown>,
+  ) => {
     const line = JSON.stringify({
       scope: "webhook",
       level,

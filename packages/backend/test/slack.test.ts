@@ -21,29 +21,31 @@ describe("slack webhook routing", () => {
     const providerInstallations = new MemoryProviderInstallationRegistry();
 
     const forwardedBodies: unknown[] = [];
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = asRequest(input, init);
-      if (request.url === "https://slack.com/api/oauth.v2.access") {
-        return Response.json({
-          ok: true,
-          access_token: "xoxb-test",
-          token_type: "bot",
-          scope: "chat:write",
-          app_id: "A123",
-          team: { id: "T123", name: "Acme" },
-        });
-      }
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = asRequest(input, init);
+        if (request.url === "https://slack.com/api/oauth.v2.access") {
+          return Response.json({
+            ok: true,
+            access_token: "xoxb-test",
+            token_type: "bot",
+            scope: "chat:write",
+            app_id: "A123",
+            team: { id: "T123", name: "Acme" },
+          });
+        }
 
-      if (
-        request.url ===
-        "http://backend.test/workers/customer-worker/api/workflow/webhooks"
-      ) {
-        forwardedBodies.push(JSON.parse(await request.text()));
-        return Response.json({ ok: true });
-      }
+        if (
+          request.url ===
+          "http://backend.test/workers/customer-worker/api/workflow/webhooks"
+        ) {
+          forwardedBodies.push(JSON.parse(await request.text()));
+          return Response.json({ ok: true });
+        }
 
-      throw new Error(`Unexpected fetch: ${request.url}`);
-    });
+        throw new Error(`Unexpected fetch: ${request.url}`);
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const app = createBackendApp({
@@ -58,19 +60,22 @@ describe("slack webhook routing", () => {
       providerInstallations,
     });
 
-    const startResponse = await app.request("http://backend.test/oauth/slack/start", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${API_KEY}`,
-        "Content-Type": "application/json",
+    const startResponse = await app.request(
+      "http://backend.test/oauth/slack/start",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          runtimeHandoffUrl:
+            "http://backend.test/workers/customer-worker/api/workflow/integrations/slack/handoff",
+          runId: "run_oauth",
+          interventionId: "oauth-callback",
+        }),
       },
-      body: JSON.stringify({
-        runtimeHandoffUrl:
-          "http://backend.test/workers/customer-worker/api/workflow/integrations/slack/handoff",
-        runId: "run_oauth",
-        interventionId: "oauth-callback",
-      }),
-    });
+    );
     expect(startResponse.status).toBe(200);
     const startBody = (await startResponse.json()) as { authorizeUrl: string };
     const state = new URL(startBody.authorizeUrl).searchParams.get("state");
@@ -153,17 +158,19 @@ describe("slack webhook routing", () => {
     });
 
     let forwardedBody: unknown;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = asRequest(input, init);
-      if (
-        request.url ===
-        "https://customer-worker.localhost/api/workflow/webhooks"
-      ) {
-        forwardedBody = JSON.parse(await request.text());
-        return Response.json({ ok: true });
-      }
-      throw new Error(`Unexpected fetch: ${request.url}`);
-    });
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = asRequest(input, init);
+        if (
+          request.url ===
+          "https://customer-worker.localhost/api/workflow/webhooks"
+        ) {
+          forwardedBody = JSON.parse(await request.text());
+          return Response.json({ ok: true });
+        }
+        throw new Error(`Unexpected fetch: ${request.url}`);
+      },
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const app = createBackendApp({
@@ -285,7 +292,10 @@ describe("slack webhook routing", () => {
 class MemoryProviderInstallationRegistry
   implements ProviderInstallationRegistry
 {
-  private readonly installations = new Map<string, ProviderInstallationRecord>();
+  private readonly installations = new Map<
+    string,
+    ProviderInstallationRecord
+  >();
 
   async find(
     lookup: ProviderInstallationLookup,

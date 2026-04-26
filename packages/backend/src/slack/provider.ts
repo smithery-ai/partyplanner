@@ -40,7 +40,9 @@ export function createSlackWebhookProvider(
   };
 }
 
-function preflight(parsed: ParsedWebhook): WebhookPreflightResponse | undefined {
+function preflight(
+  parsed: ParsedWebhook,
+): WebhookPreflightResponse | undefined {
   if (parsed.kind !== "url_verification") return undefined;
   const challenge = isRecord(parsed.payload)
     ? stringValue(parsed.payload.challenge)
@@ -293,7 +295,9 @@ function parseSlackWebhook(
     };
   }
 
-  throw new Error(`Unsupported Slack content type: ${contentType ?? "unknown"}`);
+  throw new Error(
+    `Unsupported Slack content type: ${contentType ?? "unknown"}`,
+  );
 }
 
 function parsedFromJsonEvent(

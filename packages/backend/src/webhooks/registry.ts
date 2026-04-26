@@ -1,6 +1,6 @@
 import {
-  type WorkflowPostgresDb,
   providerInstallations,
+  type WorkflowPostgresDb,
 } from "@workflow/postgres";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { isRecord, safeJsonParse } from "../utils";

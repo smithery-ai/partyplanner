@@ -1,7 +1,7 @@
 import type { Context } from "hono";
 import { isRecord } from "../utils";
 import { createWebhookLogger, type WebhookLogger } from "./log";
-import type { WebhookProviderSpec } from "./provider";
+import type { ParsedWebhook, WebhookProviderSpec } from "./provider";
 import type { ProviderInstallationRegistry } from "./registry";
 
 export function mountProviderWebhookApi(
@@ -56,7 +56,7 @@ export function mountProviderWebhookApi(
       );
     }
 
-    let parsed;
+    let parsed: ParsedWebhook;
     try {
       parsed = provider.parse(c.req.header("content-type"), rawBody);
     } catch (error) {
@@ -192,7 +192,8 @@ export function mountProviderWebhookApi(
         {
           error: "worker_webhook_forward_failed",
           message:
-            message || `Worker webhook forwarding failed (${workflowResponse.status}).`,
+            message ||
+            `Worker webhook forwarding failed (${workflowResponse.status}).`,
         },
         502,
       );
@@ -220,9 +221,10 @@ async function safeReadResponseText(
   }
 }
 
-export function extractRunContext(
-  hints: string[],
-): { runId?: string; deploymentId?: string } {
+export function extractRunContext(hints: string[]): {
+  runId?: string;
+  deploymentId?: string;
+} {
   for (const candidate of hints) {
     if (!candidate) continue;
     const trimmed = candidate.trim();
@@ -233,7 +235,10 @@ export function extractRunContext(
   return {};
 }
 
-function parseRunContext(value: string): { runId?: string; deploymentId?: string } {
+function parseRunContext(value: string): {
+  runId?: string;
+  deploymentId?: string;
+} {
   try {
     const parsed = JSON.parse(value);
     if (!isRecord(parsed)) return { runId: value };
@@ -272,8 +277,7 @@ export function workerWebhookUrlFromHandoff(
   }
   const expectedSuffix = `/integrations/${providerId}/handoff`;
   if (url.pathname.endsWith(expectedSuffix)) {
-    url.pathname =
-      url.pathname.slice(0, -expectedSuffix.length) + "/webhooks";
+    url.pathname = `${url.pathname.slice(0, -expectedSuffix.length)}/webhooks`;
   } else {
     const replaced = url.pathname.replace(
       /\/integrations\/[^/]+\/handoff$/,
