@@ -8,7 +8,7 @@ import type { BackendAppEnv } from "./types";
 export function createNodeBackendApp(env: BackendAppEnv = process.env) {
   const normalizedEnv = normalizeNodeBackendEnv(env);
   const client = postgres(resolvePostgresConnectionString(normalizedEnv), {
-    max: 5,
+    max: 20,
     fetch_types: false,
     prepare: true,
   });
