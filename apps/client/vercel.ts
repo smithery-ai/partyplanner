@@ -13,6 +13,7 @@ export const config: VercelConfig = {
           routes.rewrite("/worker/:path*", `${backendUrl}/workers/:path*`),
         ]
       : []),
+    routes.rewrite("/connection/initializing", "/"),
     routes.rewrite("/login", "/"),
     routes.rewrite("/runs/:path*", "/"),
   ],
