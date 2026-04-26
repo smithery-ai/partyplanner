@@ -43,6 +43,8 @@ export type WorkflowPostgresDb = {
 export type PostgresWorkflowAdapterOptions = {
   autoMigrate?: boolean;
   leaseMs?: number;
+  oauthPendingTtlMs?: number;
+  oauthHandoffTtlMs?: number;
 };
 
 export function createPostgresWorkflowStateStore(
@@ -382,14 +384,17 @@ class PostgresWorkflowQueue implements WorkflowQueue {
 }
 
 class PostgresBrokerStore implements BrokerStore {
-  private readonly pendingTtlMs = 5 * 60_000;
-  private readonly handoffTtlMs = 60_000;
+  private readonly pendingTtlMs: number;
+  private readonly handoffTtlMs: number;
   private ready: Promise<void> | undefined;
 
   constructor(
     private readonly db: WorkflowPostgresDb,
     private readonly options: PostgresWorkflowAdapterOptions,
-  ) {}
+  ) {
+    this.pendingTtlMs = options.oauthPendingTtlMs ?? 15 * 60_000;
+    this.handoffTtlMs = options.oauthHandoffTtlMs ?? 60_000;
+  }
 
   async putPending(state: string, value: PendingValue): Promise<void> {
     await this.ensureReady();
