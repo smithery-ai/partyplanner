@@ -23,6 +23,15 @@ import "@workflow/frontend/styles.css";
 import { createContext, type ReactNode, useContext, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+  ComboboxValue,
+} from "./components/ui/combobox";
 import "./styles.css";
 
 type WorkflowRegistry = {
@@ -260,39 +269,25 @@ function ClientApp({
     selectedWorker,
   ]);
 
-  const switcher = (
-    <ClientSwitcher
-      selectedWorker={selectedWorker}
-      onWorkerChange={(worker) => {
-        void navigate({
-          to: "/worker/$workerId",
-          params: { workerId: worker },
-          search: withoutWorker,
-        });
-      }}
-      workflows={workflows}
-    />
-  );
+  const onWorkerChange = (worker: string) => {
+    void navigate({
+      to: "/worker/$workerId",
+      params: { workerId: worker },
+      search: withoutWorker,
+    });
+  };
 
   if (!registry) {
-    return (
-      <>
-        <ClientStateMessage>Loading your workers...</ClientStateMessage>
-        {switcher}
-      </>
-    );
+    return <ClientStateMessage>Loading your workers...</ClientStateMessage>;
   }
 
   if (workflows.length === 0) {
     return (
-      <>
-        <TenantWorkersEmptyState
-          backendUrl={registryConfig.backendUrl}
-          registryError={registryError}
-          sidebarFooter={sidebarFooter}
-        />
-        {switcher}
-      </>
+      <TenantWorkersEmptyState
+        backendUrl={registryConfig.backendUrl}
+        registryError={registryError}
+        sidebarFooter={sidebarFooter}
+      />
     );
   }
 
@@ -326,20 +321,26 @@ function ClientApp({
   };
 
   return (
-    <>
-      <WorkflowSinglePage
-        apiBaseUrl={workflowApiUrl(workflow.url)}
-        managedConnectionInitializingUrl="/connection/initializing"
-        runId={routeRunId}
-        navigation={navigation}
-        sidebarFooter={sidebarFooter}
-      />
-      {switcher}
-    </>
+    <WorkflowSinglePage
+      apiBaseUrl={workflowApiUrl(workflow.url)}
+      managedConnectionInitializingUrl="/connection/initializing"
+      runId={routeRunId}
+      navigation={navigation}
+      sidebarFooter={sidebarFooter}
+      headerLeading={
+        <WorkerSwitcher
+          selectedWorker={selectedWorker}
+          onWorkerChange={onWorkerChange}
+          workflows={workflows}
+        />
+      }
+    />
   );
 }
 
-function ClientSwitcher({
+type WorkerItem = { id: string; label: string };
+
+function WorkerSwitcher({
   selectedWorker,
   onWorkerChange,
   workflows,
@@ -348,31 +349,42 @@ function ClientSwitcher({
   onWorkerChange: (worker: string) => void;
   workflows: [string, { label?: string; url: string }][];
 }) {
-  const workerValue = workflows.some(([id]) => id === selectedWorker)
-    ? selectedWorker
-    : "";
+  const items: WorkerItem[] = workflows.map(([id, workflow]) => ({
+    id,
+    label: workflow.label ?? labelFromId(id),
+  }));
+  const value = items.find((item) => item.id === selectedWorker) ?? null;
 
   return (
-    <form className="hylo-client-switcher" aria-label="Workflow routing">
-      <label>
-        <span>Worker</span>
-        <select
-          value={workerValue}
-          disabled={workflows.length === 0}
-          onChange={(event) => onWorkerChange(event.currentTarget.value)}
-        >
-          {workflows.length > 0 ? (
-            workflows.map(([id, workflow]) => (
-              <option key={id} value={id}>
-                {workflow.label ?? labelFromId(id)}
-              </option>
-            ))
-          ) : (
-            <option value="">No workers</option>
+    <Combobox<WorkerItem>
+      items={items}
+      itemToStringLabel={(item) => item.label}
+      itemToStringValue={(item) => item.id}
+      isItemEqualToValue={(a, b) => a.id === b.id}
+      value={value}
+      onValueChange={(next) => {
+        if (next && next.id !== selectedWorker) onWorkerChange(next.id);
+      }}
+    >
+      <ComboboxTrigger
+        className="inline-flex h-8 min-w-0 max-w-[260px] items-center gap-1.5 rounded-md px-2 text-sm font-semibold tracking-tight outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-base"
+        aria-label="Select worker"
+      >
+        <span className="truncate">
+          <ComboboxValue placeholder="Select worker" />
+        </span>
+      </ComboboxTrigger>
+      <ComboboxContent>
+        <ComboboxEmpty>No workers</ComboboxEmpty>
+        <ComboboxList>
+          {(item: WorkerItem) => (
+            <ComboboxItem key={item.id} value={item}>
+              {item.label}
+            </ComboboxItem>
           )}
-        </select>
-      </label>
-    </form>
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   );
 }
 
