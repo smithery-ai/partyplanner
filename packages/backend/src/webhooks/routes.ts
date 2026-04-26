@@ -2,7 +2,23 @@ import type { Context } from "hono";
 import { isRecord } from "../utils";
 import { createWebhookLogger, type WebhookLogger } from "./log";
 import type { ParsedWebhook, WebhookProviderSpec } from "./provider";
-import type { ProviderInstallationRegistry } from "./registry";
+import type {
+  ProviderInstallationRecord,
+  ProviderInstallationRegistry,
+} from "./registry";
+
+export type ProviderWebhookForwarder = (
+  request: Request,
+  context: {
+    installation: ProviderInstallationRecord;
+    provider: WebhookProviderSpec;
+    workerUrl: string;
+  },
+) => Promise<Response>;
+
+export type ProviderWebhookApiOptions = {
+  forward?: ProviderWebhookForwarder;
+};
 
 export function mountProviderWebhookApi(
   app: {
@@ -13,8 +29,10 @@ export function mountProviderWebhookApi(
   },
   installations: ProviderInstallationRegistry | undefined,
   providers: WebhookProviderSpec[],
+  options: ProviderWebhookApiOptions = {},
 ): void {
   const providersById = new Map(providers.map((p) => [p.id, p]));
+  const forward = options.forward ?? ((request: Request) => fetch(request));
 
   app.post("/integrations/:providerId/events", async (c) => {
     const providerId = c.req.param("providerId") ?? "";
@@ -150,7 +168,7 @@ export function mountProviderWebhookApi(
 
     let workflowResponse: Response;
     try {
-      workflowResponse = await fetch(workerUrl, {
+      const workerRequest = new Request(workerUrl, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -168,6 +186,11 @@ export function mountProviderWebhookApi(
             payload: parsed.payload,
           },
         }),
+      });
+      workflowResponse = await forward(workerRequest, {
+        installation,
+        provider,
+        workerUrl,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

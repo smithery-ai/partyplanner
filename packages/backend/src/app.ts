@@ -36,6 +36,7 @@ import type { BackendAppEnv } from "./types";
 import type { WebhookProviderSpec } from "./webhooks/provider";
 import {
   createProviderInstallationRegistry,
+  type ProviderInstallationRecord,
   type ProviderInstallationRegistry,
 } from "./webhooks/registry";
 import { mountProviderWebhookApi } from "./webhooks/routes";
@@ -144,7 +145,9 @@ export function createApp(
   );
 
   mountDeploymentApi(app, env, apiKey, deploymentRegistry, deploymentBackend);
-  mountProviderWebhookApi(app, providerInstallations, webhookProviders);
+  mountProviderWebhookApi(app, providerInstallations, webhookProviders, {
+    forward: createWorkflowWebhookForwarder(deploymentBackend),
+  });
 
   return app;
 }
@@ -231,6 +234,49 @@ function mutableResponse(response: Response): Response {
     statusText: response.statusText,
     headers: response.headers,
   });
+}
+
+function createWorkflowWebhookForwarder(deploymentBackend: DeploymentBackend) {
+  return async (
+    request: Request,
+    context: { installation: ProviderInstallationRecord; workerUrl: string },
+  ): Promise<Response> => {
+    const deploymentId =
+      context.installation.deploymentId ??
+      deploymentIdFromWorkerRoute(context.workerUrl);
+    if (!deploymentId) return fetch(request);
+    try {
+      return await deploymentBackend.fetchWorkflow(
+        deploymentId,
+        requestForDeploymentDispatch(request, deploymentId),
+      );
+    } catch (error) {
+      if (!deploymentBackend.configured) return fetch(request);
+      throw error;
+    }
+  };
+}
+
+function requestForDeploymentDispatch(
+  request: Request,
+  deploymentId: string,
+): Request {
+  const url = new URL(request.url);
+  if (!url.pathname.match(/^\/workers\/[^/]+(?:\/|$)/)) {
+    url.pathname = `/workers/${encodeURIComponent(deploymentId)}${url.pathname}`;
+  }
+  return new Request(url, request);
+}
+
+function deploymentIdFromWorkerRoute(workerUrl: string): string | undefined {
+  try {
+    const match = new URL(workerUrl).pathname.match(
+      /^\/workers\/([^/]+)(?:\/|$)/,
+    );
+    return match ? decodeURIComponent(match[1]) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function collectCuratedProviders(
