@@ -10,11 +10,15 @@ export const config: VercelConfig = {
     ...(backendUrl
       ? [
           routes.rewrite("/api/:path*", `${backendUrl}/:path*`),
-          routes.rewrite("/worker/:path*", `${backendUrl}/workers/:path*`),
+          routes.rewrite(
+            "/worker/:workerId/api/:path*",
+            `${backendUrl}/workers/:workerId/api/:path*`,
+          ),
         ]
       : []),
     routes.rewrite("/connection/initializing", "/"),
     routes.rewrite("/login", "/"),
+    routes.rewrite("/worker/:path*", "/"),
     routes.rewrite("/runs/:path*", "/"),
   ],
 };

@@ -41,12 +41,13 @@ export default defineConfig({
         agent: hyloLocalAgent(backendCloudflareTarget),
         rewrite: (path) => path.replace(/^\/api(?=\/|$)/, "") || "/",
       },
-      "/worker": {
+      "^/worker/[^/]+/api(?=/|$)": {
         target: backendCloudflareTarget,
         changeOrigin: true,
         secure: false,
         agent: hyloLocalAgent(backendCloudflareTarget),
-        rewrite: (path) => path.replace(/^\/worker(?=\/|$)/, "/workers"),
+        rewrite: (path) =>
+          path.replace(/^\/worker\/([^/]+)\/api(?=\/|$)/, "/workers/$1/api"),
       },
       "/user_management": {
         target: "https://api.workos.com",
