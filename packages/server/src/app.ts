@@ -119,6 +119,10 @@ export function createWorkflow(options: CreateWorkflowOptions) {
     }
   });
 
+  app.get(`${basePath}/managed-connections/loading`, (c) =>
+    c.html(MANAGED_CONNECTION_LOADING_HTML),
+  );
+
   app.openapi(routes.connectManagedConnection, async (c) => {
     try {
       const body = c.req.valid("json") as ConnectManagedConnectionRequest;
@@ -225,6 +229,51 @@ function defaultSecretResolver(
     },
   };
 }
+
+const MANAGED_CONNECTION_LOADING_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connecting…</title>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #fafafa;
+        color: #18181b;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      }
+      .wrap {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+      }
+      .spinner {
+        width: 28px;
+        height: 28px;
+        border: 2px solid #e4e4e7;
+        border-top-color: #18181b;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      .label {
+        font-size: 14px;
+        color: #71717a;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="label">Connecting…</div>
+    </div>
+  </body>
+</html>`;
 
 function baseBackendUrl(backendApi: string | BackendApiClientOptions): string {
   const raw = typeof backendApi === "string" ? backendApi : backendApi.url;
