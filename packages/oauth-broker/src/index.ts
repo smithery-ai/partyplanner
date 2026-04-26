@@ -10,5 +10,6 @@ export type {
   InMemoryBrokerStoreOptions,
   PendingValue,
   RefreshValue,
+  TokenIssuedValue,
 } from "./store";
 export { createInMemoryBrokerStore } from "./store";

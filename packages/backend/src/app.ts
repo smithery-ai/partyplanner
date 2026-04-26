@@ -2,8 +2,11 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { notionProvider } from "@workflow/integrations-notion";
 import { slackProvider } from "@workflow/integrations-slack";
 import { spotifyProvider } from "@workflow/integrations-spotify";
-import type { BrokerProviderRegistration } from "@workflow/oauth-broker";
-import { createOAuthBrokerServer } from "@workflow/oauth-broker";
+import {
+  createOAuthBrokerServer,
+  type BrokerProviderRegistration,
+  type BrokerStore,
+} from "@workflow/oauth-broker";
 import {
   createPostgresBrokerStore,
   createPostgresWorkflowQueue,
@@ -28,7 +31,14 @@ import {
 } from "./deployments/routes";
 import { parseDeploymentIdParam } from "./deployments/validators";
 import { apiErrorResponse } from "./errors";
+import { createSlackWebhookProvider } from "./slack/provider";
 import type { BackendAppEnv } from "./types";
+import type { WebhookProviderSpec } from "./webhooks/provider";
+import {
+  createProviderInstallationRegistry,
+  type ProviderInstallationRegistry,
+} from "./webhooks/registry";
+import { mountProviderWebhookApi } from "./webhooks/routes";
 
 export type { BackendAppEnv } from "./types";
 
@@ -37,6 +47,8 @@ export type BackendAppOptions = {
   env?: BackendAppEnv;
   deploymentRegistry?: WorkflowDeploymentRegistry;
   deploymentBackend?: DeploymentBackend;
+  oauthBrokerStore?: BrokerStore;
+  providerInstallations?: ProviderInstallationRegistry;
 };
 
 export function createBackendApp(options: BackendAppOptions) {
@@ -48,6 +60,8 @@ export function createBackendApp(options: BackendAppOptions) {
     env,
     options.deploymentRegistry,
     deploymentBackend,
+    options.oauthBrokerStore,
+    options.providerInstallations,
   );
 }
 
@@ -57,6 +71,12 @@ export function createApp(
   deploymentRegistry?: WorkflowDeploymentRegistry,
   deploymentBackend: DeploymentBackend = createDefaultCloudflareDeploymentBackend(
     env,
+  ),
+  oauthBrokerStore: BrokerStore = createPostgresBrokerStore(db, {
+    autoMigrate: false,
+  }),
+  providerInstallations: ProviderInstallationRegistry | undefined = createProviderInstallationRegistry(
+    db,
   ),
 ) {
   const adapterOptions = { autoMigrate: false };
@@ -86,20 +106,45 @@ export function createApp(
   );
 
   const curatedProviders = collectCuratedProviders(env);
+  const webhookProviders: WebhookProviderSpec[] = [
+    createSlackWebhookProvider(env),
+  ];
   const apiKey = resolveApiKey(env);
   mountAuthApi(app, env, apiKey, deploymentBackend);
   app.route(
     "/oauth",
     createOAuthBrokerServer({
       brokerBaseUrl: resolveBrokerBaseUrl(env),
-      store: createPostgresBrokerStore(db, adapterOptions),
+      store: oauthBrokerStore,
       authenticateAppToken: (token) =>
         token === apiKey ? { appId: "shared" } : undefined,
       providers: curatedProviders,
+      onTokenIssued: async (event) => {
+        console.info(
+          JSON.stringify({
+            scope: "webhook",
+            level: "info",
+            event: "oauth_token_issued",
+            providerId: event.providerId,
+            hasRegistry: Boolean(providerInstallations),
+            providers: webhookProviders.map((p) => p.id),
+          }),
+        );
+        if (!providerInstallations) return;
+        for (const provider of webhookProviders) {
+          if (provider.registerOAuthInstallation) {
+            await provider.registerOAuthInstallation(
+              event,
+              providerInstallations,
+            );
+          }
+        }
+      },
     }),
   );
 
   mountDeploymentApi(app, env, apiKey, deploymentRegistry, deploymentBackend);
+  mountProviderWebhookApi(app, providerInstallations, webhookProviders);
 
   return app;
 }
