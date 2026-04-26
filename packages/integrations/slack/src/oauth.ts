@@ -60,11 +60,20 @@ const rawTokenSchema = z
   })
   .passthrough();
 
+export const slackDefaultScopes = [
+  "app_mentions:read",
+  "chat:write",
+  "channels:history",
+  "groups:history",
+  "im:history",
+  "mpim:history",
+];
+
 export const slackProvider: OAuthProviderSpec<SlackAuth> = {
   id: "slack",
   authorizeUrl: "https://slack.com/oauth/v2/authorize",
   tokenUrl: "https://slack.com/api/oauth.v2.access",
-  defaultScopes: ["chat:write"],
+  defaultScopes: slackDefaultScopes,
   tokenSchema: slackAuthSchema,
   shapeToken: (raw) => {
     const parsed = rawTokenSchema.parse(raw);
@@ -91,5 +100,6 @@ export const slackProvider: OAuthProviderSpec<SlackAuth> = {
 export const slack = createConnection({
   providerId: "slack",
   tokenSchema: slackAuthSchema,
+  scopes: slackDefaultScopes,
   name: "slack",
 });

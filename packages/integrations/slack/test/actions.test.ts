@@ -103,4 +103,88 @@ describe("postMessage", () => {
       }),
     );
   });
+
+  it("posts Slack thread replies with blocks", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          channel: "C123",
+          ts: "1740000001.000200",
+          message: {
+            text: "Context",
+            thread_ts: "1740000000.000100",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+
+    const seed = input("seed", z.object({ ok: z.boolean().default(true) }));
+    const auth = atom(
+      () => ({
+        accessToken: "xoxb-test",
+        tokenType: "bot",
+        scopes: ["chat:write"],
+      }),
+      { name: "slackAuth" },
+    );
+    const blocks = atom(
+      () => [
+        {
+          type: "rich_text",
+          elements: [
+            {
+              type: "rich_text_section",
+              elements: [{ type: "text", text: "Thread context" }],
+            },
+          ],
+        },
+      ],
+      { name: "blocks" },
+    );
+
+    atom((get) => get(seed), { name: "seedPassThrough" });
+    const sendSlackMessage = postMessage({
+      auth,
+      channel: "C123",
+      threadTs: "1740000000.000100",
+      text: "Context",
+      blocks,
+      actionName: "sendSlackMessage",
+    });
+    atom((get) => get(sendSlackMessage), {
+      name: "sendSlackMessageResult",
+    });
+
+    const waiting = await runToIdle({
+      kind: "input",
+      eventId: "evt-seed",
+      runId: "run-slack",
+      inputId: "seed",
+      payload: { ok: true },
+    });
+
+    expect(waiting.trace.nodes.sendSlackMessage?.value).toEqual({
+      channel: "C123",
+      channelId: "C123",
+      ts: "1740000001.000200",
+      threadTs: "1740000000.000100",
+      text: "Context",
+    });
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? "{}"));
+    expect(body).toMatchObject({
+      channel: "C123",
+      text: "Context",
+      thread_ts: "1740000000.000100",
+      blocks: [
+        {
+          type: "rich_text",
+        },
+      ],
+    });
+  });
 });
