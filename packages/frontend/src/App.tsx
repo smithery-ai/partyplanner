@@ -46,7 +46,7 @@ import {
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
-import { WorkflowFrontendRoot } from "./config";
+import { useWorkflowFrontendConfig, WorkflowFrontendRoot } from "./config";
 import { useSecretVault, useWorkflow } from "./hooks/use-workflow";
 import { useWorkflowRun, WorkflowRunProvider } from "./hooks/workflow-run";
 import { findPendingWait } from "./lib/pending-wait";
@@ -514,6 +514,7 @@ function WorkflowRunnerBody({
   const [awaitingManagedConnectionId, setAwaitingManagedConnectionId] =
     useState<string | undefined>();
   const managedConnectionPopups = useRef<Record<string, Window | null>>({});
+  const frontendConfig = useWorkflowFrontendConfig();
 
   const { isRunning, setRunning, executingNodeId, runComplete, runState } =
     workflowRun;
@@ -534,9 +535,16 @@ function WorkflowRunnerBody({
     workflow.configuration,
   );
 
-  const reserveManagedConnectionPopup = useCallback((connectionId: string) => {
-    managedConnectionPopups.current[connectionId] = window.open("", "_blank");
-  }, []);
+  const reserveManagedConnectionPopup = useCallback(
+    (connectionId: string) => {
+      const popup = window.open(
+        frontendConfig.managedConnectionInitializingUrl,
+        "_blank",
+      );
+      managedConnectionPopups.current[connectionId] = popup;
+    },
+    [frontendConfig.managedConnectionInitializingUrl],
+  );
 
   const closeManagedConnectionPopup = useCallback((connectionId: string) => {
     const popup = managedConnectionPopups.current[connectionId];
@@ -599,13 +607,15 @@ function WorkflowRunnerBody({
           : undefined);
       if (url) {
         openManagedConnectionUrl(awaitingManagedConnectionId, url);
+        setConnectingManagedConnectionId(undefined);
+        setAwaitingManagedConnectionId(undefined);
       }
-      setAwaitingManagedConnectionId(undefined);
       return;
     }
 
     if (connection?.status === "connected" || connection?.status === "error") {
       closeManagedConnectionPopup(awaitingManagedConnectionId);
+      setConnectingManagedConnectionId(undefined);
       setAwaitingManagedConnectionId(undefined);
     }
   }, [
@@ -623,8 +633,13 @@ function WorkflowRunnerBody({
     const connection = workflow.configuration?.connections.find(
       (candidate) => candidate.id === awaitingManagedConnectionId,
     );
+    const actionUrl =
+      intervention?.actionUrl ??
+      (intervention?.action?.type === "open_url"
+        ? intervention.action.url
+        : undefined);
     if (
-      intervention ||
+      actionUrl ||
       connection?.status === "connected" ||
       connection?.status === "error"
     ) {
@@ -720,9 +735,7 @@ function WorkflowRunnerBody({
     }
     reserveManagedConnectionPopup(connectionId);
     setConnectingManagedConnectionId(connectionId);
-    if (!restart) {
-      setAwaitingManagedConnectionId(connectionId);
-    }
+    setAwaitingManagedConnectionId(connectionId);
 
     try {
       const result = await workflow.connectManagedConnection(connectionId, {
@@ -738,21 +751,28 @@ function WorkflowRunnerBody({
             : undefined);
         if (url) {
           openManagedConnectionUrl(connectionId, url);
-        }
-        if (!restart) {
+          setConnectingManagedConnectionId(undefined);
           setAwaitingManagedConnectionId(undefined);
         }
       }
-    } catch (e) {
-      closeManagedConnectionPopup(connectionId);
-      if (!restart) {
+      const connection = result.connections.find(
+        (candidate) => candidate.id === connectionId,
+      );
+      if (
+        connection?.status === "connected" ||
+        connection?.status === "error"
+      ) {
+        closeManagedConnectionPopup(connectionId);
+        setConnectingManagedConnectionId(undefined);
         setAwaitingManagedConnectionId(undefined);
       }
+    } catch (e) {
+      closeManagedConnectionPopup(connectionId);
+      setConnectingManagedConnectionId(undefined);
+      setAwaitingManagedConnectionId(undefined);
       setPayloadError(
         errorMessage(e, "Unable to start managed connection authorization."),
       );
-    } finally {
-      setConnectingManagedConnectionId(undefined);
     }
   }
 
@@ -1271,17 +1291,21 @@ export function WorkflowSingleApp({
 
 export function WorkflowSinglePage({
   apiBaseUrl = "/api/workflow",
+  managedConnectionInitializingUrl,
   sidebarFooter,
   runId,
   navigation,
 }: {
   apiBaseUrl?: string;
+  managedConnectionInitializingUrl?: string;
   sidebarFooter?: ReactNode;
   runId?: string;
   navigation?: WorkflowNavigation;
 }) {
   return (
-    <WorkflowFrontendRoot config={{ apiBaseUrl }}>
+    <WorkflowFrontendRoot
+      config={{ apiBaseUrl, managedConnectionInitializingUrl }}
+    >
       <WorkflowSingleApp
         sidebarFooter={sidebarFooter}
         runId={runId}

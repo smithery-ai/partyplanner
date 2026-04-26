@@ -11,14 +11,17 @@ import {
 
 export type WorkflowFrontendConfig = {
   apiBaseUrl?: string;
+  managedConnectionInitializingUrl?: string;
 };
 
 export type ResolvedWorkflowFrontendConfig = {
   apiBaseUrl: string;
+  managedConnectionInitializingUrl: string;
 };
 
 const defaultConfig: ResolvedWorkflowFrontendConfig = {
   apiBaseUrl: "/api",
+  managedConnectionInitializingUrl: "/connection/initializing",
 };
 
 const WorkflowFrontendConfigContext =
@@ -36,6 +39,9 @@ export function WorkflowFrontendProvider({
       ...defaultConfig,
       ...config,
       apiBaseUrl: normalizeApiBaseUrl(config?.apiBaseUrl ?? "/api"),
+      managedConnectionInitializingUrl:
+        config?.managedConnectionInitializingUrl ??
+        defaultConfig.managedConnectionInitializingUrl,
     };
   }, [config]);
 
