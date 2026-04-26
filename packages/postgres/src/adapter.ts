@@ -95,53 +95,67 @@ class PostgresWorkflowStateStore implements WorkflowStateStore {
     expectedVersion?: number,
   ): Promise<SaveResult> {
     await this.ensureReady();
-    const current = await this.load(runId);
-    if (
-      expectedVersion !== undefined &&
-      current &&
-      current.version !== expectedVersion
-    ) {
-      return { ok: false, reason: "conflict" };
-    }
-    if (expectedVersion !== undefined && !current && expectedVersion !== 0) {
-      return { ok: false, reason: "missing" };
-    }
-
     const now = Date.now();
-    const version = (current?.version ?? 0) + 1;
-    if (!current) {
-      const inserted = await asDb(this.db)
+    const stateJson = JSON.stringify(state);
+
+    // First-write path: caller asserts no row exists yet.
+    if (expectedVersion === 0) {
+      const inserted = (await asDb(this.db)
         .insert(workflowRunStates)
-        .values({
-          runId,
-          version,
-          stateJson: JSON.stringify(state),
-          updatedAt: now,
-        })
+        .values({ runId, version: 1, stateJson, updatedAt: now })
         .onConflictDoNothing()
-        .returning({ version: workflowRunStates.version });
+        .returning({ version: workflowRunStates.version })) as Array<{
+        version: number;
+      }>;
       return inserted.length > 0
-        ? { ok: true, version }
+        ? { ok: true, version: 1 }
         : { ok: false, reason: "conflict" };
     }
 
-    const updated = await asDb(this.db)
-      .update(workflowRunStates)
-      .set({
-        version,
-        stateJson: JSON.stringify(state),
-        updatedAt: now,
+    // Optimistic update against a known version.
+    if (expectedVersion !== undefined) {
+      const nextVersion = expectedVersion + 1;
+      const updated = (await asDb(this.db)
+        .update(workflowRunStates)
+        .set({ version: nextVersion, stateJson, updatedAt: now })
+        .where(
+          and(
+            eq(workflowRunStates.runId, runId),
+            eq(workflowRunStates.version, expectedVersion),
+          ),
+        )
+        .returning({ version: workflowRunStates.version })) as Array<{
+        version: number;
+      }>;
+      if (updated.length > 0) return { ok: true, version: nextVersion };
+      // Disambiguate missing vs. version conflict only on the failure path.
+      const exists = (await asDb(this.db)
+        .select({ version: workflowRunStates.version })
+        .from(workflowRunStates)
+        .where(eq(workflowRunStates.runId, runId))
+        .limit(1)) as Array<{ version: number }>;
+      return {
+        ok: false,
+        reason: exists.length === 0 ? "missing" : "conflict",
+      };
+    }
+
+    // No version assertion: upsert in a single round trip.
+    const upserted = (await asDb(this.db)
+      .insert(workflowRunStates)
+      .values({ runId, version: 1, stateJson, updatedAt: now })
+      .onConflictDoUpdate({
+        target: workflowRunStates.runId,
+        set: {
+          version: sql`${workflowRunStates.version} + 1`,
+          stateJson,
+          updatedAt: now,
+        },
       })
-      .where(
-        and(
-          eq(workflowRunStates.runId, runId),
-          eq(workflowRunStates.version, current.version),
-        ),
-      )
-      .returning({ version: workflowRunStates.version });
-    return updated.length > 0
-      ? { ok: true, version }
-      : { ok: false, reason: "conflict" };
+      .returning({ version: workflowRunStates.version })) as Array<{
+      version: number;
+    }>;
+    return { ok: true, version: upserted[0].version };
   }
 
   async publishEvent(event: RunEvent): Promise<void> {
@@ -284,41 +298,34 @@ class PostgresWorkflowQueue implements WorkflowQueue {
 
   async claimNext(runId: string): Promise<QueueItem | undefined> {
     await this.ensureReady();
-    for (let i = 0; i < 5; i += 1) {
-      const rows = await asDb(this.db)
-        .select()
-        .from(workflowQueueItems)
-        .where(
-          and(
-            eq(workflowQueueItems.runId, runId),
-            eq(workflowQueueItems.status, "pending"),
-          ),
-        )
-        .orderBy(asc(workflowQueueItems.enqueuedAt))
-        .limit(1);
-      const row = (rows as QueueRow[])[0];
-      if (!row) return undefined;
-
-      const now = Date.now();
-      const updated = await asDb(this.db)
-        .update(workflowQueueItems)
-        .set({
-          status: "running",
-          startedAt: now,
-          leaseUntil: now + (this.options.leaseMs ?? 30_000),
-          attempts: sql`${workflowQueueItems.attempts} + 1`,
-        })
-        .where(
-          and(
-            eq(workflowQueueItems.eventId, row.eventId),
-            eq(workflowQueueItems.status, "pending"),
-          ),
-        )
-        .returning();
-      const claimed = (updated as QueueRow[])[0];
-      if (claimed) return rowToQueueItem(claimed);
-    }
-    return undefined;
+    const now = Date.now();
+    const leaseUntil = now + (this.options.leaseMs ?? 30_000);
+    // Atomic claim: FOR UPDATE SKIP LOCKED lets concurrent claimers each grab
+    // a distinct row in one round trip — no SELECT-then-UPDATE retry loop.
+    const rows = (await asDb(this.db).execute(sql`
+      UPDATE workflow_queue_items
+      SET status = 'running',
+          started_at = ${now},
+          lease_until = ${leaseUntil},
+          attempts = attempts + 1
+      WHERE event_id = (
+        SELECT event_id FROM workflow_queue_items
+        WHERE run_id = ${runId} AND status = 'pending'
+        ORDER BY enqueued_at ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING
+        event_id AS "eventId",
+        event_json AS "eventJson",
+        status,
+        enqueued_at AS "enqueuedAt",
+        started_at AS "startedAt",
+        finished_at AS "finishedAt",
+        error
+    `)) as QueueRow[];
+    const row = rows[0];
+    return row ? rowToQueueItem(row) : undefined;
   }
 
   async complete(eventId: string): Promise<void> {
@@ -577,6 +584,7 @@ function asDb(db: WorkflowPostgresDb) {
     insert: (table: unknown) => InsertBuilder;
     update: (table: unknown) => UpdateBuilder;
     delete: (table: unknown) => DeleteBuilder;
+    execute: (query: unknown) => Promise<unknown[]>;
   };
 }
 
@@ -599,7 +607,7 @@ type QueryBuilder = {
 type InsertBuilder = {
   values(value: unknown): InsertBuilder;
   onConflictDoNothing(): InsertBuilder;
-  onConflictDoUpdate(args: unknown): Promise<unknown>;
+  onConflictDoUpdate(args: unknown): InsertBuilder;
   returning(selection?: unknown): Promise<unknown[]>;
   then<TResult1 = unknown, TResult2 = never>(
     onfulfilled?:
