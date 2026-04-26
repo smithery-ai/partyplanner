@@ -79,13 +79,24 @@ const loginRoute = createRoute({
   component: HomeRouteComponent,
 });
 
+const connectionInitializingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/connection/initializing",
+  component: ConnectionInitializingRouteComponent,
+});
+
 const runRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/runs/$runId",
   component: RunRouteComponent,
 });
 
-const routeTree = rootRoute.addChildren([homeRoute, loginRoute, runRoute]);
+const routeTree = rootRoute.addChildren([
+  homeRoute,
+  loginRoute,
+  connectionInitializingRoute,
+  runRoute,
+]);
 
 const router = createRouter({
   routeTree,
@@ -131,6 +142,20 @@ function HomeRouteComponent() {
 function RunRouteComponent() {
   const { runId } = useParams({ from: runRoute.id });
   return <ClientApp routeRunId={runId} />;
+}
+
+function ConnectionInitializingRouteComponent() {
+  return (
+    <div className="grid min-h-dvh place-items-center bg-background p-6 text-foreground">
+      <div className="inline-flex items-center gap-3 text-sm font-medium">
+        <span
+          className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground"
+          aria-hidden="true"
+        />
+        Initializing connection
+      </div>
+    </div>
+  );
 }
 
 function ClientApp({ routeRunId }: { routeRunId?: string }) {
@@ -261,6 +286,7 @@ function ClientApp({ routeRunId }: { routeRunId?: string }) {
     <>
       <WorkflowSinglePage
         apiBaseUrl={workflowApiUrl(workflow.url)}
+        managedConnectionInitializingUrl="/connection/initializing"
         runId={routeRunId}
         navigation={navigation}
         sidebarFooter={sidebarFooter}

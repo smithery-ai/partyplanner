@@ -514,7 +514,14 @@ function ManagedConnectionRow({
           onClick={() => onConnect({ restart: true })}
           className="shrink-0"
         >
-          Restart
+          {connecting ? (
+            <>
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              Initializing connection
+            </>
+          ) : (
+            "Restart"
+          )}
         </Button>
       ) : (
         <Button
@@ -528,7 +535,7 @@ function ManagedConnectionRow({
           {connecting ? (
             <>
               <Loader2 className="size-3.5 animate-spin" aria-hidden />
-              Connecting
+              Initializing connection
             </>
           ) : (
             "Connect"
@@ -554,7 +561,7 @@ function managedConnectionStatusText(
   state: ManagedConnectionDisplayState | undefined,
   connecting: boolean,
 ): string {
-  if (connecting) return "Starting authorization for this worker.";
+  if (connecting) return "Initializing connection for this worker.";
   switch (state?.status) {
     case "connected":
       return "Authorization complete for this worker.";
