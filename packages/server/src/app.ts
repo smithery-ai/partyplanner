@@ -176,6 +176,12 @@ export function createWorkflow(options: CreateWorkflowOptions) {
     }
   });
 
+  app.all(`${basePath}/runs/:runId/subscribe`, async (c) => {
+    const runId = requireParam(c.req.param("runId"));
+    const target = `${baseBackendUrl(options.backendApi)}/internal/runs/${encodeURIComponent(runId)}/subscribe`;
+    return fetch(new Request(target, c.req.raw));
+  });
+
   if (options.openApi !== false) {
     mountWorkflowOpenApi(app, {
       ...options.openApi,
