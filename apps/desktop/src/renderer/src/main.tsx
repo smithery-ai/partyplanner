@@ -7,7 +7,6 @@ import {
 import "@workflow/frontend/styles.css";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
-import "./styles.css";
 
 const DEFAULT_LOCAL_WORKFLOW_ID = "workflow-cloudflare-worker-example";
 
@@ -25,8 +24,8 @@ createRoot(root).render(
         getLocalWorkflowRegistry={localWorkflowRegistry}
         getRequestedWorker={requestedWorker}
         getWorkflowRegistryConfig={workflowRegistryConfig}
-        logPrefix="hylo-client"
-        queryKeyPrefix="hylo-client"
+        logPrefix="hylo-desktop"
+        queryKeyPrefix="hylo-desktop"
         sidebarFooter={sidebarFooter}
         workflowApiUrl={workflowApiUrl}
       />
@@ -54,29 +53,29 @@ function workflowRegistryConfig(
     };
   }
 
+  const backendUrl = hyloBackendUrl();
+  const registryPath = tenantId
+    ? `/tenants/${encodeURIComponent(tenantId)}/workflows`
+    : "/tenants/me/workflows";
+
   return {
-    backendUrl: "/api",
-    url: tenantId
-      ? `/api/tenants/${encodeURIComponent(tenantId)}/workflows`
-      : "/api/tenants/me/workflows",
+    backendUrl,
+    url: backendUrl ? `${backendUrl}${registryPath}` : registryPath,
   };
 }
 
-function workflowApiUrl(apiBaseUrl: string): string {
-  const url = new URL(apiBaseUrl, window.location.origin);
-  if (url.pathname.startsWith("/workers/")) {
-    return `/worker${url.pathname.slice("/workers".length)}${url.search}${url.hash}`;
-  }
-  if (
-    url.pathname.startsWith("/worker/") ||
-    url.origin === window.location.origin
-  ) {
-    return `${url.pathname}${url.search}${url.hash}`;
-  }
+function workflowApiUrl(apiBaseUrl: string, backendUrl: string | undefined) {
+  if (!backendUrl) return apiBaseUrl;
+
+  let url = new URL(apiBaseUrl, window.location.origin);
   if (isLoopbackUrl(url)) {
-    return url.toString();
+    const backend = new URL(backendUrl);
+    url = new URL(`${url.pathname}${url.search}${url.hash}`, backend.origin);
   }
-  return url.toString();
+  url.searchParams.set("backendUrl", backendUrl);
+  return url.origin === window.location.origin
+    ? `${url.pathname}${url.search}${url.hash}`
+    : url.toString();
 }
 
 function localWorkflowRegistry(): HyloWorkflowRegistry | undefined {
@@ -99,6 +98,13 @@ function localWorkflowRegistry(): HyloWorkflowRegistry | undefined {
 
 function requestedWorker(search: HyloClientShellSearch): string | undefined {
   return firstNonEmpty(search.worker, import.meta.env.VITE_HYLO_WORKFLOW);
+}
+
+function hyloBackendUrl(): string | undefined {
+  return firstNonEmpty(import.meta.env.VITE_HYLO_BACKEND_URL)?.replace(
+    /\/+$/,
+    "",
+  );
 }
 
 function isLocalDev(): boolean {
