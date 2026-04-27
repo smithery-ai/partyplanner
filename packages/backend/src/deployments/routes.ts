@@ -31,6 +31,7 @@ const WorkflowDeploymentSchema = z
   .object({
     tenantId: z.string(),
     deploymentId: z.string(),
+    workflowId: z.string().optional(),
     label: z.string().optional(),
     workflowApiUrl: z.string().optional(),
     dispatchNamespace: z.string(),
@@ -428,6 +429,7 @@ export function mountDeploymentApi(
         await registry.upsert({
           tenantId: deploymentInput.tenantId,
           deploymentId: deploymentInput.deploymentId,
+          workflowId: deploymentInput.workflowId,
           label: deploymentInput.label,
           workflowApiUrl,
           workflowTargetUrl,

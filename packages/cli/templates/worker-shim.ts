@@ -8,6 +8,7 @@ type Env = {
   HYLO_WORKFLOW_ID?: string;
   HYLO_WORKFLOW_NAME?: string;
   HYLO_WORKFLOW_VERSION?: string;
+  HYLO_ORGANIZATION_ID?: string;
   HYLO_BACKEND_URL?: string;
   HYLO_APP_URL?: string;
   HYLO_API_KEY?: string;
@@ -39,6 +40,7 @@ function createCachedApp(env: Env, backendApi: string): WorkflowApp {
     workflow: {
       id: requireEnv(env, "HYLO_WORKFLOW_ID"),
       name: requireEnv(env, "HYLO_WORKFLOW_NAME"),
+      organizationId: envSecretValue(env, "HYLO_ORGANIZATION_ID"),
       version: requireEnv(env, "HYLO_WORKFLOW_VERSION"),
     },
   });

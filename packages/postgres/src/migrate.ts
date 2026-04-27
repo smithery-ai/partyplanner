@@ -77,6 +77,7 @@ const schemaStatements = [
   `create table if not exists workflow_deployments (
     deployment_id text primary key,
     tenant_id text not null,
+    workflow_id text,
     label text,
     workflow_api_url text,
     workflow_target_url text,
@@ -87,6 +88,8 @@ const schemaStatements = [
   )`,
   `alter table workflow_deployments
     add column if not exists workflow_target_url text`,
+  `alter table workflow_deployments
+    add column if not exists workflow_id text`,
   `create index if not exists workflow_run_documents_started_at_idx
     on workflow_run_documents (started_at desc)`,
   `create index if not exists workflow_events_run_id_created_at_idx

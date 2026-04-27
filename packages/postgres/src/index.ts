@@ -8,6 +8,10 @@ export {
   createPostgresWorkflowStateStore,
 } from "./adapter";
 export { ensureWorkflowPostgresSchema } from "./migrate";
+export {
+  type DeletePostgresTenantDataResult,
+  deletePostgresTenantData,
+} from "./reset";
 
 export {
   oauthHandoffs,
