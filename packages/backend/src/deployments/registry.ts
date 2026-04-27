@@ -9,6 +9,7 @@ import { parseJsonArray } from "../utils";
 export type WorkflowDeploymentRecord = {
   tenantId: string;
   deploymentId: string;
+  workflowId?: string;
   label?: string;
   workflowApiUrl?: string;
   workflowTargetUrl?: string;
@@ -66,6 +67,7 @@ export function createWorkflowDeploymentRegistry(
         .values({
           deploymentId: deployment.deploymentId,
           tenantId: deployment.tenantId,
+          workflowId: deployment.workflowId ?? null,
           label: deployment.label ?? null,
           workflowApiUrl: deployment.workflowApiUrl ?? null,
           workflowTargetUrl: deployment.workflowTargetUrl ?? null,
@@ -78,6 +80,7 @@ export function createWorkflowDeploymentRegistry(
           target: workflowDeployments.deploymentId,
           set: {
             tenantId: deployment.tenantId,
+            workflowId: deployment.workflowId ?? null,
             label: deployment.label ?? null,
             workflowApiUrl: deployment.workflowApiUrl ?? null,
             workflowTargetUrl: deployment.workflowTargetUrl ?? null,
@@ -132,6 +135,8 @@ type WorkflowDeploymentRow = {
   tenant_id?: string;
   deploymentId?: string;
   deployment_id?: string;
+  workflowId?: string | null;
+  workflow_id?: string | null;
   label: string | null;
   workflowApiUrl?: string | null;
   workflow_api_url?: string | null;
@@ -153,6 +158,9 @@ function workflowDeploymentFromRow(
   return {
     tenantId: row.tenantId ?? row.tenant_id ?? "",
     deploymentId: row.deploymentId ?? row.deployment_id ?? "",
+    ...(row.workflowId || row.workflow_id
+      ? { workflowId: row.workflowId ?? row.workflow_id ?? "" }
+      : {}),
     ...(row.label ? { label: row.label } : {}),
     ...(row.workflowApiUrl || row.workflow_api_url
       ? { workflowApiUrl: row.workflowApiUrl ?? row.workflow_api_url ?? "" }

@@ -31,6 +31,10 @@ import {
 } from "./deployments/routes";
 import { parseDeploymentIdParam } from "./deployments/validators";
 import { apiErrorResponse } from "./errors";
+import {
+  mountOnboardingApi,
+  registerOnboardingOpenApiRoutes,
+} from "./onboarding/routes";
 import { createSlackWebhookProvider } from "./slack/provider";
 import type { BackendAppEnv } from "./types";
 import type { WebhookProviderSpec } from "./webhooks/provider";
@@ -145,6 +149,7 @@ export function createApp(
   );
 
   mountDeploymentApi(app, env, apiKey, deploymentRegistry, deploymentBackend);
+  mountOnboardingApi(app, db, env, apiKey);
   mountProviderWebhookApi(app, providerInstallations, webhookProviders, {
     forward: createWorkflowWebhookForwarder(deploymentBackend),
   });
@@ -207,6 +212,7 @@ function createBackendRouteOpenApiDocument(): Record<string, unknown> {
 function mountBackendOpenApiRoutes(app: OpenAPIHono): void {
   registerAuthOpenApiRoutes(app);
   registerDeploymentOpenApiRoutes(app);
+  registerOnboardingOpenApiRoutes(app);
 }
 
 function mountWorkerDispatchApi(
