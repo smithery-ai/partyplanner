@@ -1,4 +1,5 @@
 name = "hylo-backend"
+account_id = "c4cf21d8a5e8878bc3c92708b1f80193"
 main = "src/index.ts"
 compatibility_date = "2026-04-19"
 compatibility_flags = ["nodejs_compat"]
