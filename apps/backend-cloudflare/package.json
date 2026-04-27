@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "infisical run --path=/ --env=dev -- wrangler dev --ip 127.0.0.1 --port ${HYLO_BACKEND_PORT:-8787} --inspector-port ${HYLO_BACKEND_INSPECTOR_PORT:-9230}",
-    "deploy": "pnpm build && wrangler deploy",
+    "dev": "infisical export --path=/ --env=dev --format=dotenv > .dev.vars && infisical run --path=/ --env=dev -- wrangler dev --ip 127.0.0.1 --port ${HYLO_BACKEND_PORT:-8787} --inspector-port ${HYLO_BACKEND_INSPECTOR_PORT:-9230}",
+    "deploy": "pnpm build && wrangler deploy --env production",
     "db:migrate": "pnpm -C ../../packages/postgres db:migrate",
     "db:migrate:dev": "infisical run --path=/ --env=dev -- pnpm db:migrate",
     "db:migrate:staging": "infisical run --path=/ --env=staging -- pnpm db:migrate",

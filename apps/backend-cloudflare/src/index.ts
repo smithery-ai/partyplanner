@@ -20,7 +20,10 @@ export default {
       db,
       env,
       deploymentRegistry,
-      deploymentBackend: createDefaultCloudflareDeploymentBackend(env),
+      deploymentBackend: createDefaultCloudflareDeploymentBackend(
+        env,
+        deploymentRegistry,
+      ),
     }).fetch(request);
   },
 } satisfies ExportedHandler<Env>;

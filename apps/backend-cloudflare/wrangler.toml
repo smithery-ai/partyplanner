@@ -11,13 +11,14 @@ enabled = true
 enabled = true
 invocation_logs = true
 
+# Top-level vars are the `wrangler dev` defaults. WORKOS_CLIENT_ID and
+# WORKOS_CLIENT_API_HOSTNAME are intentionally omitted here so dev gets them
+# from process.env (Infisical) instead of the hardcoded production client.
 [vars]
 CLOUDFLARE_ACCOUNT_ID = "c4cf21d8a5e8878bc3c92708b1f80193"
 CLOUDFLARE_DISPATCH_NAMESPACE = "hylo-tenants"
 CLOUDFLARE_WORKER_COMPATIBILITY_DATE = "2026-04-19"
-WORKOS_CLIENT_ID = "client_01KD3FTW7R2QD0NW6QB7QP6Q0B"
 WORKOS_API_HOSTNAME = "api.workos.com"
-WORKOS_CLIENT_API_HOSTNAME = "authk.smithery.ai"
 
 [[hyperdrive]]
 binding = "HYPERDRIVE"
@@ -26,6 +27,27 @@ id = "13a2b723638746bf9d08d56785d65bb2"
 [[dispatch_namespaces]]
 binding = "DISPATCHER"
 namespace = "hylo-tenants"
+remote = true
+
+[env.production]
+name = "hylo-backend"
+
+[env.production.vars]
+CLOUDFLARE_ACCOUNT_ID = "c4cf21d8a5e8878bc3c92708b1f80193"
+CLOUDFLARE_DISPATCH_NAMESPACE = "hylo-tenants"
+CLOUDFLARE_WORKER_COMPATIBILITY_DATE = "2026-04-19"
+WORKOS_CLIENT_ID = "client_01KD3FTW7R2QD0NW6QB7QP6Q0B"
+WORKOS_API_HOSTNAME = "api.workos.com"
+WORKOS_CLIENT_API_HOSTNAME = "authk.smithery.ai"
+
+[[env.production.hyperdrive]]
+binding = "HYPERDRIVE"
+id = "13a2b723638746bf9d08d56785d65bb2"
+
+[[env.production.dispatch_namespaces]]
+binding = "DISPATCHER"
+namespace = "hylo-tenants"
+remote = true
 
 [env.preview]
 name = "hylo-backend-preview"
@@ -46,3 +68,4 @@ id = "51815469767c42a5b531b68464f4e7cf"
 [[env.preview.dispatch_namespaces]]
 binding = "DISPATCHER"
 namespace = "hylo-tenants"
+remote = true
