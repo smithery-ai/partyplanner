@@ -49,13 +49,14 @@ flowchart LR
 
 ## How to express workflows
 
-Four primitives, all from `@workflow/core`:
+Five primitives, all from `@workflow/core`:
 
 ```ts
-input(name, schema) // data from the outside world (Zod-validated)
-atom(fn, opts?)     // derived value, recomputes when its deps change
-action(fn, opts?)   // side effect, runs when invoked
-secret(name, value) // env-backed value, resolved on your worker
+input(name, schema)              // data from the outside world (Zod-validated)
+atom(fn, opts?)                  // derived value, recomputes when its deps change
+action(fn, opts?)                // side effect, runs when invoked
+secret(name, value)              // env-backed value, resolved on your worker
+schedule(id, cron, { trigger, payload }) // start a run on a recurring cadence
 ```
 
 Inside any `atom` or `action`:
@@ -71,13 +72,14 @@ That's it. You don't write a state machine, a DAG, or a step definition — you 
 
 If you've used Jotai or Recoil, this is the same idea. If you've used React hooks, this maps cleanly:
 
-| Hylo          | React / Jotai analog         | What it is                                                   |
-| ------------- | ---------------------------- | ------------------------------------------------------------ |
-| `input(...)`  | event payload / `useState`   | A value supplied from outside. A run starts when one is set. |
-| `atom(...)`   | `useMemo` / Jotai `atom`     | Derived value. Cached. Recomputes when a dep changes.        |
-| `action(...)` | `useCallback`                | Invokable side effect. Pull-only. Result cached per call.    |
-| `secret(...)` | `useContext` for env         | Env-backed value; resolved on the worker, redacted in state. |
-| `get(atom)`   | reading a hook / Jotai `get` | Subscribes the caller; fans out on change.                   |
+| Hylo            | React / Jotai analog         | What it is                                                                  |
+| --------------- | ---------------------------- | --------------------------------------------------------------------------- |
+| `input(...)`    | event payload / `useState`   | A value supplied from outside. A run starts when one is set.                |
+| `atom(...)`     | `useMemo` / Jotai `atom`     | Derived value. Cached. Recomputes when a dep changes.                       |
+| `action(...)`   | `useCallback`                | Invokable side effect. Pull-only. Result cached per call.                   |
+| `secret(...)`   | `useContext` for env         | Env-backed value; resolved on the worker, redacted in state.                |
+| `schedule(...)` | `setInterval` / cron job     | Cadence-driven trigger. Each tick starts a fresh run with a fixed payload.  |
+| `get(atom)`     | reading a hook / Jotai `get` | Subscribes the caller; fans out on change.                                  |
 
 Under the hood Hylo is doing what a signals library does:
 
@@ -126,6 +128,84 @@ Pausing on user input works through the same queue:
 4. A worker dequeues the `step`, re-runs `approval`, finds the response already in state this time, and returns normally. `pageOncall`'s `step` then enqueues, and the cascade resumes.
 
 Because the queue is a database table (`workflow_queue_items`), the days between step 2 and step 3 cost nothing — no process is held open, and any worker can pick the run back up.
+
+## Recurring runs (`schedule`)
+
+Most workflows start because the outside world did something — a webhook arrived, a human filled out a form. Some need to start on a clock instead: a nightly sweep, a 15-minute health check, a Monday-morning report. `schedule()` declares that contract alongside the workflow itself, so the cadence travels with the code.
+
+```ts
+import { input, schedule } from "@workflow/core";
+import { z } from "zod";
+
+const sweep = input(
+  "sweep",
+  z.object({ region: z.string(), windowMinutes: z.number() }),
+);
+
+schedule("nightly-us-sweep", "0 3 * * *", {
+  trigger: sweep,
+  payload: { region: "us-east-1", windowMinutes: 60 },
+  description: "Nightly US sweep at 03:00 UTC.",
+});
+
+schedule("eu-15m-sweep", "*/15 * * * *", {
+  trigger: sweep,
+  payload: { region: "eu-west-1", windowMinutes: 15 },
+});
+```
+
+Each tick that matches the cron starts a fresh run, exactly as if `POST /runs` had been called with `{ inputId: "sweep", payload: {...} }`. Everything downstream of the input — atoms, actions, interventions — behaves identically to a manually-started run. There is no separate "scheduled run" concept.
+
+**Cron syntax.** Standard 5-field POSIX (`minute hour day-of-month month day-of-week`) evaluated in **UTC**. Supports `*`, `*/N`, `a-b`, `a,b,c`, and combinations (`0-30/10`). Day-of-week treats both `0` and `7` as Sunday. No `@daily`-style aliases; no seconds field.
+
+**Rules.**
+
+- `id` is unique across the whole registry — same namespace as inputs/atoms/actions. Pick a stable name; the dispatcher uses it as a stable key.
+- `trigger` must be an `input(...)` (not a `deferred_input` placeholder, not an atom/action). The schedule fires the input the same way an external request would.
+- `payload` is captured at registration time and validated against the input's Zod schema on every fire. If the schema is `z.object({ region: z.string() })`, the payload must match.
+- The same input can be the trigger for many schedules with different payloads (see `nightly-us-sweep` + `eu-15m-sweep` above).
+
+**How it actually fires.** The workflow server exposes one HTTP route:
+
+```
+POST /schedules/tick    Body: { at?: ISO-8601 }    → { at, fired[], skipped[] }
+```
+
+Whoever hits that endpoint says "evaluate every registered schedule against this timestamp; start a run for each match." The workflow server does the cron eval — it never imports a cron library on the dispatcher side. `at` defaults to the server's clock if omitted.
+
+That single route is the contract. The executing platform is free to drive it however its native primitives allow:
+
+| Platform                 | How it ticks `/schedules/tick`                                                  |
+| ------------------------ | ------------------------------------------------------------------------------- |
+| Cloudflare Workers       | One coarse cron trigger (`* * * * *`) on the backend worker fans out to tenants |
+| AWS Lambda               | EventBridge rule on a 1-minute schedule invokes a dispatcher Lambda             |
+| Plain Node host          | `node-cron` or `setInterval` posting to the local workflow server               |
+| GitHub Actions / Render  | A scheduled job that `curl`s `/schedules/tick` once a minute                    |
+
+`@hylo/backend` ships `dispatchTickToDeployments({ source })` — a platform-agnostic helper that fans the tick out across every registered workflow deployment. `apps/backend-cloudflare` wires that helper into Cloudflare's `scheduled()` handler; the wrangler config has exactly one cron line (`* * * * *`) and no per-workflow code. To support a new platform you write a small adapter that calls `dispatchTickToDeployments` from the platform's native trigger — workflow code is untouched.
+
+**Schedules in the manifest.** `GET /manifest` returns each registered schedule:
+
+```json
+{
+  "schedules": [
+    {
+      "id": "nightly-us-sweep",
+      "cron": "0 3 * * *",
+      "inputId": "sweep",
+      "description": "Nightly US sweep at 03:00 UTC."
+    }
+  ]
+}
+```
+
+This is what tooling, dashboards, and dispatcher implementations introspect. Changes to a schedule (new id, different cron, different payload) bump the workflow's `codeHash`, so deploys are versioned the same way as atom/action changes.
+
+**Operating notes.**
+
+- **Skew.** The dispatcher matches schedules against the *minute* it fires for. If the platform tick is delayed by 30 seconds, your `*/15 * * * *` still fires at `:15`, not at `:14:30`. If the tick gets skipped entirely (cold start, outage), that minute does not fire — schedules are not catch-up-replayed. Design for at-most-once-per-minute, not exactly-once.
+- **Backfills.** Need to re-run a missed sweep? `POST /schedules/tick` with `{ "at": "2026-04-27T15:00:00Z" }` to drive any specific minute. Or just `POST /runs` directly with the same `inputId` + payload.
+- **Disabling a schedule.** Delete (or comment out) the `schedule()` call and redeploy. The dispatcher only knows about schedules in the current manifest.
 
 ## Architecture
 
@@ -214,6 +294,8 @@ Returns a Hono app. Mount it anywhere that serves HTTP. Worker routes include:
 - `GET  /health`, `/manifest`, `/runs`, `/runs/:runId`
 - `POST /runs`, `/runs/:runId/inputs`, `/runs/:runId/interventions/:id`
 - `POST /runs/:runId/advance`, `/runs/:runId/auto-advance`
+- `POST /webhooks` — match a webhook payload to one or more `input()` schemas and start (or resume) a run
+- `POST /schedules/tick` — evaluate registered `schedule()` definitions against `{ at }` and start a run for each match
 
 ## Backend API
 
