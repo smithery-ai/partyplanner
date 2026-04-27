@@ -267,6 +267,43 @@ export const SubmitWorkflowWebhookRequestSchema = z
   })
   .openapi("SubmitWorkflowWebhookRequest");
 
+export const TickSchedulesRequestSchema = z
+  .object({
+    at: z
+      .string()
+      .datetime({ offset: true })
+      .optional()
+      .describe(
+        "ISO-8601 timestamp the dispatcher considers 'now'. Defaults to server time.",
+      ),
+  })
+  .openapi("TickSchedulesRequest");
+
+const TickScheduleFiringSchema = z
+  .object({
+    id: z.string(),
+    cron: z.string(),
+    runId: z.string(),
+  })
+  .openapi("TickScheduleFiring");
+
+const TickScheduleSkipSchema = z
+  .object({
+    id: z.string(),
+    cron: z.string(),
+    reason: z.enum(["parse_error", "submit_error"]),
+    message: z.string(),
+  })
+  .openapi("TickScheduleSkip");
+
+export const TickSchedulesResponseSchema = z
+  .object({
+    at: z.string(),
+    fired: z.array(TickScheduleFiringSchema),
+    skipped: z.array(TickScheduleSkipSchema),
+  })
+  .openapi("TickSchedulesResponse");
+
 export const SubmitWorkflowInterventionRequestSchema = z
   .object({
     payload: z.any(),
@@ -410,6 +447,25 @@ export function createWorkflowRoutes(basePath = "/") {
       },
       responses: {
         200: jsonResponse("Updated workflow run", WorkflowRunDocumentSchema),
+        400: jsonResponse("Invalid request", ErrorResponseSchema),
+      },
+    }),
+    tickSchedules: createRoute({
+      method: "post",
+      path: path(normalizedBasePath, "/schedules/tick"),
+      tags: ["Schedules"],
+      summary:
+        "Fire any registered schedules whose cron matches the given time",
+      description:
+        "Called by a platform-native scheduler (e.g. a Cloudflare cron trigger) on a coarse cadence (typically 1 minute). The workflow server evaluates each registered schedule's cron expression and starts a run for every match.",
+      request: {
+        body: jsonRequest(TickSchedulesRequestSchema),
+      },
+      responses: {
+        200: jsonResponse(
+          "Schedules dispatched for the requested timestamp",
+          TickSchedulesResponseSchema,
+        ),
         400: jsonResponse("Invalid request", ErrorResponseSchema),
       },
     }),

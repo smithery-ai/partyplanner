@@ -119,6 +119,19 @@ export function createWorkflow(options: CreateWorkflowOptions) {
     }
   });
 
+  app.openapi(routes.tickSchedules, async (c) => {
+    try {
+      const body = c.req.valid("json") as { at?: string };
+      const at = body.at ? new Date(body.at) : new Date();
+      if (Number.isNaN(at.getTime())) {
+        return c.json({ message: `invalid 'at' timestamp: ${body.at}` }, 400);
+      }
+      return c.json(await manager.tickSchedules(at), 200);
+    } catch (e) {
+      return c.json({ message: errorMessage(e) }, 400);
+    }
+  });
+
   app.openapi(routes.connectManagedConnection, async (c) => {
     try {
       const body = c.req.valid("json") as ConnectManagedConnectionRequest;

@@ -11,6 +11,14 @@ enabled = true
 enabled = true
 invocation_logs = true
 
+# Tick cadence for the workflow schedule dispatcher. The dispatcher runs every
+# minute, fans the tick out to each deployed workflow's /schedules/tick, and
+# the tenant worker decides which of its registered schedules match the
+# current minute. Keep this at "* * * * *" — cron *expressions* live in the
+# workflows themselves via schedule(), not here.
+[triggers]
+crons = ["* * * * *"]
+
 # Top-level vars are the `wrangler dev` defaults. WORKOS_CLIENT_ID and
 # WORKOS_CLIENT_API_HOSTNAME are intentionally omitted here so dev gets them
 # from process.env (Infisical) instead of the hardcoded production client.

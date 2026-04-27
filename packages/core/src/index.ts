@@ -24,10 +24,13 @@ export type {
   InputDef,
   ManagedConnectionDef,
   ManagedConnectionRequirement,
+  ScheduleDef,
   StepDef,
 } from "./registry";
 export { globalRegistry, Registry } from "./registry";
 export { createRuntime } from "./runtime";
+export type { ScheduleOpts } from "./schedule";
+export { schedule } from "./schedule";
 export type {
   AtomRuntimeContext,
   DispatchResult,
