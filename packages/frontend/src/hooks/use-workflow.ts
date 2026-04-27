@@ -580,15 +580,7 @@ export function useWorkflowRunQuery(
 
   const cacheResult = useCallback(
     (result: WorkflowRuntimeResult) => {
-      queryClient.setQueryData(
-        queryKeys.runState(config.apiBaseUrl, result.state.runId),
-        result,
-      );
-      queryClient.setQueryData(
-        queryKeys.runs(config.apiBaseUrl),
-        (existing: RunSummary[] = []) =>
-          mergeRunSummary(existing, summarizeRunResult(result)),
-      );
+      applyRunStateToCache(queryClient, config.apiBaseUrl, result);
     },
     [config.apiBaseUrl, queryClient],
   );
@@ -703,6 +695,28 @@ export function useWorkflowRunQuery(
     bindSecret,
     clear,
   };
+}
+
+export function applyRunStateToCache(
+  queryClient: ReturnType<typeof useQueryClient>,
+  apiBaseUrl: string,
+  result: WorkflowRuntimeResult,
+): void {
+  queryClient.setQueryData(
+    queryKeys.runState(apiBaseUrl, result.state.runId),
+    result,
+  );
+  queryClient.setQueryData(
+    queryKeys.runs(apiBaseUrl),
+    (existing: RunSummary[] = []) =>
+      mergeRunSummary(existing, summarizeRunResult(result)),
+  );
+}
+
+export function runStateDocumentToResult(
+  document: RunStateDocument,
+): WorkflowRuntimeResult {
+  return documentResult(document);
 }
 
 function normalizeError(error: unknown): Error | undefined {

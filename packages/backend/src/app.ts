@@ -19,6 +19,7 @@ import {
   mountRemoteRuntimeOpenApi,
   type RemoteRuntimeOpenApiOptions,
 } from "@workflow/remote";
+import type { WorkflowRunDocument, WorkflowStateStore } from "@workflow/server";
 import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { mountAuthApi, registerAuthOpenApiRoutes } from "./auth/routes";
@@ -50,6 +51,8 @@ export type BackendAppOptions = {
   deploymentBackend?: DeploymentBackend;
   oauthBrokerStore?: BrokerStore;
   providerInstallations?: ProviderInstallationRegistry;
+  onSaveRunDocument?: (document: WorkflowRunDocument) => void;
+  runSubscribe?: (request: Request, runId: string) => Promise<Response>;
 };
 
 export function createBackendApp(options: BackendAppOptions) {
@@ -63,6 +66,10 @@ export function createBackendApp(options: BackendAppOptions) {
     deploymentBackend,
     options.oauthBrokerStore,
     options.providerInstallations,
+    {
+      onSaveRunDocument: options.onSaveRunDocument,
+      runSubscribe: options.runSubscribe,
+    },
   );
 }
 
@@ -79,9 +86,16 @@ export function createApp(
   providerInstallations:
     | ProviderInstallationRegistry
     | undefined = createProviderInstallationRegistry(db),
+  extras: {
+    onSaveRunDocument?: (document: WorkflowRunDocument) => void;
+    runSubscribe?: (request: Request, runId: string) => Promise<Response>;
+  } = {},
 ) {
   const adapterOptions = { autoMigrate: false };
-  const stateStore = createPostgresWorkflowStateStore(db, adapterOptions);
+  const baseStateStore = createPostgresWorkflowStateStore(db, adapterOptions);
+  const stateStore = extras.onSaveRunDocument
+    ? wrapStateStoreWithSaveHook(baseStateStore, extras.onSaveRunDocument)
+    : baseStateStore;
   const queue = createPostgresWorkflowQueue(db, adapterOptions);
   const app = new OpenAPIHono();
 
@@ -94,6 +108,14 @@ export function createApp(
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
+  if (extras.runSubscribe) {
+    const subscribe = extras.runSubscribe;
+    app.all("/internal/runs/:runId/subscribe", async (c) => {
+      const runId = c.req.param("runId");
+      if (!runId) return c.json({ message: "Missing runId" }, 400);
+      return subscribe(c.req.raw, runId);
+    });
+  }
   mountWorkerDispatchApi(app, deploymentBackend);
   mountRemoteRuntimeOpenApi(app, createBackendOpenApiOptions());
   app.route(
@@ -327,3 +349,27 @@ function resolveBrokerBaseUrl(env: BackendAppEnv): string {
 }
 
 export type AppType = ReturnType<typeof createApp>;
+
+function wrapStateStoreWithSaveHook(
+  base: WorkflowStateStore,
+  onSave: (document: WorkflowRunDocument) => void,
+): WorkflowStateStore {
+  return {
+    load: (runId) => base.load(runId),
+    save: (runId, state, expectedVersion) =>
+      base.save(runId, state, expectedVersion),
+    publishEvent: (event) => base.publishEvent(event),
+    publishEvents: (events) => base.publishEvents(events),
+    listEvents: (runId) => base.listEvents(runId),
+    getRunDocument: (runId) => base.getRunDocument(runId),
+    listRunSummaries: (workflowId) => base.listRunSummaries(workflowId),
+    saveRunDocument: async (document) => {
+      await base.saveRunDocument(document);
+      try {
+        onSave(document);
+      } catch (error) {
+        console.error("[run-side-effects] hook threw", error);
+      }
+    },
+  };
+}
