@@ -483,6 +483,7 @@ export function createWorkflowRoutes(basePath = "/") {
       },
       responses: {
         200: jsonResponse("Run started", WorkflowRunDocumentSchema),
+        400: jsonResponse("Unable to start the run", ErrorResponseSchema),
         404: jsonResponse("Unknown schedule", ErrorResponseSchema),
       },
     }),
