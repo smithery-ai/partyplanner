@@ -18,12 +18,16 @@ if (!env.NODE_EXTRA_CA_CERTS && existsSync(portlessCaPath)) {
   env.NODE_EXTRA_CA_CERTS = portlessCaPath;
 }
 env.NODE_TLS_REJECT_UNAUTHORIZED ??= "0";
+env.PORTLESS_HTTPS ??= "1";
 
 for (const [name, fallback] of portSpecs) {
   env[name] = String(await resolvePort(name, fallback));
 }
 
+ensurePortlessHttpsProxy(env);
+
 execSync(`portless alias api-worker.hylo ${env.HYLO_BACKEND_PORT}`, {
+  env,
   stdio: "ignore",
 });
 
@@ -35,6 +39,7 @@ execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
 
 console.log("pnpm dev using local ports:");
 console.log("  client: https://hylo-client.localhost");
+console.log("  local-api: https://local-api.localhost");
 console.log(
   `  backend-cloudflare: https://api-worker.hylo.localhost (port ${env.HYLO_BACKEND_PORT})`,
 );
@@ -57,6 +62,7 @@ const child = spawn(
     "--filter=backend-cloudflare",
     "--filter=workflow-cloudflare-worker-example",
     "--filter=client",
+    "--filter=local-api",
     "--filter=//",
   ],
   {
@@ -124,4 +130,27 @@ function canListen(port) {
     });
     server.listen({ host, port });
   });
+}
+
+function ensurePortlessHttpsProxy(env) {
+  try {
+    execSync("portless proxy start --https", {
+      env,
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+  } catch (error) {
+    const details = [
+      typeof error.stdout === "string" ? error.stdout.trim() : "",
+      typeof error.stderr === "string" ? error.stderr.trim() : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    if (details) {
+      console.error(details);
+    } else {
+      console.error("Failed to start the portless HTTPS proxy.");
+    }
+    process.exit(typeof error.status === "number" ? error.status : 1);
+  }
 }

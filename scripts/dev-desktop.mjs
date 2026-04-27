@@ -18,6 +18,7 @@ if (!env.NODE_EXTRA_CA_CERTS && existsSync(portlessCaPath)) {
   env.NODE_EXTRA_CA_CERTS = portlessCaPath;
 }
 env.NODE_TLS_REJECT_UNAUTHORIZED ??= "0";
+env.PORTLESS_HTTPS ??= "1";
 
 for (const [name, fallback] of portSpecs) {
   env[name] = String(await resolvePort(name, fallback));
@@ -25,7 +26,10 @@ for (const [name, fallback] of portSpecs) {
 
 env.VITE_HYLO_BACKEND_URL ??= "https://api-worker.hylo.localhost";
 
+ensurePortlessHttpsProxy(env);
+
 execSync(`portless alias api-worker.hylo ${env.HYLO_BACKEND_PORT}`, {
+  env,
   stdio: "ignore",
 });
 
@@ -122,4 +126,27 @@ function canListen(port) {
     });
     server.listen({ host, port });
   });
+}
+
+function ensurePortlessHttpsProxy(env) {
+  try {
+    execSync("portless proxy start --https", {
+      env,
+      stdio: "pipe",
+      encoding: "utf-8",
+    });
+  } catch (error) {
+    const details = [
+      typeof error.stdout === "string" ? error.stdout.trim() : "",
+      typeof error.stderr === "string" ? error.stderr.trim() : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    if (details) {
+      console.error(details);
+    } else {
+      console.error("Failed to start the portless HTTPS proxy.");
+    }
+    process.exit(typeof error.status === "number" ? error.status : 1);
+  }
 }
