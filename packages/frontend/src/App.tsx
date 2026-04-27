@@ -468,11 +468,13 @@ export function WorkflowRunnerApp({
   runId,
   navigation = noopNavigation,
   sidebarFooter,
+  headerLeading,
 }: {
   workflowId: string;
   runId?: string;
   navigation?: WorkflowNavigation;
   sidebarFooter?: ReactNode;
+  headerLeading?: ReactNode;
 }) {
   return (
     <WorkflowRunProvider runId={runId}>
@@ -481,6 +483,7 @@ export function WorkflowRunnerApp({
         runId={runId}
         navigation={navigation}
         sidebarFooter={sidebarFooter}
+        headerLeading={headerLeading}
       />
     </WorkflowRunProvider>
   );
@@ -491,11 +494,13 @@ function WorkflowRunnerBody({
   runId,
   navigation,
   sidebarFooter,
+  headerLeading,
 }: {
   workflowId: string;
   runId?: string;
   navigation: WorkflowNavigation;
   sidebarFooter?: ReactNode;
+  headerLeading?: ReactNode;
 }) {
   const workflow = useWorkflow(workflowId);
   const workflowRun = useWorkflowRun();
@@ -952,15 +957,17 @@ function WorkflowRunnerBody({
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background">
       <header className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <h1 className="min-w-0">
-          <button
-            type="button"
-            onClick={() => navigation.home()}
-            className="rounded-sm text-sm font-semibold tracking-tight outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50 md:text-base"
-          >
-            {workflow.manifest?.name ?? "Workflow"}
-          </button>
-        </h1>
+        {headerLeading ?? (
+          <h1 className="min-w-0">
+            <button
+              type="button"
+              onClick={() => navigation.home()}
+              className="rounded-sm text-sm font-semibold tracking-tight outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50 md:text-base"
+            >
+              {workflow.manifest?.name ?? "Workflow"}
+            </button>
+          </h1>
+        )}
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
           {runId && (
             <Button size="sm" variant="outline" onClick={clearRun}>
@@ -1240,10 +1247,12 @@ export function WorkflowSingleApp({
   sidebarFooter,
   runId: controlledRunId,
   navigation,
+  headerLeading,
 }: {
   sidebarFooter?: ReactNode;
   runId?: string;
   navigation?: WorkflowNavigation;
+  headerLeading?: ReactNode;
 } = {}) {
   const workflow = useWorkflow(undefined);
   const [internalRunId, setRunId] = useState<string | undefined>();
@@ -1285,6 +1294,7 @@ export function WorkflowSingleApp({
       runId={runId}
       navigation={resolvedNavigation}
       sidebarFooter={sidebarFooter}
+      headerLeading={headerLeading}
     />
   );
 }
@@ -1295,12 +1305,14 @@ export function WorkflowSinglePage({
   sidebarFooter,
   runId,
   navigation,
+  headerLeading,
 }: {
   apiBaseUrl?: string;
   managedConnectionInitializingUrl?: string;
   sidebarFooter?: ReactNode;
   runId?: string;
   navigation?: WorkflowNavigation;
+  headerLeading?: ReactNode;
 }) {
   return (
     <WorkflowFrontendRoot
@@ -1310,6 +1322,7 @@ export function WorkflowSinglePage({
         sidebarFooter={sidebarFooter}
         runId={runId}
         navigation={navigation}
+        headerLeading={headerLeading}
       />
     </WorkflowFrontendRoot>
   );

@@ -23,6 +23,15 @@ import "@workflow/frontend/styles.css";
 import { createContext, type ReactNode, useContext, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+  ComboboxValue,
+} from "./components/ui/combobox";
 import "./styles.css";
 
 type WorkflowRegistry = {
@@ -73,6 +82,12 @@ const homeRoute = createRoute({
   component: HomeRouteComponent,
 });
 
+const workerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/worker/$workerId",
+  component: WorkerRouteComponent,
+});
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
@@ -91,11 +106,19 @@ const runRoute = createRoute({
   component: RunRouteComponent,
 });
 
+const workerRunRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/worker/$workerId/runs/$runId",
+  component: WorkerRunRouteComponent,
+});
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
+  workerRoute,
   loginRoute,
   connectionInitializingRoute,
   runRoute,
+  workerRunRoute,
 ]);
 
 const router = createRouter({
@@ -139,9 +162,19 @@ function HomeRouteComponent() {
   return <ClientApp />;
 }
 
+function WorkerRouteComponent() {
+  const { workerId } = useParams({ from: workerRoute.id });
+  return <ClientApp routeWorkerId={workerId} />;
+}
+
 function RunRouteComponent() {
   const { runId } = useParams({ from: runRoute.id });
   return <ClientApp routeRunId={runId} />;
+}
+
+function WorkerRunRouteComponent() {
+  const { workerId, runId } = useParams({ from: workerRunRoute.id });
+  return <ClientApp routeWorkerId={workerId} routeRunId={runId} />;
 }
 
 function ConnectionInitializingRouteComponent() {
@@ -158,7 +191,13 @@ function ConnectionInitializingRouteComponent() {
   );
 }
 
-function ClientApp({ routeRunId }: { routeRunId?: string }) {
+function ClientApp({
+  routeRunId,
+  routeWorkerId,
+}: {
+  routeRunId?: string;
+  routeWorkerId?: string;
+}) {
   const { getAccessToken, sidebarFooter } = useClientEnvironment();
   const navigate = useNavigate();
   const search = useSearch({ from: rootRoute.id });
@@ -205,98 +244,103 @@ function ClientApp({ routeRunId }: { routeRunId?: string }) {
   const workflows = registry ? Object.entries(registry.workflows) : [];
   const selectedWorker =
     registry &&
-    (parseWorkflowChoice(requestedWorker(search), registry) ??
+    (parseWorkflowChoice(routeWorkerId, registry) ??
+      parseWorkflowChoice(requestedWorker(search), registry) ??
       registry.defaultWorkflow ??
       workflows[0]?.[0]);
 
   useEffect(() => {
-    if (!registry || !selectedWorker || search.worker === selectedWorker)
-      return;
+    if (!registry || !selectedWorker) return;
+    if (routeWorkerId === selectedWorker && !search.worker) return;
     void navigate({
-      to: routeRunId ? "/runs/$runId" : "/",
-      params: routeRunId ? { runId: routeRunId } : undefined,
-      search: (previous: ClientSearch) => withWorker(previous, selectedWorker),
+      to: routeRunId ? "/worker/$workerId/runs/$runId" : "/worker/$workerId",
+      params: routeRunId
+        ? { workerId: selectedWorker, runId: routeRunId }
+        : { workerId: selectedWorker },
+      search: withoutWorker,
       replace: true,
     });
-  }, [navigate, registry, routeRunId, search.worker, selectedWorker]);
+  }, [
+    navigate,
+    registry,
+    routeRunId,
+    routeWorkerId,
+    search.worker,
+    selectedWorker,
+  ]);
 
-  const switcher = (
-    <ClientSwitcher
-      selectedWorker={selectedWorker}
-      onWorkerChange={(worker) => {
-        void navigate({
-          to: "/",
-          search: (previous: ClientSearch) => withWorker(previous, worker),
-        });
-      }}
-      workflows={workflows}
-    />
-  );
+  const onWorkerChange = (worker: string) => {
+    void navigate({
+      to: "/worker/$workerId",
+      params: { workerId: worker },
+      search: withoutWorker,
+    });
+  };
 
   if (!registry) {
-    return (
-      <>
-        <ClientStateMessage>Loading your workers...</ClientStateMessage>
-        {switcher}
-      </>
-    );
+    return <ClientStateMessage>Loading your workers...</ClientStateMessage>;
   }
 
   if (workflows.length === 0) {
     return (
-      <>
-        <TenantWorkersEmptyState
-          backendUrl={registryConfig.backendUrl}
-          registryError={registryError}
-          sidebarFooter={sidebarFooter}
-        />
-        {switcher}
-      </>
+      <TenantWorkersEmptyState
+        backendUrl={registryConfig.backendUrl}
+        registryError={registryError}
+        sidebarFooter={sidebarFooter}
+      />
     );
   }
 
   const workflow = registry.workflows[selectedWorker ?? workflows[0][0]];
   const navigation: WorkflowNavigation = {
     home: () => {
+      if (!selectedWorker) return;
       void navigate({
-        to: "/",
-        search: (previous: ClientSearch) =>
-          withWorker(previous, selectedWorker),
+        to: "/worker/$workerId",
+        params: { workerId: selectedWorker },
+        search: withoutWorker,
       });
     },
     workflow: (_workflowId, options) => {
+      if (!selectedWorker) return;
       void navigate({
-        to: "/",
-        search: (previous: ClientSearch) =>
-          withWorker(previous, selectedWorker),
+        to: "/worker/$workerId",
+        params: { workerId: selectedWorker },
+        search: withoutWorker,
         replace: options?.replace,
       });
     },
     run: (_workflowId, runId) => {
+      if (!selectedWorker) return;
       void navigate({
-        to: "/runs/$runId",
-        params: { runId },
-        search: (previous: ClientSearch) =>
-          withWorker(previous, selectedWorker),
+        to: "/worker/$workerId/runs/$runId",
+        params: { workerId: selectedWorker, runId },
+        search: withoutWorker,
       });
     },
   };
 
   return (
-    <>
-      <WorkflowSinglePage
-        apiBaseUrl={workflowApiUrl(workflow.url)}
-        managedConnectionInitializingUrl="/connection/initializing"
-        runId={routeRunId}
-        navigation={navigation}
-        sidebarFooter={sidebarFooter}
-      />
-      {switcher}
-    </>
+    <WorkflowSinglePage
+      apiBaseUrl={workflowApiUrl(workflow.url)}
+      managedConnectionInitializingUrl="/connection/initializing"
+      runId={routeRunId}
+      navigation={navigation}
+      sidebarFooter={sidebarFooter}
+      headerLeading={
+        <WorkerSwitcher
+          selectedWorker={selectedWorker}
+          onWorkerChange={onWorkerChange}
+          workflows={workflows}
+        />
+      }
+    />
   );
 }
 
-function ClientSwitcher({
+type WorkerItem = { id: string; label: string };
+
+function WorkerSwitcher({
   selectedWorker,
   onWorkerChange,
   workflows,
@@ -305,31 +349,42 @@ function ClientSwitcher({
   onWorkerChange: (worker: string) => void;
   workflows: [string, { label?: string; url: string }][];
 }) {
-  const workerValue = workflows.some(([id]) => id === selectedWorker)
-    ? selectedWorker
-    : "";
+  const items: WorkerItem[] = workflows.map(([id, workflow]) => ({
+    id,
+    label: workflow.label ?? labelFromId(id),
+  }));
+  const value = items.find((item) => item.id === selectedWorker) ?? null;
 
   return (
-    <form className="hylo-client-switcher" aria-label="Workflow routing">
-      <label>
-        <span>Worker</span>
-        <select
-          value={workerValue}
-          disabled={workflows.length === 0}
-          onChange={(event) => onWorkerChange(event.currentTarget.value)}
-        >
-          {workflows.length > 0 ? (
-            workflows.map(([id, workflow]) => (
-              <option key={id} value={id}>
-                {workflow.label ?? labelFromId(id)}
-              </option>
-            ))
-          ) : (
-            <option value="">No workers</option>
+    <Combobox<WorkerItem>
+      items={items}
+      itemToStringLabel={(item) => item.label}
+      itemToStringValue={(item) => item.id}
+      isItemEqualToValue={(a, b) => a.id === b.id}
+      value={value}
+      onValueChange={(next) => {
+        if (next && next.id !== selectedWorker) onWorkerChange(next.id);
+      }}
+    >
+      <ComboboxTrigger
+        className="inline-flex h-8 min-w-0 max-w-[260px] items-center gap-1.5 rounded-md px-2 text-sm font-semibold tracking-tight outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-base"
+        aria-label="Select worker"
+      >
+        <span className="truncate">
+          <ComboboxValue placeholder="Select worker" />
+        </span>
+      </ComboboxTrigger>
+      <ComboboxContent>
+        <ComboboxEmpty>No workers</ComboboxEmpty>
+        <ComboboxList>
+          {(item: WorkerItem) => (
+            <ComboboxItem key={item.id} value={item}>
+              {item.label}
+            </ComboboxItem>
           )}
-        </select>
-      </label>
-    </form>
+        </ComboboxList>
+      </ComboboxContent>
+    </Combobox>
   );
 }
 
@@ -587,14 +642,10 @@ function localWorkflowHost(raw: string): string {
   );
 }
 
-function withWorker(
-  search: ClientSearch,
-  worker: string | undefined,
-): ClientSearch {
-  if (!worker) return search;
+function withoutWorker(search: ClientSearch): ClientSearch {
   return {
     ...search,
-    worker,
+    worker: undefined,
   };
 }
 
