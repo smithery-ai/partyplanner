@@ -133,9 +133,7 @@ const routeTree = rootRoute.addChildren([
 const router = createRouter({
   routeTree,
   history:
-    globalThis.location?.protocol === "file:"
-      ? createHashHistory()
-      : undefined,
+    globalThis.location?.protocol === "file:" ? createHashHistory() : undefined,
   defaultNotFoundComponent: () => (
     <ClientStateMessage>Page not found.</ClientStateMessage>
   ),
@@ -556,9 +554,7 @@ function parseWorkflowChoice(
   return undefined;
 }
 
-function withoutWorker(
-  search: HyloClientShellSearch,
-): HyloClientShellSearch {
+function withoutWorker(search: HyloClientShellSearch): HyloClientShellSearch {
   return {
     ...search,
     worker: undefined,
@@ -571,7 +567,9 @@ function resolvedWorkflowRegistry(
     data: HyloWorkflowRegistry | undefined;
     error: unknown;
   },
-  getLocalWorkflowRegistry: (() => HyloWorkflowRegistry | undefined) | undefined,
+  getLocalWorkflowRegistry:
+    | (() => HyloWorkflowRegistry | undefined)
+    | undefined,
 ): HyloWorkflowRegistry | undefined {
   if (!url || query.error) return emptyWorkflowRegistry();
   if (!query.data) return undefined;

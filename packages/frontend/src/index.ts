@@ -8,6 +8,15 @@ export {
   WorkflowSinglePage,
 } from "./App";
 export {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+  ComboboxValue,
+} from "./components/ui/combobox";
+export {
   type WorkflowFrontendConfig,
   WorkflowFrontendProvider,
   WorkflowFrontendRoot,
@@ -19,12 +28,3 @@ export {
   type HyloWorkflowRegistry,
   type HyloWorkflowRegistryConfig,
 } from "./hylo-client-shell";
-export {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxTrigger,
-  ComboboxValue,
-} from "./components/ui/combobox";
