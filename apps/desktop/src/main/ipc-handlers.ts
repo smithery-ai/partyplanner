@@ -1,45 +1,43 @@
-import { BrowserWindow, ipcMain, shell, type Event } from "electron";
-import { AUTH_CHANNELS, type AuthChangePayload, type AuthIpcResult } from "../shared/auth";
+import { BrowserWindow, type Event, ipcMain, shell } from "electron";
+import {
+  AUTH_CHANNELS,
+  type AuthChangePayload,
+  type AuthIpcResult,
+} from "../shared/auth";
 import {
   clearSession,
   getAccessToken,
-  handleCallback,
   getLogoutUrl,
   getSignInUrl,
   getUser,
+  handleCallback,
 } from "./auth";
 
 export function setupAuthIpcHandlers(mainWindow: BrowserWindow): void {
-  ipcMain.handle(
-    AUTH_CHANNELS.SIGN_IN,
-    async (): Promise<AuthIpcResult> => {
-      try {
-        await openAuthWindow(mainWindow);
-        return { success: true };
-      } catch (error) {
-        console.error("Sign in failed:", error);
-        return { success: false, error: errorMessage(error) };
-      }
-    },
-  );
+  ipcMain.handle(AUTH_CHANNELS.SIGN_IN, async (): Promise<AuthIpcResult> => {
+    try {
+      await openAuthWindow(mainWindow);
+      return { success: true };
+    } catch (error) {
+      console.error("Sign in failed:", error);
+      return { success: false, error: errorMessage(error) };
+    }
+  });
 
-  ipcMain.handle(
-    AUTH_CHANNELS.SIGN_OUT,
-    async (): Promise<AuthIpcResult> => {
-      try {
-        const logoutUrl = await getLogoutUrl();
-        clearSession();
-        if (logoutUrl) {
-          await shell.openExternal(logoutUrl);
-        }
-        notifyAuthChange(mainWindow, null);
-        return { success: true };
-      } catch (error) {
-        console.error("Sign out failed:", error);
-        return { success: false, error: errorMessage(error) };
+  ipcMain.handle(AUTH_CHANNELS.SIGN_OUT, async (): Promise<AuthIpcResult> => {
+    try {
+      const logoutUrl = await getLogoutUrl();
+      clearSession();
+      if (logoutUrl) {
+        await shell.openExternal(logoutUrl);
       }
-    },
-  );
+      notifyAuthChange(mainWindow, null);
+      return { success: true };
+    } catch (error) {
+      console.error("Sign out failed:", error);
+      return { success: false, error: errorMessage(error) };
+    }
+  });
 
   ipcMain.handle(AUTH_CHANNELS.GET_USER, async () => {
     try {
@@ -122,10 +120,7 @@ async function openAuthWindow(mainWindow: BrowserWindow): Promise<void> {
     mainWindow.focus();
   };
 
-  const interceptCallback = (
-    event: Event,
-    url: string,
-  ): void => {
+  const interceptCallback = (event: Event, url: string): void => {
     if (!url.startsWith("hylo-auth://")) return;
     event.preventDefault();
     void handleCallbackUrl(url).catch((error) => {

@@ -8,9 +8,8 @@ const resolvedBackendUrl = hyloBackendUrl();
 export default defineConfig({
   main: {
     define: {
-      "import.meta.env.MAIN_VITE_HYLO_BACKEND_URL": JSON.stringify(
-        resolvedBackendUrl,
-      ),
+      "import.meta.env.MAIN_VITE_HYLO_BACKEND_URL":
+        JSON.stringify(resolvedBackendUrl),
       "import.meta.env.MAIN_VITE_WORKOS_API_HOSTNAME": JSON.stringify(
         firstEnv([
           "MAIN_VITE_WORKOS_API_HOSTNAME",
@@ -40,9 +39,8 @@ export default defineConfig({
       },
     },
     define: {
-      "import.meta.env.VITE_HYLO_BACKEND_URL": JSON.stringify(
-        resolvedBackendUrl,
-      ),
+      "import.meta.env.VITE_HYLO_BACKEND_URL":
+        JSON.stringify(resolvedBackendUrl),
       "import.meta.env.VITE_HYLO_TENANT_ID": JSON.stringify(
         process.env.VITE_HYLO_TENANT_ID ?? "",
       ),

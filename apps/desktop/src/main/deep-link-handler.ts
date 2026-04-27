@@ -1,5 +1,5 @@
-import { app, type BrowserWindow } from "electron";
 import path from "node:path";
+import { app, type BrowserWindow } from "electron";
 import { handleCallback } from "./auth";
 
 const PROTOCOL = "hylo-auth";
@@ -69,7 +69,9 @@ export function setupDeepLinkHandling(
     mainWindow.focus();
   });
 
-  const initialUrl = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+  const initialUrl = process.argv.find((arg) =>
+    arg.startsWith(`${PROTOCOL}://`),
+  );
   if (initialUrl) {
     pendingProtocolUrls.push(initialUrl);
   }

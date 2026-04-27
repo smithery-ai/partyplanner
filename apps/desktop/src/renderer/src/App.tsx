@@ -219,7 +219,12 @@ function SignedOutScreen({
           </CardDescription>
         </CardHeader>
         <CardContent className="px-8 pb-8">
-          <Button type="button" onClick={onSignIn} size="lg" className="mt-2 w-full">
+          <Button
+            type="button"
+            onClick={onSignIn}
+            size="lg"
+            className="mt-2 w-full"
+          >
             Sign in
           </Button>
           {error ? (

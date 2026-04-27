@@ -1,5 +1,5 @@
-import { app, BrowserWindow, shell } from "electron";
 import path from "node:path";
+import { app, BrowserWindow, shell } from "electron";
 import { getUser } from "./auth";
 import { registerProtocol, setupDeepLinkHandling } from "./deep-link-handler";
 import { notifyAuthChange, setupAuthIpcHandlers } from "./ipc-handlers";

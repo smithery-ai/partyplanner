@@ -1,5 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { AUTH_CHANNELS, type AuthChangePayload, type AuthIpcResult, type AuthUser } from "../shared/auth";
+import {
+  AUTH_CHANNELS,
+  type AuthChangePayload,
+  type AuthIpcResult,
+  type AuthUser,
+} from "../shared/auth";
 
 type HyloAuthApi = {
   signIn: () => Promise<AuthIpcResult>;

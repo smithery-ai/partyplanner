@@ -1,13 +1,9 @@
 import fs from "node:fs";
 import http from "node:http";
 import https from "node:https";
+import { createWorkOS, type PublicWorkOS, type User } from "@workos-inc/node";
 import { safeStorage } from "electron";
 import Store from "electron-store";
-import {
-  createWorkOS,
-  type PublicWorkOS,
-  type User,
-} from "@workos-inc/node";
 import type { AuthUser } from "../shared/auth";
 
 const REDIRECT_URI = "hylo-auth://callback";
@@ -119,12 +115,11 @@ async function refreshSessionIfNeeded(): Promise<StoredSession | null> {
 
   try {
     const { apiWorkOS, config } = await loadWorkOS();
-    const refreshed = await apiWorkOS.userManagement.authenticateWithRefreshToken(
-      {
-      clientId: config.clientId,
-      refreshToken: session.refreshToken,
-      },
-    );
+    const refreshed =
+      await apiWorkOS.userManagement.authenticateWithRefreshToken({
+        clientId: config.clientId,
+        refreshToken: session.refreshToken,
+      });
     const nextSession = {
       accessToken: refreshed.accessToken,
       refreshToken: refreshed.refreshToken,
@@ -154,7 +149,9 @@ function serializeSession(session: StoredSession): string {
   return `enc:${safeStorage.encryptString(value).toString("base64")}`;
 }
 
-function deserializeSession(value: string | null | undefined): StoredSession | null {
+function deserializeSession(
+  value: string | null | undefined,
+): StoredSession | null {
   if (!value) return null;
   try {
     if (value.startsWith("enc:")) {
@@ -199,7 +196,9 @@ async function getWorkOSConfig(): Promise<WorkOSClientConfig> {
 
 async function loadWorkOSConfig(): Promise<WorkOSClientConfig> {
   const clientId = optionalEnv(import.meta.env.MAIN_VITE_WORKOS_CLIENT_ID);
-  const apiHostname = optionalEnv(import.meta.env.MAIN_VITE_WORKOS_API_HOSTNAME);
+  const apiHostname = optionalEnv(
+    import.meta.env.MAIN_VITE_WORKOS_API_HOSTNAME,
+  );
   const authkitHostname = optionalEnv(
     import.meta.env.MAIN_VITE_WORKOS_AUTHKIT_HOSTNAME,
   );

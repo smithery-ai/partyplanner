@@ -95,7 +95,10 @@ function ClientApp({
       })
       .catch((error) => {
         if (!abort.signal.aborted) {
-          console.warn("[hylo-desktop] failed to load workflow registry", error);
+          console.warn(
+            "[hylo-desktop] failed to load workflow registry",
+            error,
+          );
           setRegistry(emptyWorkflowRegistry());
           setRegistryError(
             error instanceof Error
