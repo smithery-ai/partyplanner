@@ -18,7 +18,13 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import { createContext, type ReactNode, useContext, useEffect } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { type WorkflowNavigation, WorkflowSinglePage } from "./App";
 import {
   Combobox,
@@ -47,6 +53,7 @@ export type HyloWorkflowRegistryConfig = {
 };
 
 export type HyloClientShellSearch = {
+  onboardingReset?: string;
   tenantId?: string;
   workflowRegistryUrl?: string;
   worker?: string;
@@ -78,6 +85,7 @@ const clientQueryClient = new QueryClient();
 
 const rootRoute = createRootRoute({
   validateSearch: (search): HyloClientShellSearch => ({
+    onboardingReset: searchParam(search.onboardingReset),
     tenantId: searchParam(search.tenantId),
     workflowRegistryUrl: searchParam(search.workflowRegistryUrl),
     worker: searchParam(search.worker),
@@ -109,6 +117,12 @@ const connectionInitializingRoute = createRoute({
   component: ConnectionInitializingRouteComponent,
 });
 
+const onboardingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/onboarding",
+  component: OnboardingRouteComponent,
+});
+
 const runRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/runs/$runId",
@@ -126,6 +140,7 @@ const routeTree = rootRoute.addChildren([
   workerRoute,
   loginRoute,
   connectionInitializingRoute,
+  onboardingRoute,
   runRoute,
   workerRunRoute,
 ]);
@@ -192,6 +207,62 @@ function ConnectionInitializingRouteComponent() {
   );
 }
 
+function OnboardingRouteComponent() {
+  const env = useClientEnvironment();
+  const navigate = useNavigate();
+  const search = useSearch({ from: rootRoute.id });
+  const registryConfig = env.getWorkflowRegistryConfig(search);
+  const registryBackendUrl = onboardingBackendUrl(registryConfig);
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resetOnboarding() {
+      try {
+        const backendUrl = registryBackendUrl;
+        if (!backendUrl) {
+          throw new Error("Onboarding reset requires a backend URL.");
+        }
+        const resetUrl = `${backendUrl.replace(/\/+$/, "")}/tenants/me/onboarding`;
+        const accessToken = await env.getAccessToken();
+        const response = await fetch(resetUrl, {
+          method: "DELETE",
+          headers: workflowRegistryHeaders(resetUrl, accessToken, backendUrl),
+        });
+        if (!response.ok) {
+          throw new Error(await responseErrorMessage(response));
+        }
+        await clientQueryClient.invalidateQueries({
+          queryKey: [
+            env.queryKeyPrefix ?? DEFAULT_QUERY_KEY_PREFIX,
+            "workflow-registry",
+          ],
+        });
+        if (!cancelled) {
+          void navigate({
+            to: "/",
+            search: withOnboardingReset,
+            replace: true,
+          });
+        }
+      } catch (e) {
+        if (!cancelled) setError(errorMessage(e));
+      }
+    }
+
+    void resetOnboarding();
+    return () => {
+      cancelled = true;
+    };
+  }, [env, navigate, registryBackendUrl]);
+
+  if (error) {
+    return <ClientStateMessage>{error}</ClientStateMessage>;
+  }
+  return <ClientStateMessage>Resetting onboarding...</ClientStateMessage>;
+}
+
 function ClientApp({
   routeRunId,
   routeWorkerId,
@@ -244,6 +315,7 @@ function ClientApp({
     registryConfig.url,
     registryQuery,
     env.getLocalWorkflowRegistry,
+    search.onboardingReset === "1",
   );
   const registryError = workflowRegistryError(
     registryConfig.url,
@@ -284,6 +356,9 @@ function ClientApp({
       params: { workerId: worker },
       search: withoutWorker,
     });
+  };
+  const onOnboarding = () => {
+    void navigate({ to: "/onboarding", search: withoutWorker });
   };
 
   if (!registry) {
@@ -339,6 +414,7 @@ function ClientApp({
       headerLeading={
         <WorkerSwitcher
           selectedWorker={selectedWorker}
+          onOnboarding={onOnboarding}
           onWorkerChange={onWorkerChange}
           workflows={workflows}
         />
@@ -347,22 +423,35 @@ function ClientApp({
   );
 }
 
-type WorkerItem = { id: string; label: string };
+type WorkerItem =
+  | { kind: "worker"; id: string; label: string }
+  | { kind: "onboarding"; id: "__onboarding"; label: string };
 
 function WorkerSwitcher({
   selectedWorker,
+  onOnboarding,
   onWorkerChange,
   workflows,
 }: {
   selectedWorker: string | undefined;
+  onOnboarding: () => void;
   onWorkerChange: (worker: string) => void;
   workflows: [string, { label?: string; url: string }][];
 }) {
   const items: WorkerItem[] = workflows.map(([id, workflow]) => ({
+    kind: "worker" as const,
     id,
     label: workflow.label ?? labelFromId(id),
   }));
-  const value = items.find((item) => item.id === selectedWorker) ?? null;
+  items.push({
+    kind: "onboarding",
+    id: "__onboarding",
+    label: "Reset onboarding",
+  });
+  const value =
+    items.find(
+      (item) => item.kind === "worker" && item.id === selectedWorker,
+    ) ?? null;
 
   return (
     <Combobox<WorkerItem>
@@ -372,7 +461,12 @@ function WorkerSwitcher({
       isItemEqualToValue={(a, b) => a.id === b.id}
       value={value}
       onValueChange={(next) => {
-        if (next && next.id !== selectedWorker) onWorkerChange(next.id);
+        if (!next) return;
+        if (next.kind === "onboarding") {
+          onOnboarding();
+          return;
+        }
+        if (next.id !== selectedWorker) onWorkerChange(next.id);
       }}
     >
       <ComboboxTrigger
@@ -500,6 +594,16 @@ function isBackendUrl(value: string, backendUrl: string | undefined): boolean {
   }
 }
 
+function onboardingBackendUrl(
+  config: HyloWorkflowRegistryConfig,
+): string | undefined {
+  if (config.backendUrl?.trim()) return config.backendUrl.trim();
+  const url = config.url?.trim();
+  if (!url) return undefined;
+  const match = url.match(/^(.*)\/tenants\/[^/]+\/workflows$/);
+  return match?.[1];
+}
+
 function normalizeWorkflowRegistry(value: unknown): HyloWorkflowRegistry {
   if (!value || typeof value !== "object" || !("workflows" in value)) {
     throw new Error("Workflow registry must define workflows");
@@ -561,6 +665,15 @@ function withoutWorker(search: HyloClientShellSearch): HyloClientShellSearch {
   };
 }
 
+function withOnboardingReset(
+  search: HyloClientShellSearch,
+): HyloClientShellSearch {
+  return {
+    ...withoutWorker(search),
+    onboardingReset: "1",
+  };
+}
+
 function resolvedWorkflowRegistry(
   url: string | undefined,
   query: {
@@ -570,11 +683,12 @@ function resolvedWorkflowRegistry(
   getLocalWorkflowRegistry:
     | (() => HyloWorkflowRegistry | undefined)
     | undefined,
+  suppressLocalFallback = false,
 ): HyloWorkflowRegistry | undefined {
   if (!url || query.error) return emptyWorkflowRegistry();
   if (!query.data) return undefined;
   const fallback =
-    Object.keys(query.data.workflows).length === 0
+    !suppressLocalFallback && Object.keys(query.data.workflows).length === 0
       ? getLocalWorkflowRegistry?.()
       : undefined;
   return fallback ?? query.data;
@@ -605,6 +719,27 @@ function labelFromId(id: string): string {
 
 function searchParam(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+async function responseErrorMessage(response: Response): Promise<string> {
+  const fallback = `Onboarding reset failed with ${response.status}`;
+  try {
+    const body = (await response.json()) as {
+      message?: unknown;
+      error?: unknown;
+    };
+    return (
+      (typeof body.message === "string" && body.message) ||
+      (typeof body.error === "string" && body.error) ||
+      fallback
+    );
+  } catch {
+    return fallback;
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function useClientEnvironment(): ClientEnvironment {

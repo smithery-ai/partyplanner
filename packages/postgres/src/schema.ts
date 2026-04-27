@@ -74,6 +74,7 @@ export const providerInstallations = pgTable("provider_installations", {
 export const workflowDeployments = pgTable("workflow_deployments", {
   deploymentId: text("deployment_id").primaryKey(),
   tenantId: text("tenant_id").notNull(),
+  workflowId: text("workflow_id"),
   label: text("label"),
   workflowApiUrl: text("workflow_api_url"),
   workflowTargetUrl: text("workflow_target_url"),

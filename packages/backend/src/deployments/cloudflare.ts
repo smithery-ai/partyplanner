@@ -113,6 +113,7 @@ function workflowBindings(
       input.workflowName ?? input.label ?? input.deploymentId,
     ),
     plainTextBinding("HYLO_WORKFLOW_VERSION", input.workflowVersion ?? "0.0.0"),
+    plainTextBinding("HYLO_ORGANIZATION_ID", input.tenantId),
     plainTextBinding("HYLO_BACKEND_URL", backendUrl.replace(/\/+$/, "")),
   ];
   const appUrl = appBaseUrlFromWorkflowApiUrl(input.workflowApiUrl);
