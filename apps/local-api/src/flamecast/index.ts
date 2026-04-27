@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { cors } from "hono/cors";
 import { createMcpHandler } from "./mcp.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { SessionManager } from "./sessions/session-manager.js";
@@ -21,6 +22,20 @@ function createApp(sessions: SessionManager) {
   app.onError((err, c) => {
     return c.json({ error: err.message }, 500);
   });
+  app.use(
+    "/*",
+    cors({
+      origin: "*",
+      allowHeaders: [
+        "Content-Type",
+        "Authorization",
+        "Mcp-Session-Id",
+        "MCP-Protocol-Version",
+      ],
+      allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+      exposeHeaders: ["Mcp-Session-Id"],
+    }),
+  );
 
   // MCP streamable HTTP endpoint
   const handleMcp = createMcpHandler(sessions);
