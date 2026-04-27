@@ -72,7 +72,7 @@ the Workers project with:
 
 - Root directory: repository root
 - Build command: `pnpm --filter backend-cloudflare build`
-- Deploy command: `pnpm --filter backend-cloudflare run deploy`
+- Deploy command: `pnpm --filter backend-cloudflare exec wrangler deploy --env production`
 - Non-production branch deploy command:
   ```sh
   ALIAS="$(echo "$WORKERS_CI_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g; s/^-*//; s/-*$//; s/--*/-/g' | cut -c1-40 | sed 's/-*$//')" && pnpm --filter backend-cloudflare exec wrangler versions upload --env preview --preview-alias "${ALIAS:-preview}"

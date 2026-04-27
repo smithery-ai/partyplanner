@@ -7,6 +7,8 @@ import {
   isCloudflarePlatformConfigured,
   resolveCloudflarePlatformConfig,
 } from "./cloudflare";
+import { createLocalDeploymentBackend } from "./local-backend";
+import type { WorkflowDeploymentRegistry } from "./registry";
 
 export function createCloudflareDeploymentBackend(
   env: BackendAppEnv,
@@ -111,88 +113,65 @@ export function createCloudflareDeploymentBackend(
       return response.result ?? null;
     },
     async fetchWorkflow(deploymentId, request) {
-      if (!env.DISPATCHER) {
+      const dispatcher = env.DISPATCHER;
+      if (!dispatcher) {
         throw new PlatformApiError(
           503,
           "worker_dispatch_not_configured",
           "Worker dispatch namespace binding is not configured.",
         );
       }
-      return await env.DISPATCHER.get(deploymentId).fetch(
-        rewriteDispatchRequest(request),
-      );
+      return await dispatcher
+        .get(deploymentId)
+        .fetch(rewriteDispatchRequest(request));
     },
   };
-}
-
-export function createUnavailableCloudflareDeploymentBackend(
-  env: BackendAppEnv,
-): DeploymentBackend {
-  const missingConfig = missingCloudflareConfig(env);
-  return {
-    namespace: "unconfigured",
-    configured: false,
-    config: {
-      accountId: "",
-      apiBaseUrl: "",
-      apiToken: "",
-      dispatchNamespace: "",
-      defaultCompatibilityDate:
-        env.CLOUDFLARE_WORKER_COMPATIBILITY_DATE?.trim() || "2026-04-19",
-    },
-    resolveWorkflowApiUrl() {
-      return undefined;
-    },
-    resolveWorkflowTargetUrl() {
-      return undefined;
-    },
-    create: unavailable,
-    list: unavailable,
-    get: unavailable,
-    delete: unavailable,
-    deleteMany: unavailable,
-    async fetchWorkflow(deploymentId, request) {
-      if (!env.DISPATCHER) unavailable();
-      return await env.DISPATCHER.get(deploymentId).fetch(
-        rewriteDispatchRequest(request),
-      );
-    },
-  };
-
-  function unavailable(): never {
-    throw new PlatformApiError(
-      503,
-      "deployments_not_configured",
-      `Workers for Platforms provisioning is missing required environment variables: ${missingConfig.join(
-        ", ",
-      )}.`,
-    );
-  }
 }
 
 export function createDefaultCloudflareDeploymentBackend(
   env: BackendAppEnv,
+  registry?: WorkflowDeploymentRegistry,
 ): DeploymentBackend {
-  return isCloudflarePlatformConfigured(env)
+  const provisioning = isCloudflarePlatformConfigured(env)
     ? createCloudflareDeploymentBackend(env)
-    : createUnavailableCloudflareDeploymentBackend(env);
-}
+    : undefined;
+  const local = createLocalDeploymentBackend(env, registry);
+  const primary = provisioning ?? local;
 
-function missingCloudflareConfig(env: BackendAppEnv): string[] {
-  const missing = [];
-  if (!env.CLOUDFLARE_ACCOUNT_ID?.trim() && !env.CF_ACCOUNT_ID?.trim()) {
-    missing.push("CLOUDFLARE_ACCOUNT_ID");
-  }
-  if (!env.CLOUDFLARE_API_TOKEN?.trim() && !env.CF_API_TOKEN?.trim()) {
-    missing.push("CLOUDFLARE_API_TOKEN");
-  }
-  if (
-    !env.CLOUDFLARE_DISPATCH_NAMESPACE?.trim() &&
-    !env.CF_DISPATCH_NAMESPACE?.trim()
-  ) {
-    missing.push("CLOUDFLARE_DISPATCH_NAMESPACE");
-  }
-  return missing;
+  return {
+    namespace: primary.namespace,
+    configured: primary.configured,
+    config: primary.config,
+    resolveWorkflowApiUrl(input, requestOrigin) {
+      return primary.resolveWorkflowApiUrl(input, requestOrigin);
+    },
+    resolveWorkflowTargetUrl(input, requestOrigin) {
+      return primary.resolveWorkflowTargetUrl?.(input, requestOrigin);
+    },
+    create(input, requestOrigin) {
+      return primary.create(input, requestOrigin);
+    },
+    list(tag) {
+      return primary.list(tag);
+    },
+    get(deploymentId) {
+      return primary.get(deploymentId);
+    },
+    delete(deploymentId) {
+      return primary.delete(deploymentId);
+    },
+    deleteMany(tag) {
+      return primary.deleteMany(tag);
+    },
+    async fetchWorkflow(deploymentId, request) {
+      if (env.DISPATCHER) {
+        return await env.DISPATCHER.get(deploymentId).fetch(
+          rewriteDispatchRequest(request),
+        );
+      }
+      return local.fetchWorkflow(deploymentId, request);
+    },
+  };
 }
 
 function defaultWorkflowApiUrl(baseUrl: string, deploymentId: string): string {

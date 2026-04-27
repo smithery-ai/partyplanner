@@ -25,7 +25,7 @@ export function createLocalDeploymentBackend(
 
   return {
     namespace: LOCAL_DISPATCH_NAMESPACE,
-    configured: true,
+    configured: Boolean(registry),
     config,
     resolveWorkflowApiUrl(input) {
       if (input.workflowApiUrl) return input.workflowApiUrl;

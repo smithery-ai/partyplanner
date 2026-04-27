@@ -36,7 +36,7 @@ execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
 console.log("pnpm dev using local ports:");
 console.log("  client: https://hylo-client.localhost");
 console.log(
-  `  backend-node: https://api-worker.hylo.localhost (port ${env.HYLO_BACKEND_PORT})`,
+  `  backend-cloudflare: https://api-worker.hylo.localhost (port ${env.HYLO_BACKEND_PORT})`,
 );
 console.log(
   "  workflow-cloudflare-worker-example: https://workflow-cloudflare-worker-example.localhost",
@@ -54,7 +54,7 @@ const child = spawn(
     "run",
     "dev",
     "dev:info",
-    "--filter=backend-node",
+    "--filter=backend-cloudflare",
     "--filter=workflow-cloudflare-worker-example",
     "--filter=client",
     "--filter=//",
