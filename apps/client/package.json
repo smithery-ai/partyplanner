@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "portless hylo-client vite",
+    "dev": "portless --force hylo-client vite",
     "build": "pnpm --filter backend-cloudflare... build && pnpm --filter @hylo/api-client generate && tsc -b && vite build",
     "deploy": "vercel deploy --prod --yes",
     "lint": "eslint .",
