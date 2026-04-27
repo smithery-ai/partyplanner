@@ -76,12 +76,6 @@ importers:
       '@hylo/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
-      '@tanstack/react-query':
-        specifier: ^5.99.1
-        version: 5.99.1(react@19.2.5)
-      '@tanstack/react-router':
-        specifier: ^1.168.23
-        version: 1.168.23(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@workflow/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -477,6 +471,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.99.1
         version: 5.99.1(react@19.2.5)
+      '@tanstack/react-router':
+        specifier: ^1.168.23
+        version: 1.168.23(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@workflow/core':
         specifier: workspace:*
         version: link:../core

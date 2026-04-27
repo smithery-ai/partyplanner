@@ -14,8 +14,6 @@
     "@base-ui/react": "^1.4.0",
     "@fontsource-variable/geist": "^5.2.8",
     "@hylo/api-client": "workspace:*",
-    "@tanstack/react-query": "^5.99.1",
-    "@tanstack/react-router": "^1.168.23",
     "@workflow/core": "workspace:*",
     "@workflow/frontend": "workspace:*",
     "@workflow/runtime": "workspace:*",
