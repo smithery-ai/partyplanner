@@ -20,4 +20,9 @@ export {
   deploymentSourceFromList,
   dispatchTickToDeployments,
 } from "./scheduling/dispatcher";
+export type {
+  NodeScheduler,
+  NodeSchedulerOptions,
+} from "./scheduling/node";
+export { createNodeScheduler } from "./scheduling/node";
 export type { HyperdriveBinding, WorkerDispatchNamespace } from "./types";

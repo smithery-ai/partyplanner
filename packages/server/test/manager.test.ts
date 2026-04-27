@@ -543,6 +543,37 @@ describe("WorkflowManager", () => {
       expect(result.skipped).toEqual([]);
     });
   });
+
+  describe("runScheduleNow", () => {
+    it("starts a run using the schedule's captured payload, ignoring cron", async () => {
+      const trigger = input("nightly", z.object({ region: z.string() }));
+      const { schedule } = await import("@workflow/core");
+      schedule("us-nightly", "0 3 * * *", {
+        trigger,
+        payload: { region: "us-east-1" },
+      });
+
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+
+      // Way outside the 03:00 cron window — runScheduleNow ignores cron.
+      const run = await manager.runScheduleNow("us-nightly");
+      expect(run.runId).toMatch(/^run_/);
+      expect(run.queue.pending[0]?.event.kind).toBe("input");
+    });
+
+    it("rejects unknown schedule ids", async () => {
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+      await expect(manager.runScheduleNow("ghost")).rejects.toThrow(
+        /Unknown schedule: ghost/,
+      );
+    });
+  });
 });
 
 class TestWorkflowStateStore implements WorkflowStateStore {

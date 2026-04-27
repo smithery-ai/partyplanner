@@ -158,12 +158,32 @@ Each tick that matches the cron starts a fresh run, exactly as if `POST /runs` h
 
 **Cron syntax.** Standard 5-field POSIX (`minute hour day-of-month month day-of-week`) evaluated in **UTC**. Supports `*`, `*/N`, `a-b`, `a,b,c`, and combinations (`0-30/10`). Day-of-week treats both `0` and `7` as Sunday. No `@daily`-style aliases; no seconds field.
 
+**Two forms.** Pick based on whether the trigger should also be runnable by hand:
+
+```ts
+// 1. Explicit-trigger form. The input shows up in the "Start the workflow"
+//    UI list — humans can fire it manually too. Use when several schedules
+//    share one trigger (e.g. a sweep with us + eu schedules), or when ops
+//    needs a "run now" button alongside the cron.
+const sweep = input("sweep", schema);
+schedule("nightly-us", "0 3 * * *", { trigger: sweep, payload: {...} });
+
+// 2. Schema form. schedule() creates a hidden internal input under the
+//    covers — nothing appears in the UI, the schedule is the only entry
+//    point. Use when the workflow is purely scheduled.
+schedule("nightly-us", "0 3 * * *", {
+  schema: z.object({ region: z.string() }),
+  payload: { region: "us-east-1" },
+});
+```
+
 **Rules.**
 
-- `id` is unique across the whole registry — same namespace as inputs/atoms/actions. Pick a stable name; the dispatcher uses it as a stable key.
-- `trigger` must be an `input(...)` (not a `deferred_input` placeholder, not an atom/action). The schedule fires the input the same way an external request would.
+- `id` is unique across the whole registry — same namespace as inputs/atoms/actions. Pick a stable name; the dispatcher uses it as a key, and the schema form derives the hidden input id from it (`__schedule_<id>`).
+- The trigger must be an `input(...)` (or `input.deferred(...)`), not an atom/action. The schedule fires the input the same way an external request would.
 - `payload` is captured at registration time and validated against the input's Zod schema on every fire. If the schema is `z.object({ region: z.string() })`, the payload must match.
-- The same input can be the trigger for many schedules with different payloads (see `nightly-us-sweep` + `eu-15m-sweep` above).
+- The explicit-trigger form lets the same input back many schedules with different payloads.
+- An `input(..., { internal: true })` is hidden from the UI start list — equivalent to what the schema form does automatically. Use this when several schedules share one trigger but you don't want a manual run button for it.
 
 **How it actually fires.** The workflow server exposes one HTTP route:
 

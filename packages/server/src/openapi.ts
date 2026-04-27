@@ -469,6 +469,23 @@ export function createWorkflowRoutes(basePath = "/") {
         400: jsonResponse("Invalid request", ErrorResponseSchema),
       },
     }),
+    runScheduleNow: createRoute({
+      method: "post",
+      path: path(normalizedBasePath, "/schedules/{scheduleId}/run-now"),
+      tags: ["Schedules"],
+      summary: "Fire a single registered schedule using its captured payload",
+      description:
+        "Operator-facing button: starts a run with the schedule's stored inputId + payload, ignoring the cron expression. Useful for backfills, smoke tests, and verifying the workflow body without waiting for the next cron tick.",
+      request: {
+        params: z
+          .object({ scheduleId: z.string().min(1) })
+          .openapi("ScheduleIdParam"),
+      },
+      responses: {
+        200: jsonResponse("Run started", WorkflowRunDocumentSchema),
+        404: jsonResponse("Unknown schedule", ErrorResponseSchema),
+      },
+    }),
     connectManagedConnection: createRoute({
       method: "post",
       path: path(

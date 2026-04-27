@@ -39,6 +39,7 @@ import {
   workflowInputRequested,
 } from "./components/queue-visualizer";
 import { RunStateJsonSheet } from "./components/run-state-json-sheet";
+import { SchedulesPanel } from "./components/schedules-panel";
 import {
   type ManagedConnectionDisplayState,
   StartWorkflowForm,
@@ -1161,25 +1162,35 @@ function WorkflowRunnerBody({
 
           {!runState && !runId && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-start justify-center overflow-y-auto p-6 md:items-center">
-              <StartWorkflowForm
-                inputs={workflow.manifest?.inputs ?? []}
-                managedConnections={workflow.manifest?.managedConnections ?? []}
-                managedConnectionStates={managedConnectionStates}
-                inputValues={inputValues}
-                onInputValuesChange={setInputValue}
-                canSubmitSeed={!runState && !runId}
-                onSubmitSeed={(inputId) => void runWorkflow(inputId)}
-                onConnectManagedConnection={(connectionId, options) =>
-                  void connectManagedConnection(connectionId, options)
-                }
-                onClearManagedConnection={(connectionId) =>
-                  void clearManagedConnection(connectionId)
-                }
-                connectingManagedConnectionId={connectingManagedConnectionId}
-                clearingManagedConnectionId={clearingManagedConnectionId}
-                error={payloadError || undefined}
-                starting={workflow.isPending}
-              />
+              <div className="pointer-events-auto flex w-full max-w-lg flex-col gap-4">
+                <StartWorkflowForm
+                  inputs={workflow.manifest?.inputs ?? []}
+                  managedConnections={
+                    workflow.manifest?.managedConnections ?? []
+                  }
+                  managedConnectionStates={managedConnectionStates}
+                  inputValues={inputValues}
+                  onInputValuesChange={setInputValue}
+                  canSubmitSeed={!runState && !runId}
+                  onSubmitSeed={(inputId) => void runWorkflow(inputId)}
+                  onConnectManagedConnection={(connectionId, options) =>
+                    void connectManagedConnection(connectionId, options)
+                  }
+                  onClearManagedConnection={(connectionId) =>
+                    void clearManagedConnection(connectionId)
+                  }
+                  connectingManagedConnectionId={connectingManagedConnectionId}
+                  clearingManagedConnectionId={clearingManagedConnectionId}
+                  error={payloadError || undefined}
+                  starting={workflow.isPending}
+                />
+                <SchedulesPanel
+                  schedules={workflow.manifest?.schedules ?? []}
+                  runs={workflow.runs}
+                  runScheduleNow={(id) => void workflow.runScheduleNow(id)}
+                  runningScheduleId={workflow.runningScheduleId}
+                />
+              </div>
             </div>
           )}
 

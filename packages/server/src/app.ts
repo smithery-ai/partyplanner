@@ -132,6 +132,19 @@ export function createWorkflow(options: CreateWorkflowOptions) {
     }
   });
 
+  app.openapi(routes.runScheduleNow, async (c) => {
+    const { scheduleId } = c.req.valid("param") as { scheduleId: string };
+    try {
+      return c.json(await manager.runScheduleNow(scheduleId), 200);
+    } catch (e) {
+      const message = errorMessage(e);
+      if (/^Unknown schedule:/.test(message)) {
+        return c.json({ message }, 404);
+      }
+      return c.json({ message }, 400);
+    }
+  });
+
   app.openapi(routes.connectManagedConnection, async (c) => {
     try {
       const body = c.req.valid("json") as ConnectManagedConnectionRequest;

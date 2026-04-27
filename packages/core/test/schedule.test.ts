@@ -29,13 +29,62 @@ describe("schedule() primitive", () => {
   });
 
   it("rejects schedules whose trigger input was never registered", () => {
-    const fake = { __id: "ghostInput", __kind: "input" as const } as Parameters<
-      typeof schedule
-    >[2]["trigger"];
+    const fake = {
+      __id: "ghostInput",
+      __kind: "input" as const,
+    } as Parameters<typeof schedule<object>>[2] extends infer Opts
+      ? Opts extends { trigger: infer T }
+        ? T
+        : never
+      : never;
 
     expect(() =>
       schedule("ghost", "* * * * *", { trigger: fake, payload: {} }),
     ).toThrow(/unknown input "ghostInput"/);
+  });
+
+  it("schema form auto-creates a hidden internal input", () => {
+    const probeSchema = z.object({ label: z.string() });
+
+    schedule("probe-1m", "* * * * *", {
+      schema: probeSchema,
+      payload: { label: "every-minute" },
+      description: "Schedule-only probe.",
+    });
+
+    const inputs = globalRegistry.allInputs();
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({
+      id: "__schedule_probe-1m",
+      kind: "input",
+      internal: true,
+    });
+
+    const schedules = globalRegistry.allSchedules();
+    expect(schedules).toHaveLength(1);
+    expect(schedules[0]).toMatchObject({
+      id: "probe-1m",
+      cron: "* * * * *",
+      inputId: "__schedule_probe-1m",
+      payload: { label: "every-minute" },
+    });
+  });
+
+  it("two schema-form schedules each get their own hidden input", () => {
+    const probeSchema = z.object({ region: z.string() });
+
+    schedule("us-probe", "*/5 * * * *", {
+      schema: probeSchema,
+      payload: { region: "us" },
+    });
+    schedule("eu-probe", "*/5 * * * *", {
+      schema: probeSchema,
+      payload: { region: "eu" },
+    });
+
+    const inputs = globalRegistry.allInputs().map((i) => i.id);
+    expect(inputs).toEqual(["__schedule_us-probe", "__schedule_eu-probe"]);
+    expect(globalRegistry.allSchedules()).toHaveLength(2);
   });
 
   it("rejects duplicate schedule ids", () => {

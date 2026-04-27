@@ -2,8 +2,15 @@ import { type ZodSchema, z } from "zod";
 import { type DeferredInput, type Input, makeHandle } from "./handles";
 import { globalRegistry } from "./registry";
 
-type InputOpts = { title?: string; description?: string };
-type SecretOpts = InputOpts & { errorMessage?: string; internal?: boolean };
+type InputOpts = {
+  title?: string;
+  description?: string;
+  // When true, this input is omitted from the workflow's "Start the workflow"
+  // UI list. Use for inputs that exist only as plumbing for a schedule() or
+  // other internal trigger — humans never fire them directly.
+  internal?: boolean;
+};
+type SecretOpts = InputOpts & { errorMessage?: string };
 
 export function input<T>(
   name: string,
@@ -16,6 +23,7 @@ export function input<T>(
     title: opts?.title,
     schema: schema as ZodSchema<unknown>,
     description: opts?.description,
+    internal: opts?.internal,
   });
   return makeHandle<T>("input", name) as Input<T>;
 }
@@ -31,6 +39,7 @@ input.deferred = function deferred<T>(
     title: opts?.title,
     schema: schema as ZodSchema<unknown>,
     description: opts?.description,
+    internal: opts?.internal,
   });
   return makeHandle<T>("deferred_input", name) as DeferredInput<T>;
 };

@@ -413,6 +413,20 @@ export class WorkflowManager {
     return { at: at.toISOString(), fired, skipped };
   }
 
+  // Fire a single registered schedule by id, using its captured payload. Used
+  // by the UI's "Run now" button so the client never has to know the payload
+  // (which only exists in workflow code).
+  async runScheduleNow(scheduleId: string): Promise<WorkflowRunDocument> {
+    const schedule = this.registry.getSchedule(scheduleId);
+    if (!schedule) {
+      throw new Error(`Unknown schedule: ${scheduleId}`);
+    }
+    return this.startRun({
+      inputId: schedule.inputId,
+      payload: schedule.payload,
+    });
+  }
+
   async submitIntervention(
     runId: string,
     interventionId: string,
