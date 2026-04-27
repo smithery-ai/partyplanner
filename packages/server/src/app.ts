@@ -141,7 +141,7 @@ export function createWorkflow(options: CreateWorkflowOptions) {
       if (/^Unknown schedule:/.test(message)) {
         return c.json({ message }, 404);
       }
-      return c.json({ message }, 400);
+      throw e;
     }
   });
 
