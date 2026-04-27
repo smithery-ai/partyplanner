@@ -765,6 +765,8 @@ function cloneRegistry(registry: Registry): Registry {
   for (const input of registry.allInputs()) clone.registerInput(input);
   for (const atom of registry.allAtoms()) clone.registerAtom(atom);
   for (const action of registry.allActions()) clone.registerAction(action);
+  for (const schedule of registry.allSchedules())
+    clone.registerSchedule(schedule);
   return clone;
 }
 
@@ -786,6 +788,12 @@ function hashRegistry(registry: Registry): string {
       id: action.id,
       description: action.description,
       fn: action.fn.toString(),
+    })),
+    schedules: registry.allSchedules().map((schedule) => ({
+      id: schedule.id,
+      cron: schedule.cron,
+      inputId: schedule.inputId,
+      payload: schedule.payload,
     })),
   });
   return hashString(source);

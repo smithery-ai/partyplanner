@@ -476,6 +476,73 @@ describe("WorkflowManager", () => {
       "resolved",
     );
   });
+
+  describe("tickSchedules", () => {
+    it("starts a run for each schedule whose cron matches", async () => {
+      const sweep = input("sweep", z.object({ region: z.string() }));
+      const { schedule } = await import("@workflow/core");
+      schedule("sweep-us", "*/15 * * * *", {
+        trigger: sweep,
+        payload: { region: "us-east-1" },
+      });
+      schedule("sweep-eu", "0 3 * * *", {
+        trigger: sweep,
+        payload: { region: "eu-west-1" },
+      });
+
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+
+      const result = await manager.tickSchedules(
+        new Date("2026-04-27T15:15:00Z"),
+      );
+
+      expect(result.fired.map((f) => f.id)).toEqual(["sweep-us"]);
+      expect(result.skipped).toEqual([]);
+      expect(result.fired[0]?.runId).toMatch(/^run_/);
+    });
+
+    it("fires multiple schedules at the same minute", async () => {
+      const a = input("a", z.object({}));
+      const b = input("b", z.object({}));
+      const { schedule } = await import("@workflow/core");
+      schedule("a-tick", "* * * * *", { trigger: a, payload: {} });
+      schedule("b-tick", "* * * * *", { trigger: b, payload: {} });
+
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+
+      const result = await manager.tickSchedules(
+        new Date("2026-04-27T15:00:00Z"),
+      );
+
+      expect(result.fired.map((f) => f.id).sort()).toEqual([
+        "a-tick",
+        "b-tick",
+      ]);
+    });
+
+    it("returns empty when no schedules match", async () => {
+      const t = input("t", z.object({}));
+      const { schedule } = await import("@workflow/core");
+      schedule("hourly", "0 * * * *", { trigger: t, payload: {} });
+
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+
+      const result = await manager.tickSchedules(
+        new Date("2026-04-27T15:30:00Z"),
+      );
+      expect(result.fired).toEqual([]);
+      expect(result.skipped).toEqual([]);
+    });
+  });
 });
 
 class TestWorkflowStateStore implements WorkflowStateStore {
