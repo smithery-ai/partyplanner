@@ -147,7 +147,7 @@ export class SessionManager {
     this.resetTimeout(session);
     if (this.logger) {
       try {
-        await this.logger.start(sessionId);
+        await this.logger.start(sessionId, params.chatId ?? sessionId);
       } catch (err) {
         console.error(
           `[session-manager] logger.start failed for ${sessionId}:`,
@@ -399,7 +399,7 @@ export class SessionManager {
     this.resetTimeout(session);
     if (this.logger) {
       try {
-        await this.logger.start(sessionId);
+        await this.logger.start(sessionId, sessionId);
       } catch (err) {
         console.error(
           `[session-manager] logger.start failed for ${sessionId}:`,
@@ -437,7 +437,7 @@ export class SessionManager {
         this.resetTimeout(session);
         if (this.logger) {
           try {
-            await this.logger.start(info.name);
+            await this.logger.start(info.name, info.name);
           } catch (err) {
             console.error(
               `[session-manager] logger.start failed for ${info.name}:`,

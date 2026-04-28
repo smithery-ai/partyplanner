@@ -14,6 +14,7 @@ export interface Session {
 }
 
 export interface CreateParams {
+  chatId?: string;
   cwd?: string;
   shell?: string;
   timeout?: number | null;

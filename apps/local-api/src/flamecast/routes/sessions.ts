@@ -1,5 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import type { SessionLogger } from "../session-logger.js";
+import type {
+  ChatSummary as LoggedChatSummary,
+  SessionLogger,
+} from "../session-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 import { SessionError } from "../sessions/session-manager.js";
 
@@ -110,6 +114,40 @@ const ListResponse = z
   })
   .openapi("ListSessionsResponse");
 
+const ChatStatusSchema = z.enum(["running", "closed"]);
+
+const ChatSummary = z.object({
+  chatId: z.string(),
+  status: ChatStatusSchema,
+  activeTerminalSessionId: z.string().nullable(),
+  claudeSessionIds: z.array(z.string()),
+  terminalSessionIds: z.array(z.string()),
+  created: z.string(),
+  lastActivity: z.string(),
+});
+
+const ListChatsResponse = z
+  .object({
+    chats: z.array(ChatSummary),
+  })
+  .openapi("ListChatsResponse");
+
+const CreateChatResponse = z
+  .object({
+    chatId: z.string(),
+    terminalSessionId: z.string(),
+    status: z.literal("running"),
+  })
+  .openapi("CreateChatResponse");
+
+const ChatEventsResponse = z
+  .object({
+    chatId: z.string(),
+    claudeSessionIds: z.array(z.string()),
+    events: z.array(z.unknown()),
+  })
+  .openapi("ChatEventsResponse");
+
 const CloseResponse = z
   .object({
     sessionId: z.string(),
@@ -145,6 +183,22 @@ const ChatResponse = z
   })
   .openapi("ChatResponse");
 
+const SendChatMessageResponse = z
+  .object({
+    chatId: z.string(),
+    terminalSessionId: z.string(),
+    status: z.literal("running"),
+  })
+  .openapi("SendChatMessageResponse");
+
+const CloseChatTerminalResponse = z
+  .object({
+    chatId: z.string(),
+    terminalSessionId: z.string().nullable(),
+    status: z.literal("closed"),
+  })
+  .openapi("CloseChatTerminalResponse");
+
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -167,6 +221,36 @@ const createSession = createRoute({
     500: {
       content: { "application/json": { schema: ErrorResponse } },
       description: "Server error",
+    },
+  },
+});
+
+const createChat = createRoute({
+  method: "post",
+  path: "/chats",
+  tags: ["Chats"],
+  summary: "Create a new persisted chat with a terminal-backed agent session",
+  responses: {
+    201: {
+      content: { "application/json": { schema: CreateChatResponse } },
+      description: "Chat created",
+    },
+    500: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Server error",
+    },
+  },
+});
+
+const listChats = createRoute({
+  method: "get",
+  path: "/chats",
+  tags: ["Chats"],
+  summary: "List persisted chats regardless of terminal status",
+  responses: {
+    200: {
+      content: { "application/json": { schema: ListChatsResponse } },
+      description: "Chat list",
     },
   },
 });
@@ -340,6 +424,60 @@ const chat = createRoute({
   },
 });
 
+const chatMessage = createRoute({
+  method: "post",
+  path: "/chats/{id}/chat",
+  tags: ["Chats"],
+  summary:
+    "Send a chat message, creating a terminal session and resuming Claude when needed",
+  request: {
+    params: SessionIdParam,
+    body: { content: { "application/json": { schema: ChatBody } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: SendChatMessageResponse } },
+      description: "Chat command started",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Chat not found",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not running",
+    },
+  },
+});
+
+const getChatEvents = createRoute({
+  method: "get",
+  path: "/chats/{id}/events",
+  tags: ["Chats"],
+  summary: "Get logged Claude session events for a persisted chat",
+  request: { params: SessionIdParam },
+  responses: {
+    200: {
+      content: { "application/json": { schema: ChatEventsResponse } },
+      description: "Logged events",
+    },
+  },
+});
+
+const closeChatTerminal = createRoute({
+  method: "delete",
+  path: "/chats/{id}/terminal",
+  tags: ["Chats"],
+  summary: "Close the active terminal session for a chat without deleting it",
+  request: { params: SessionIdParam },
+  responses: {
+    200: {
+      content: { "application/json": { schema: CloseChatTerminalResponse } },
+      description: "Terminal closed",
+    },
+  },
+});
+
 const getEvents = createRoute({
   method: "get",
   path: "/terminals/{id}/events",
@@ -387,6 +525,44 @@ function parseIntQuery(value: string | undefined): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+type TerminalSummary = z.infer<typeof SessionSummary>;
+
+function generateChatId(): string {
+  return `chat_${randomUUID().replace(/-/g, "")}`;
+}
+
+function activeTerminalForChat(
+  chat: LoggedChatSummary,
+  terminals: TerminalSummary[],
+): TerminalSummary | null {
+  const byId = new Map(
+    terminals.map((terminal) => [terminal.sessionId, terminal]),
+  );
+  for (const terminalSessionId of [...chat.terminalSessionIds].reverse()) {
+    const terminal = byId.get(terminalSessionId);
+    if (terminal?.status === "running") return terminal;
+  }
+  return null;
+}
+
+async function listChatSummaries(
+  sessions: SessionManager,
+  logger: SessionLogger,
+): Promise<z.infer<typeof ChatSummary>[]> {
+  const [{ sessions: terminals }, chats] = await Promise.all([
+    sessions.list(),
+    logger.listChats(),
+  ]);
+  return chats.map((chat) => {
+    const activeTerminal = activeTerminalForChat(chat, terminals);
+    return {
+      ...chat,
+      status: activeTerminal ? ("running" as const) : ("closed" as const),
+      activeTerminalSessionId: activeTerminal?.sessionId ?? null,
+    };
+  });
+}
+
 export function sessionRoutes(sessions: SessionManager, logger: SessionLogger) {
   const app = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -404,6 +580,79 @@ export function sessionRoutes(sessions: SessionManager, logger: SessionLogger) {
   });
 
   return app
+    .openapi(createChat, async (c) => {
+      const chatId = generateChatId();
+      const created = await sessions.create({ chatId, cols: 120, rows: 40 });
+      await logger.createChat(chatId, created.sessionId);
+      return c.json(
+        {
+          chatId,
+          terminalSessionId: created.sessionId,
+          status: "running" as const,
+        },
+        201,
+      );
+    })
+    .openapi(listChats, async (c) => {
+      const chats = await listChatSummaries(sessions, logger);
+      return c.json({ chats }, 200);
+    })
+    .openapi(getChatEvents, async (c) => {
+      const { id } = c.req.valid("param");
+      const claudeSessionIds = await logger.getClaudeSessionsForChat(id);
+      const events = await logger.getEventsForChat(id);
+      return c.json({ chatId: id, claudeSessionIds, events }, 200);
+    })
+    .openapi(chatMessage, async (c) => {
+      const { id } = c.req.valid("param");
+      const { message } = c.req.valid("json");
+      await logger.ensureChat(id);
+
+      const priorClaudeSessions = await logger.getClaudeSessionsForChat(id);
+      const chats = await listChatSummaries(sessions, logger);
+      const chatSummary = chats.find((chat) => chat.chatId === id);
+      let terminalSessionId = chatSummary?.activeTerminalSessionId ?? null;
+
+      if (!terminalSessionId) {
+        const created = await sessions.create({
+          chatId: id,
+          cols: 120,
+          rows: 40,
+        });
+        terminalSessionId = created.sessionId;
+      } else {
+        await logger.start(terminalSessionId, id);
+      }
+
+      logger.recordPendingUserMessage(terminalSessionId, message);
+      const lastClaudeSessionId =
+        priorClaudeSessions[priorClaudeSessions.length - 1];
+      const resumeFlag = lastClaudeSessionId
+        ? ` --resume ${shellQuote(lastClaudeSessionId)}`
+        : "";
+      const command = `claude -p --output-format stream-json --verbose${resumeFlag} ${shellQuote(message)}`;
+      await sessions.execAsync({
+        sessionId: terminalSessionId,
+        command,
+      });
+      return c.json(
+        { chatId: id, terminalSessionId, status: "running" as const },
+        200,
+      );
+    })
+    .openapi(closeChatTerminal, async (c) => {
+      const { id } = c.req.valid("param");
+      const chats = await listChatSummaries(sessions, logger);
+      const chatSummary = chats.find((chat) => chat.chatId === id);
+      const terminalSessionId = chatSummary?.activeTerminalSessionId ?? null;
+      if (terminalSessionId) {
+        await sessions.close({ sessionId: terminalSessionId });
+      }
+      return c.json(
+        { chatId: id, terminalSessionId, status: "closed" as const },
+        200,
+      );
+    })
     .openapi(createSession, async (c) => {
       const body = c.req.valid("json");
       const result = await sessions.create(body);
@@ -470,7 +719,15 @@ export function sessionRoutes(sessions: SessionManager, logger: SessionLogger) {
       const { id } = c.req.valid("param");
       const { message } = c.req.valid("json");
       logger.recordPendingUserMessage(id, message);
-      const command = `claude -p --output-format stream-json --verbose ${shellQuote(message)}`;
+      // Resume the most recent claude session in this fc session so follow-up
+      // messages continue the same conversation instead of starting fresh.
+      const priorClaudeSessions = await logger.getClaudeSessionsForFc(id);
+      const lastClaudeSessionId =
+        priorClaudeSessions[priorClaudeSessions.length - 1];
+      const resumeFlag = lastClaudeSessionId
+        ? ` --resume ${shellQuote(lastClaudeSessionId)}`
+        : "";
+      const command = `claude -p --output-format stream-json --verbose${resumeFlag} ${shellQuote(message)}`;
       const result = await sessions.execAsync({
         sessionId: id,
         command,

@@ -188,26 +188,3 @@ function killStaleListeners(ports) {
     }
   }
 }
-
-function ensurePortlessHttpsProxy(env) {
-  try {
-    execSync("portless proxy start --https", {
-      env,
-      stdio: "pipe",
-      encoding: "utf-8",
-    });
-  } catch (error) {
-    const details = [
-      typeof error.stdout === "string" ? error.stdout.trim() : "",
-      typeof error.stderr === "string" ? error.stderr.trim() : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-    if (details) {
-      console.error(details);
-    } else {
-      console.error("Failed to start the portless HTTPS proxy.");
-    }
-    process.exit(typeof error.status === "number" ? error.status : 1);
-  }
-}

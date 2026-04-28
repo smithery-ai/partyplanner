@@ -9,7 +9,7 @@ const HELP = `hylo — workflow CLI
 
 Usage:
   hylo auth <command>                Sign in with WorkOS AuthKit
-  hylo init [dir]                    Create a new workflow project
+  hylo init                          Create ~/.flamecast for local chats
   hylo build [--backend <url>]       Bundle into a Cloudflare Worker
   hylo deploy [dir] [--backend <url>]
                                       Build and deploy via Hylo API
