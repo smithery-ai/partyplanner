@@ -4,7 +4,7 @@ import net from "node:net";
 import { resolve } from "node:path";
 import { parseBuildArgs } from "../args.js";
 import { info } from "../log.js";
-import { loadProject } from "../project.js";
+import { defaultProjectRoot, loadProject } from "../project.js";
 import { wranglerBin } from "../wrangler.js";
 import { buildWorkerBundle } from "./build.js";
 
@@ -19,7 +19,7 @@ export async function runDev(args: string[]): Promise<number> {
       [
         "Usage: hylo dev [dir] [--backend <url>]",
         "",
-        "Builds and runs a Hylo Worker locally. Defaults to ./.flamecast.",
+        "Builds and runs a Hylo Worker locally. Defaults to the current worker project or ~/.flamecast/worker.",
         "",
       ].join("\n"),
     );
@@ -80,13 +80,6 @@ export async function runDev(args: string[]): Promise<number> {
 
 function defaultLocalBackendUrl(): string {
   return `http://127.0.0.1:${process.env.HYLO_BACKEND_PORT ?? DEFAULT_BACKEND_PORT}`;
-}
-
-async function defaultProjectRoot(cwd: string): Promise<string> {
-  const packageJson = await pathExists(resolve(cwd, "package.json"));
-  const workflowEntry = await pathExists(resolve(cwd, "src", "index.ts"));
-  if (packageJson && workflowEntry) return cwd;
-  return resolve(cwd, ".flamecast");
 }
 
 async function pathExists(path: string): Promise<boolean> {

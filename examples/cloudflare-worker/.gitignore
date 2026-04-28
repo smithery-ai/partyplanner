@@ -1,4 +1,5 @@
 .hylo
 .wrangler
+.turbo
 node_modules
 .env*
