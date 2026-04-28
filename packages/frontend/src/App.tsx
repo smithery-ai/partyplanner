@@ -465,12 +465,14 @@ export function WorkflowRunnerApp({
   navigation = noopNavigation,
   sidebarFooter,
   sidebarHeader,
+  sidebarTopInset,
 }: {
   workflowId: string;
   runId?: string;
   navigation?: WorkflowNavigation;
   sidebarFooter?: ReactNode;
   sidebarHeader?: ReactNode;
+  sidebarTopInset?: number | string;
 }) {
   return (
     <WorkflowRunProvider runId={runId}>
@@ -480,6 +482,7 @@ export function WorkflowRunnerApp({
         navigation={navigation}
         sidebarFooter={sidebarFooter}
         sidebarHeader={sidebarHeader}
+        sidebarTopInset={sidebarTopInset}
       />
     </WorkflowRunProvider>
   );
@@ -491,12 +494,14 @@ function WorkflowRunnerBody({
   navigation,
   sidebarFooter,
   sidebarHeader,
+  sidebarTopInset,
 }: {
   workflowId: string;
   runId?: string;
   navigation: WorkflowNavigation;
   sidebarFooter?: ReactNode;
   sidebarHeader?: ReactNode;
+  sidebarTopInset?: number | string;
 }) {
   const workflow = useWorkflow(workflowId);
   const workflowRun = useWorkflowRun();
@@ -948,7 +953,10 @@ function WorkflowRunnerBody({
 
   return (
     <div className="flex h-screen min-h-0 bg-background">
-      <aside className="flex w-48 shrink-0 flex-col bg-off-black text-off-white sm:w-64 lg:w-72">
+      <aside
+        className="flex w-48 shrink-0 flex-col bg-off-black text-off-white sm:w-64 lg:w-72"
+        style={sidebarTopInset ? { paddingTop: sidebarTopInset } : undefined}
+      >
         <div className="flex shrink-0 flex-col gap-1 px-2.5 pt-2.5 pb-2">
           {sidebarHeader ?? (
             <button
@@ -1236,11 +1244,13 @@ export function WorkflowSingleApp({
   runId: controlledRunId,
   navigation,
   sidebarHeader,
+  sidebarTopInset,
 }: {
   sidebarFooter?: ReactNode;
   runId?: string;
   navigation?: WorkflowNavigation;
   sidebarHeader?: ReactNode;
+  sidebarTopInset?: number | string;
 } = {}) {
   const workflow = useWorkflow(undefined);
   const [internalRunId, setRunId] = useState<string | undefined>();
@@ -1283,6 +1293,7 @@ export function WorkflowSingleApp({
       navigation={resolvedNavigation}
       sidebarFooter={sidebarFooter}
       sidebarHeader={sidebarHeader}
+      sidebarTopInset={sidebarTopInset}
     />
   );
 }
@@ -1294,6 +1305,7 @@ export function WorkflowSinglePage({
   runId,
   navigation,
   sidebarHeader,
+  sidebarTopInset,
 }: {
   apiBaseUrl?: string;
   managedConnectionInitializingUrl?: string;
@@ -1301,6 +1313,7 @@ export function WorkflowSinglePage({
   runId?: string;
   navigation?: WorkflowNavigation;
   sidebarHeader?: ReactNode;
+  sidebarTopInset?: number | string;
 }) {
   return (
     <WorkflowFrontendRoot
@@ -1311,6 +1324,7 @@ export function WorkflowSinglePage({
         runId={runId}
         navigation={navigation}
         sidebarHeader={sidebarHeader}
+        sidebarTopInset={sidebarTopInset}
       />
     </WorkflowFrontendRoot>
   );

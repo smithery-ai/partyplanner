@@ -59,6 +59,7 @@ function createWindow(): BrowserWindow {
     minHeight: 720,
     show: false,
     autoHideMenuBar: true,
+    titleBarStyle: "hiddenInset",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.mjs"),
       sandbox: false,

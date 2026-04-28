@@ -50,6 +50,9 @@ export default defineConfig({
       "import.meta.env.VITE_HYLO_WORKFLOW_REGISTRY_URL": JSON.stringify(
         process.env.VITE_HYLO_WORKFLOW_REGISTRY_URL ?? "",
       ),
+      "import.meta.env.VITE_HYLO_SIDEBAR_TOP_INSET": JSON.stringify(
+        process.env.VITE_HYLO_SIDEBAR_TOP_INSET ?? "34px",
+      ),
     },
   },
 });

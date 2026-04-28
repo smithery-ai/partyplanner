@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "dev": "PORTLESS_HTTPS=1 portless local-api node --import tsx src/server.ts",
+    "dev": "PORTLESS_HTTPS=1 portless --force local-api node --import tsx src/server.ts",
     "build": "tsc --noEmit"
   },
   "dependencies": {

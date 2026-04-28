@@ -41,6 +41,7 @@ execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
 
 console.log("pnpm dev:desktop using local ports:");
 console.log(`  backend-node: ${env.VITE_HYLO_BACKEND_URL}`);
+console.log("  local-api: https://local-api.localhost");
 console.log(
   "  workflow-cloudflare-worker-example: https://workflow-cloudflare-worker-example.localhost",
 );
@@ -59,6 +60,7 @@ const child = spawn(
     "dev",
     "--filter=backend-node",
     "--filter=workflow-cloudflare-worker-example",
+    "--filter=local-api",
     "--filter=desktop",
   ],
   {
