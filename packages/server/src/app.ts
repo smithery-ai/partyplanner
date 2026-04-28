@@ -153,6 +153,22 @@ export function createWorkflow(options: CreateWorkflowOptions) {
           );
         }
       }
+      // Heartbeat for in-flight runs: a run that hit wall-clock mid-drain
+      // on a previous tick has its queue items recovered by claimNext's
+      // lease retry, but nothing else looks at live runs — tickSchedules
+      // only iterates fresh firings. Pump every still-running run forward
+      // so the cron actually delivers what schedule() advertises.
+      try {
+        await manager.pumpInProgressRuns();
+      } catch (e) {
+        console.error(
+          JSON.stringify({
+            scope: "pump_in_progress",
+            level: "error",
+            error: e instanceof Error ? e.message : String(e),
+          }),
+        );
+      }
       return c.json(result, 200);
     } catch (e) {
       return c.json({ message: errorMessage(e) }, 400);

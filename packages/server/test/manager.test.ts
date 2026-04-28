@@ -703,6 +703,75 @@ describe("WorkflowManager", () => {
       expect(reclaimed?.status).toBe("running");
     });
   });
+
+  describe("pumpInProgressRuns", () => {
+    it("advances every run still in 'running'", async () => {
+      // The cron heartbeat needs to walk all live runs and push them
+      // forward, not just the ones that just fired. Two runs start, one
+      // is fully drained inline, the other is left running with pending
+      // work — pumpInProgressRuns must drive the second one to its
+      // settled state without anyone calling /advance on it directly.
+      const trigger = input("trigPump", z.object({ value: z.number() }));
+      atom((get) => get(trigger).value + 1, { name: "incrPump" });
+
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+
+      const drained = await manager.startRun({
+        inputId: "trigPump",
+        payload: { value: 1 },
+      });
+      const settled = await manager.advanceUntilSettled(drained.runId);
+      expect(settled.status).toBe("completed");
+
+      const stillRunning = await manager.startRun({
+        inputId: "trigPump",
+        payload: { value: 2 },
+      });
+      // Intentionally do not call advanceUntilSettled — leave it in 'running'.
+      expect(stillRunning.status).toBe("running");
+
+      const result = await manager.pumpInProgressRuns();
+      expect(result.attempted).toBe(1);
+      expect(result.pumped).toHaveLength(1);
+      const entry = result.pumped[0];
+      if (entry?.outcome !== "advanced") {
+        throw new Error(`expected advanced, got ${entry?.outcome}`);
+      }
+      expect(entry.runId).toBe(stillRunning.runId);
+      expect(entry.status).toBe("completed");
+    });
+
+    it("respects the wall-clock budget and defers remaining runs", async () => {
+      input("trigBudget", z.object({}));
+      atom(() => 1, { name: "incrBudget" });
+
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+
+      const a = await manager.startRun({
+        inputId: "trigBudget",
+        payload: {},
+      });
+      const b = await manager.startRun({
+        inputId: "trigBudget",
+        payload: {},
+      });
+      expect(a.runId).not.toBe(b.runId);
+
+      // budgetMs=0 means the deadline is already past on the first
+      // iteration — every run should be reported as skipped_budget.
+      const result = await manager.pumpInProgressRuns({ budgetMs: 0 });
+      expect(result.attempted).toBe(2);
+      expect(
+        result.pumped.every((entry) => entry.outcome === "skipped_budget"),
+      ).toBe(true);
+    });
+  });
 });
 
 class TestWorkflowStateStore implements WorkflowStateStore {
