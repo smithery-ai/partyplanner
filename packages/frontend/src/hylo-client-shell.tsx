@@ -452,24 +452,22 @@ function ClientApp({
         runId={routeRunId}
         navigation={navigation}
         sidebarFooter={env.sidebarFooter}
-        headerLeading={
-          <div className="flex min-w-0 items-center gap-1">
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="outline"
-              title="Back to chats"
-              aria-label="Back to chats"
-              onClick={() => void navigate({ to: "/chat", search })}
-            >
-              <ArrowLeft className="size-3.5" aria-hidden />
-            </Button>
+        sidebarHeader={
+          <div className="flex min-w-0 flex-col gap-0.5">
             <WorkerSwitcher
               selectedWorker={selectedWorker}
               onResetDatabase={onResetDatabase}
               onWorkerChange={onWorkerChange}
               workflows={workflows}
             />
+            <button
+              type="button"
+              onClick={() => void navigate({ to: "/chat", search })}
+              className="inline-flex items-center gap-1 self-start rounded-sm px-2 text-[11px] text-off-white/60 outline-none hover:text-off-white focus-visible:text-off-white focus-visible:ring-3 focus-visible:ring-off-white/30"
+            >
+              <ArrowLeft className="size-3" aria-hidden />
+              Back to Chats
+            </button>
           </div>
         }
       />
@@ -527,7 +525,7 @@ function WorkerSwitcher({
       }}
     >
       <ComboboxTrigger
-        className="inline-flex h-8 min-w-0 max-w-[260px] items-center gap-1.5 rounded-md px-2 text-sm font-semibold tracking-tight outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-base"
+        className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-sm font-semibold tracking-tight outline-none hover:bg-off-white/10 focus-visible:ring-3 focus-visible:ring-off-white/30 md:text-base"
         aria-label="Select worker"
       >
         <span className="truncate">

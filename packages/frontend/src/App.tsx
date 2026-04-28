@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Check,
   Clock3,
-  History,
   KeyRound,
   Loader2,
   Plus,
@@ -465,13 +464,13 @@ export function WorkflowRunnerApp({
   runId,
   navigation = noopNavigation,
   sidebarFooter,
-  headerLeading,
+  sidebarHeader,
 }: {
   workflowId: string;
   runId?: string;
   navigation?: WorkflowNavigation;
   sidebarFooter?: ReactNode;
-  headerLeading?: ReactNode;
+  sidebarHeader?: ReactNode;
 }) {
   return (
     <WorkflowRunProvider runId={runId}>
@@ -480,7 +479,7 @@ export function WorkflowRunnerApp({
         runId={runId}
         navigation={navigation}
         sidebarFooter={sidebarFooter}
-        headerLeading={headerLeading}
+        sidebarHeader={sidebarHeader}
       />
     </WorkflowRunProvider>
   );
@@ -491,13 +490,13 @@ function WorkflowRunnerBody({
   runId,
   navigation,
   sidebarFooter,
-  headerLeading,
+  sidebarHeader,
 }: {
   workflowId: string;
   runId?: string;
   navigation: WorkflowNavigation;
   sidebarFooter?: ReactNode;
-  headerLeading?: ReactNode;
+  sidebarHeader?: ReactNode;
 }) {
   const workflow = useWorkflow(workflowId);
   const workflowRun = useWorkflowRun();
@@ -888,10 +887,6 @@ function WorkflowRunnerBody({
     setRunning(!isRunning);
   }
 
-  async function refreshWorkflowView() {
-    await Promise.all([workflow.refreshRuns(), workflowRun.refresh()]);
-  }
-
   const selectedRecord = displayNodeRecord(
     globalRegistry,
     selectedNodeId,
@@ -952,175 +947,163 @@ function WorkflowRunnerBody({
   }
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-background">
-      <header className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
-        {headerLeading ?? (
-          <h1 className="min-w-0">
+    <div className="flex h-screen min-h-0 bg-background">
+      <aside className="flex w-48 shrink-0 flex-col bg-off-black text-off-white sm:w-64 lg:w-72">
+        <div className="flex shrink-0 flex-col gap-1 px-2.5 pt-2.5 pb-2">
+          {sidebarHeader ?? (
             <button
               type="button"
               onClick={() => navigation.home()}
-              className="rounded-sm text-sm font-semibold tracking-tight outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/50 md:text-base"
+              className="truncate rounded-sm text-left text-sm font-semibold tracking-tight outline-none hover:text-off-white/80 focus-visible:ring-3 focus-visible:ring-off-white/30 md:text-base"
             >
               {workflow.manifest?.name ?? "Workflow"}
             </button>
-          </h1>
-        )}
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
-          {runId && (
-            <Button size="sm" variant="outline" onClick={clearRun}>
-              Clear
-            </Button>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setPane("state")}
-            aria-expanded={pane === "state"}
-            title="Full run state including every node record"
-          >
-            Run state
-          </Button>
-          {navigation.vault ? (
-            <Button
-              size="icon-sm"
-              variant="outline"
-              onClick={() => navigation.vault?.()}
-              aria-label="Open secret vault"
-              title="Open secret vault"
-            >
-              <KeyRound className="size-3.5" aria-hidden />
-            </Button>
-          ) : null}
-          {runComplete ? (
-            <div
-              role="status"
-              aria-label="Run complete"
-              className="inline-flex h-7 cursor-default items-center gap-1.5 rounded-lg border border-emerald-600/45 bg-emerald-600/12 px-2.5 text-[0.8rem] font-medium text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/14 dark:text-emerald-50"
-            >
-              <Check className="size-3.5 shrink-0 stroke-[2.5]" aria-hidden />
-              Run complete
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          {workflow.isLoadingRuns ? (
+            <div className="px-2 py-3 text-xs text-muted-foreground">
+              Loading…
             </div>
-          ) : runState ? (
+          ) : workflow.runs.length === 0 ? (
+            <div className="px-2 py-3 text-xs text-muted-foreground">
+              No runs
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {workflow.runs.map((run) => {
+                const active = run.runId === runId;
+                const runTitle = workflowInputLabel(
+                  findManifestInput(workflow.manifest, run.triggerInputId),
+                  run.triggerInputId,
+                );
+                return (
+                  <button
+                    key={run.runId}
+                    type="button"
+                    onClick={() => navigation.run(workflowId, run.runId)}
+                    disabled={isPending}
+                    aria-current={active ? "true" : undefined}
+                    aria-label={`${runTitle}, ${runStatusLabel(run.status)}, ${formatRunTime(run.startedAt)}`}
+                    className={cn(
+                      "grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50 disabled:pointer-events-none disabled:opacity-60",
+                      active &&
+                        "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "mt-1 size-2 rounded-full",
+                        runStatusClass(run.status),
+                      )}
+                      title={runStatusLabel(run.status)}
+                      aria-hidden
+                    />
+                    <span className="min-w-0">
+                      <span className="block min-w-0 truncate font-medium">
+                        {runTitle}
+                      </span>
+                      <span className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                        <Clock3 className="size-3 shrink-0" aria-hidden />
+                        <span className="min-w-0 truncate">
+                          {formatRunTime(run.startedAt)}
+                        </span>
+                        <span aria-hidden>·</span>
+                        <span className="shrink-0">
+                          {runStatusLabel(run.status)}
+                        </span>
+                      </span>
+                      {run.waitingOn.length > 0 && (
+                        <span className="mt-1 block truncate text-xs text-muted-foreground">
+                          Waiting on{" "}
+                          {run.waitingOn
+                            .map((inputId) =>
+                              workflowInputLabel(
+                                findManifestInput(workflow.manifest, inputId),
+                                inputId,
+                              ),
+                            )
+                            .join(", ")}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {sidebarFooter ? (
+          <div className="shrink-0 p-2">{sidebarFooter}</div>
+        ) : null}
+      </aside>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex min-h-10 flex-wrap items-center justify-end gap-2 border-b border-border px-3 py-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+            {runId && (
+              <Button size="sm" variant="outline" onClick={clearRun}>
+                Clear
+              </Button>
+            )}
             <Button
               size="sm"
-              variant={isRunning ? "default" : "outline"}
-              aria-pressed={isRunning}
-              onClick={toggleRunning}
-              disabled={isRunning}
-              title={
-                isRunning
-                  ? "Advancing the workflow"
-                  : "Advance the workflow until it completes or needs input"
-              }
+              variant="outline"
+              onClick={() => setPane("state")}
+              aria-expanded={pane === "state"}
+              title="Full run state including every node record"
             >
-              {isRunning ? (
-                <>
-                  <Loader2
-                    className="size-3.5 shrink-0 animate-spin"
-                    aria-hidden
-                  />
-                  Running
-                </>
-              ) : (
-                "Next"
-              )}
+              Run state
             </Button>
-          ) : null}
-        </div>
-      </header>
+            {navigation.vault ? (
+              <Button
+                size="icon-sm"
+                variant="outline"
+                onClick={() => navigation.vault?.()}
+                aria-label="Open secret vault"
+                title="Open secret vault"
+              >
+                <KeyRound className="size-3.5" aria-hidden />
+              </Button>
+            ) : null}
+            {runComplete ? (
+              <div
+                role="status"
+                aria-label="Run complete"
+                className="inline-flex h-7 cursor-default items-center gap-1.5 rounded-lg border border-emerald-600/45 bg-emerald-600/12 px-2.5 text-[0.8rem] font-medium text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-500/14 dark:text-emerald-50"
+              >
+                <Check className="size-3.5 shrink-0 stroke-[2.5]" aria-hidden />
+                Run complete
+              </div>
+            ) : runState ? (
+              <Button
+                size="sm"
+                variant={isRunning ? "default" : "outline"}
+                aria-pressed={isRunning}
+                onClick={toggleRunning}
+                disabled={isRunning}
+                title={
+                  isRunning
+                    ? "Advancing the workflow"
+                    : "Advance the workflow until it completes or needs input"
+                }
+              >
+                {isRunning ? (
+                  <>
+                    <Loader2
+                      className="size-3.5 shrink-0 animate-spin"
+                      aria-hidden
+                    />
+                    Running
+                  </>
+                ) : (
+                  "Next"
+                )}
+              </Button>
+            ) : null}
+          </div>
+        </header>
 
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-48 shrink-0 flex-col bg-off-black text-off-white sm:w-64 lg:w-72">
-          <div className="flex h-11 shrink-0 items-center justify-between gap-2 px-2.5">
-            <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
-              <History className="size-4 shrink-0" aria-hidden />
-              <span className="truncate">Runs</span>
-            </div>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              title="Refresh runs"
-              aria-label="Refresh runs"
-              onClick={() => void refreshWorkflowView()}
-            >
-              <RefreshCw className="size-3.5" aria-hidden />
-            </Button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {workflow.runs.length === 0 ? (
-              <div className="px-2 py-3 text-xs text-muted-foreground">
-                No runs
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {workflow.runs.map((run) => {
-                  const active = run.runId === runId;
-                  const runTitle = workflowInputLabel(
-                    findManifestInput(workflow.manifest, run.triggerInputId),
-                    run.triggerInputId,
-                  );
-                  return (
-                    <button
-                      key={run.runId}
-                      type="button"
-                      onClick={() => navigation.run(workflowId, run.runId)}
-                      disabled={isPending}
-                      aria-current={active ? "true" : undefined}
-                      aria-label={`${runTitle}, ${runStatusLabel(run.status)}, ${formatRunTime(run.startedAt)}`}
-                      className={cn(
-                        "grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50 disabled:pointer-events-none disabled:opacity-60",
-                        active &&
-                          "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "mt-1 size-2 rounded-full",
-                          runStatusClass(run.status),
-                        )}
-                        title={runStatusLabel(run.status)}
-                        aria-hidden
-                      />
-                      <span className="min-w-0">
-                        <span className="block min-w-0 truncate font-medium">
-                          {runTitle}
-                        </span>
-                        <span className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                          <Clock3 className="size-3 shrink-0" aria-hidden />
-                          <span className="min-w-0 truncate">
-                            {formatRunTime(run.startedAt)}
-                          </span>
-                          <span aria-hidden>·</span>
-                          <span className="shrink-0">
-                            {runStatusLabel(run.status)}
-                          </span>
-                        </span>
-                        {run.waitingOn.length > 0 && (
-                          <span className="mt-1 block truncate text-xs text-muted-foreground">
-                            Waiting on{" "}
-                            {run.waitingOn
-                              .map((inputId) =>
-                                workflowInputLabel(
-                                  findManifestInput(workflow.manifest, inputId),
-                                  inputId,
-                                ),
-                              )
-                              .join(", ")}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          {sidebarFooter ? (
-            <div className="shrink-0 p-2">{sidebarFooter}</div>
-          ) : null}
-        </aside>
-        <div className="relative min-w-0 flex-1">
+        <div className="relative flex min-h-0 flex-1">
           <QueueVisualizer
             runState={runState}
             queue={workflowRun.queue}
@@ -1176,7 +1159,7 @@ function WorkflowRunnerBody({
                   connectingManagedConnectionId={connectingManagedConnectionId}
                   clearingManagedConnectionId={clearingManagedConnectionId}
                   error={payloadError || undefined}
-                  starting={workflow.isPending}
+                  starting={workflowRun.isSubmittingPendingInput}
                 />
                 <SchedulesPanel
                   schedules={workflow.manifest?.schedules ?? []}
@@ -1252,12 +1235,12 @@ export function WorkflowSingleApp({
   sidebarFooter,
   runId: controlledRunId,
   navigation,
-  headerLeading,
+  sidebarHeader,
 }: {
   sidebarFooter?: ReactNode;
   runId?: string;
   navigation?: WorkflowNavigation;
-  headerLeading?: ReactNode;
+  sidebarHeader?: ReactNode;
 } = {}) {
   const workflow = useWorkflow(undefined);
   const [internalRunId, setRunId] = useState<string | undefined>();
@@ -1299,7 +1282,7 @@ export function WorkflowSingleApp({
       runId={runId}
       navigation={resolvedNavigation}
       sidebarFooter={sidebarFooter}
-      headerLeading={headerLeading}
+      sidebarHeader={sidebarHeader}
     />
   );
 }
@@ -1310,14 +1293,14 @@ export function WorkflowSinglePage({
   sidebarFooter,
   runId,
   navigation,
-  headerLeading,
+  sidebarHeader,
 }: {
   apiBaseUrl?: string;
   managedConnectionInitializingUrl?: string;
   sidebarFooter?: ReactNode;
   runId?: string;
   navigation?: WorkflowNavigation;
-  headerLeading?: ReactNode;
+  sidebarHeader?: ReactNode;
 }) {
   return (
     <WorkflowFrontendRoot
@@ -1327,7 +1310,7 @@ export function WorkflowSinglePage({
         sidebarFooter={sidebarFooter}
         runId={runId}
         navigation={navigation}
-        headerLeading={headerLeading}
+        sidebarHeader={sidebarHeader}
       />
     </WorkflowFrontendRoot>
   );

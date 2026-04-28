@@ -607,14 +607,15 @@ function InputOption({
     <div
       className={cn(
         "overflow-hidden rounded-lg border border-border bg-card transition-colors",
-        expanded && "border-primary/40 shadow-sm",
+        expanded && "border-primary/40 bg-white shadow-sm",
       )}
     >
       <button
         type="button"
         onClick={onSelect}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-3 px-3 py-2.5 text-left outline-none hover:bg-muted/50 focus-visible:bg-muted/50"
+        disabled={starting}
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left outline-none hover:bg-muted/50 focus-visible:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <Play
           className={cn(
@@ -648,6 +649,7 @@ function InputOption({
             value={value}
             onChange={onChange}
             idPrefix={input.id}
+            disabled={starting}
           />
           <div className="flex justify-end">
             <Button
