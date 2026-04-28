@@ -574,6 +574,98 @@ describe("WorkflowManager", () => {
       );
     });
   });
+
+  describe("advanceUntilSettled", () => {
+    it("drives a run from running to its natural park point at waiting", async () => {
+      const trigger = input("trig", z.object({ ok: z.boolean() }));
+      const deferred = input.deferred(
+        "investigation",
+        z.object({ ok: z.boolean() }),
+      );
+      atom(
+        (get) => {
+          get(trigger);
+          return get(deferred);
+        },
+        { name: "report" },
+      );
+
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+
+      const started = await manager.startRun({
+        inputId: "trig",
+        payload: { ok: true },
+      });
+      expect(started.status).toBe("running");
+
+      const settled = await manager.advanceUntilSettled(started.runId);
+      expect(settled.status).toBe("waiting");
+      expect(settled.nodes.find((n) => n.id === "report")?.status).toBe(
+        "waiting",
+      );
+    });
+
+    it("drains a webhook-resumed run through to completion", async () => {
+      const trigger2 = input("trig2", z.object({ ok: z.boolean() }));
+      const deferred2 = input.deferred(
+        "investigation2",
+        z.object({ ok: z.boolean() }),
+      );
+      atom(
+        (get) => {
+          const t = get(trigger2);
+          const d = get(deferred2);
+          return { trig: t.ok, def: d.ok };
+        },
+        { name: "report2" },
+      );
+
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+
+      const started = await manager.startRun({
+        inputId: "trig2",
+        payload: { ok: true },
+      });
+      const parked = await manager.advanceUntilSettled(started.runId);
+      expect(parked.status).toBe("waiting");
+
+      await manager.submitWebhook({
+        runId: started.runId,
+        payload: { ok: true },
+      });
+      const completed = await manager.advanceUntilSettled(started.runId);
+
+      expect(completed.status).toBe("completed");
+      expect(completed.nodes.find((n) => n.id === "report2")?.status).toBe(
+        "resolved",
+      );
+    });
+
+    it("returns immediately when the run is already settled", async () => {
+      input("once", z.object({}));
+
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue: new TestWorkflowQueue(),
+      });
+
+      const started = await manager.startRun({
+        inputId: "once",
+        payload: {},
+      });
+      const settled = await manager.advanceUntilSettled(started.runId);
+      // Then call it again — should be a no-op.
+      const again = await manager.advanceUntilSettled(started.runId);
+      expect(settled.status).toBe(again.status);
+      expect(again.status).toBe("completed");
+    });
+  });
 });
 
 class TestWorkflowStateStore implements WorkflowStateStore {
