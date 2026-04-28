@@ -1,5 +1,6 @@
 import {
   type DeploymentSource,
+  type DispatchFetch,
   type DispatchTickResult,
   dispatchTickToDeployments,
 } from "./dispatcher";
@@ -9,7 +10,7 @@ export type NodeSchedulerOptions = {
   // Tick interval in ms. Defaults to 60_000 to match Cloudflare's
   // minute-granularity cron triggers.
   intervalMs?: number;
-  fetch?: typeof fetch;
+  fetch?: DispatchFetch;
   onTick?: (result: DispatchTickResult) => void;
   onError?: (error: unknown) => void;
 };
