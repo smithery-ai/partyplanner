@@ -41,7 +41,8 @@
     "NEXT_PUBLIC_APP_URL",
     "NODE_EXTRA_CA_CERTS",
     "NODE_TLS_REJECT_UNAUTHORIZED",
-    "PORTLESS_HTTPS"
+    "PORTLESS_HTTPS",
+    "PORTLESS_PORT"
   ],
   "tasks": {
     "build": {
