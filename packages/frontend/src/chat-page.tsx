@@ -20,6 +20,7 @@ import {
   SendHorizontal,
   User,
   Wrench,
+  X,
 } from "lucide-react";
 import {
   createContext,
@@ -370,11 +371,31 @@ function RenameInput({
   );
 }
 
-function FilesPanel({ localApiBase }: { localApiBase: string }) {
+function FilesPanel({
+  localApiBase,
+  selectedPath,
+  onSelectFile,
+}: {
+  localApiBase: string;
+  selectedPath: string | null;
+  onSelectFile: (path: string) => void;
+}) {
   const [paths, setPaths] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [root, setRoot] = useState<string | null>(null);
-  const { model } = useFileTree({ paths: [], initialExpansion: "open" });
+  const pathsRef = useRef<Set<string>>(new Set());
+  const onSelectFileRef = useRef(onSelectFile);
+  useEffect(() => {
+    onSelectFileRef.current = onSelectFile;
+  }, [onSelectFile]);
+  const { model } = useFileTree({
+    paths: [],
+    initialExpansion: "open",
+    onSelectionChange: (selected) => {
+      const next = selected.find((p) => pathsRef.current.has(p));
+      if (next) onSelectFileRef.current(next);
+    },
+  });
   const lastPathsKeyRef = useRef<string>("");
 
   const refresh = useCallback(async () => {
@@ -387,6 +408,7 @@ function FilesPanel({ localApiBase }: { localApiBase: string }) {
       const key = body.paths.join("\n");
       if (key !== lastPathsKeyRef.current) {
         lastPathsKeyRef.current = key;
+        pathsRef.current = new Set(body.paths);
         setPaths(body.paths);
       }
     } catch (err) {
@@ -403,6 +425,18 @@ function FilesPanel({ localApiBase }: { localApiBase: string }) {
   useEffect(() => {
     model.resetPaths(paths);
   }, [model, paths]);
+
+  useEffect(() => {
+    if (selectedPath) {
+      const item = model.getItem(selectedPath);
+      if (item && !item.isSelected()) item.select();
+    } else {
+      for (const p of model.getSelectedPaths()) {
+        const item = model.getItem(p);
+        if (item) item.deselect();
+      }
+    }
+  }, [model, selectedPath]);
 
   return (
     <aside className="flex w-56 shrink-0 flex-col bg-off-black text-off-white sm:w-64 lg:w-72">
@@ -462,6 +496,7 @@ function ChatShell({
   );
   const [listError, setListError] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
+  const [viewedFilePath, setViewedFilePath] = useState<string | null>(null);
   const [panelStates, setPanelStates] = useState<Map<string, PanelState>>(
     () => new Map(),
   );
@@ -1152,7 +1187,14 @@ function ChatShell({
             )}
           </aside>
           <div className="relative min-w-0 flex-1">
-            {selectedId ? (
+            {viewedFilePath ? (
+              <FileViewer
+                key={viewedFilePath}
+                localApiBase={localApiBase}
+                path={viewedFilePath}
+                onClose={() => setViewedFilePath(null)}
+              />
+            ) : selectedId ? (
               <ChatPanel
                 sessionId={selectedId}
                 title={selectedChatTitle}
@@ -1165,7 +1207,11 @@ function ChatShell({
               <EmptyState onNew={() => void newChat()} />
             )}
           </div>
-          <FilesPanel localApiBase={localApiBase} />
+          <FilesPanel
+            localApiBase={localApiBase}
+            selectedPath={viewedFilePath}
+            onSelectFile={setViewedFilePath}
+          />
         </div>
       </div>
     </DebugContext.Provider>
@@ -1185,6 +1231,130 @@ function EmptyState({ onNew }: { onNew: () => void }) {
         </Button>
       </div>
     </div>
+  );
+}
+
+interface FileContentBody {
+  path: string;
+  size: number;
+  truncated: boolean;
+  binary: boolean;
+  content: string;
+}
+
+function isMarkdownPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith(".md") || lower.endsWith(".markdown");
+}
+
+function fileBasename(path: string): string {
+  const idx = path.lastIndexOf("/");
+  return idx >= 0 ? path.slice(idx + 1) : path;
+}
+
+function FileViewer({
+  localApiBase,
+  path,
+  onClose,
+}: {
+  localApiBase: string;
+  path: string;
+  onClose: () => void;
+}) {
+  const [body, setBody] = useState<FileContentBody | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setBody(null);
+    (async () => {
+      try {
+        const res = await fetch(
+          `${localApiBase}/api/files/content?path=${encodeURIComponent(path)}`,
+        );
+        if (!res.ok) {
+          const errBody = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
+          throw new Error(errBody?.error ?? `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as FileContentBody;
+        if (!cancelled) setBody(data);
+      } catch (err) {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [localApiBase, path]);
+
+  return (
+    <section className="flex h-full min-h-0 flex-col bg-off-white text-off-black">
+      <header className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium" title={path}>
+            {fileBasename(path)}
+          </span>
+          {path.includes("/") ? (
+            <span
+              className="truncate font-mono text-[11px] text-muted-foreground"
+              title={path}
+            >
+              {path}
+            </span>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          title="Close file"
+          aria-label="Close file"
+          onClick={onClose}
+        >
+          <X className="size-3.5" aria-hidden />
+        </Button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+        {loading ? (
+          <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : error ? (
+          <div className="text-sm text-destructive">{error}</div>
+        ) : body ? (
+          body.binary ? (
+            <div className="text-sm text-muted-foreground">
+              Binary file ({body.size.toLocaleString()} bytes) — preview not
+              available.
+            </div>
+          ) : (
+            <>
+              {body.truncated ? (
+                <div className="mb-2 text-xs text-muted-foreground">
+                  Showing first {body.content.length.toLocaleString()} bytes of{" "}
+                  {body.size.toLocaleString()} (truncated).
+                </div>
+              ) : null}
+              {isMarkdownPath(path) ? (
+                <div className="text-sm">
+                  <AssistantMarkdown text={body.content} />
+                </div>
+              ) : (
+                <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                  {body.content}
+                </pre>
+              )}
+            </>
+          )
+        ) : null}
+      </div>
+    </section>
   );
 }
 
