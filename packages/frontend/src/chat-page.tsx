@@ -325,6 +325,47 @@ const INITIAL_PANEL_STATE: PanelState = {
   error: null,
 };
 
+function RenameInput({
+  value,
+  onChange,
+  onCommit,
+  onCancel,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+  placeholder: string;
+}) {
+  const ref = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      el.select();
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, []);
+  return (
+    <Input
+      ref={ref}
+      value={value}
+      onBlur={onCommit}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+      placeholder={placeholder}
+      className="h-7 border-0 bg-sidebar focus-visible:border-transparent"
+    />
+  );
+}
+
 function FilesPanel({ localApiBase }: { localApiBase: string }) {
   const [paths, setPaths] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -971,22 +1012,14 @@ function ChatShell({
                                         />
                                       ) : null}
                                     </span>
-                                    <Input
-                                      autoFocus
-                                      onFocus={(e) => e.currentTarget.select()}
+                                    <RenameInput
                                       value={renameDraft}
-                                      onBlur={() => void commitRename(s.chatId)}
-                                      onChange={(e) =>
-                                        setRenameDraft(e.target.value)
+                                      onChange={setRenameDraft}
+                                      onCommit={() =>
+                                        void commitRename(s.chatId)
                                       }
-                                      onKeyDown={(e) => {
-                                        if (e.key === "Escape") {
-                                          e.preventDefault();
-                                          cancelRename();
-                                        }
-                                      }}
+                                      onCancel={cancelRename}
                                       placeholder={formatChatTitle(s.created)}
-                                      className="h-7 border-0 bg-sidebar focus-visible:border-transparent"
                                     />
                                   </form>
                                 ) : (
