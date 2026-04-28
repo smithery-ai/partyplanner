@@ -17,14 +17,27 @@ import {
   type BeautifulMentionsMenuItemProps,
   type BeautifulMentionsMenuProps,
   BeautifulMentionsPlugin,
+  PlaceholderNode,
+  PlaceholderPlugin,
 } from "lexical-beautiful-mentions";
 import {
+  createContext,
   forwardRef,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useRef,
+  useState,
 } from "react";
+
+interface MenuPosition {
+  left: number;
+  top: number;
+  width: number;
+}
+
+const MenuPositionContext = createContext<MenuPosition | null>(null);
 
 const MENTION_THEME = {
   "@": "px-1 py-0.5 rounded bg-orange/15 text-maroon font-medium",
@@ -42,10 +55,20 @@ const SLASH_COMMANDS: BeautifulMentionsItem[] = [
 
 const MentionsMenu = forwardRef<HTMLUListElement, BeautifulMentionsMenuProps>(
   function MentionsMenu({ loading: _loading, ...props }, ref) {
+    const pos = useContext(MenuPositionContext);
+    const style: React.CSSProperties = pos
+      ? {
+          position: "fixed",
+          left: pos.left,
+          bottom: window.innerHeight - pos.top + 8,
+          width: pos.width,
+        }
+      : {};
     return (
       <ul
         ref={ref}
-        className="absolute bottom-full left-0 z-50 mb-1 max-h-56 w-72 overflow-auto rounded-md border border-border bg-popover p-1 shadow-lg"
+        style={style}
+        className="z-50 max-h-56 overflow-auto rounded-md border border-border bg-popover p-1 shadow-lg"
         {...props}
       />
     );
@@ -56,13 +79,30 @@ const MentionsMenuItem = forwardRef<
   HTMLLIElement,
   BeautifulMentionsMenuItemProps
 >(function MentionsMenuItem({ selected, item, ...props }, ref) {
+  const localRef = useRef<HTMLLIElement | null>(null);
+  const setRef = useCallback(
+    (node: HTMLLIElement | null) => {
+      localRef.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref],
+  );
+  useEffect(() => {
+    if (selected && localRef.current) {
+      localRef.current.scrollIntoView({ block: "nearest" });
+    }
+  }, [selected]);
   const label =
     typeof item.data?.label === "string" ? item.data.label : item.value;
   return (
     <li
-      ref={ref}
+      ref={setRef}
+      data-selected={selected ? "true" : undefined}
       className={`flex cursor-pointer flex-col gap-0.5 rounded px-2 py-1.5 text-sm ${
-        selected ? "bg-accent text-accent-foreground" : ""
+        selected
+          ? "bg-off-black text-off-white"
+          : "text-off-black hover:bg-off-black/10"
       }`}
       {...props}
     >
@@ -71,7 +111,11 @@ const MentionsMenuItem = forwardRef<
         {item.value}
       </span>
       {label !== item.value ? (
-        <span className="text-muted-foreground text-xs">{label}</span>
+        <span
+          className={`text-xs ${selected ? "text-off-white" : "text-muted-foreground"}`}
+        >
+          {label}
+        </span>
       ) : null}
     </li>
   );
@@ -169,68 +213,96 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     ref,
   ) {
     const handleRef = useRef<ChatInputHandle | null>(null);
+    const wrapperRef = useRef<HTMLDivElement | null>(null);
+    const [menuPosition, setMenuPosition] = useState<MenuPosition | null>(null);
     useImperativeHandle(ref, () => ({
       submit: () => handleRef.current?.submit(),
     }));
+    useEffect(() => {
+      const el = wrapperRef.current;
+      if (!el) return;
+      const apply = () => {
+        const rect = el.getBoundingClientRect();
+        setMenuPosition({
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+        });
+      };
+      apply();
+      const obs = new ResizeObserver(apply);
+      obs.observe(el);
+      window.addEventListener("scroll", apply, true);
+      window.addEventListener("resize", apply);
+      return () => {
+        obs.disconnect();
+        window.removeEventListener("scroll", apply, true);
+        window.removeEventListener("resize", apply);
+      };
+    }, []);
     return (
-      <LexicalComposer
-        initialConfig={{
-          namespace: "chat-input",
-          editable: !disabled,
-          nodes: [BeautifulMentionNode],
-          theme: { beautifulMentions: MENTION_THEME },
-          onError: (err) => {
-            console.error(err);
-          },
-        }}
-      >
-        <div className={`relative ${className ?? ""}`}>
-          <PlainTextPlugin
-            contentEditable={
-              <ContentEditable
-                aria-placeholder={placeholder}
-                placeholder={
-                  <div className="pointer-events-none absolute top-3 left-3 text-muted-foreground text-sm">
-                    {placeholder}
-                  </div>
+      <MenuPositionContext.Provider value={menuPosition}>
+        <LexicalComposer
+          initialConfig={{
+            namespace: "chat-input",
+            editable: !disabled,
+            nodes: [BeautifulMentionNode, PlaceholderNode],
+            theme: { beautifulMentions: MENTION_THEME },
+            onError: (err) => {
+              console.error(err);
+            },
+          }}
+        >
+          <div ref={wrapperRef} className={`relative ${className ?? ""}`}>
+            <PlainTextPlugin
+              contentEditable={
+                <ContentEditable
+                  aria-placeholder={placeholder}
+                  placeholder={
+                    <div className="pointer-events-none absolute top-3 left-3 text-muted-foreground text-sm">
+                      {placeholder}
+                    </div>
+                  }
+                  className="block max-h-48 min-h-12 overflow-y-auto px-3 py-3 text-sm outline-none"
+                />
+              }
+              ErrorBoundary={LexicalErrorBoundary}
+            />
+            <HistoryPlugin />
+            <PlaceholderPlugin />
+            <InitialValuePlugin value={initialValue} />
+            <DisabledPlugin disabled={disabled} />
+            <BeautifulMentionsPlugin
+              autoSpace={false}
+              triggers={["@", "/"]}
+              onSearch={async (trigger, query) => {
+                const q = (query ?? "").toLowerCase();
+                if (trigger === "@") {
+                  const paths = await onSearchFiles(q);
+                  return paths.map((p) => ({ value: p }));
                 }
-                className="block max-h-48 min-h-12 overflow-y-auto px-3 py-3 text-sm outline-none"
-              />
-            }
-            ErrorBoundary={LexicalErrorBoundary}
-          />
-          <HistoryPlugin />
-          <InitialValuePlugin value={initialValue} />
-          <DisabledPlugin disabled={disabled} />
-          <BeautifulMentionsPlugin
-            triggers={["@", "/"]}
-            onSearch={async (trigger, query) => {
-              const q = (query ?? "").toLowerCase();
-              if (trigger === "@") {
-                const paths = await onSearchFiles(q);
-                return paths.map((p) => ({ value: p }));
-              }
-              if (trigger === "/") {
-                if (!q) return SLASH_COMMANDS;
-                return SLASH_COMMANDS.filter((cmd) =>
-                  typeof cmd === "string"
-                    ? cmd.toLowerCase().includes(q)
-                    : cmd.value.toLowerCase().includes(q),
-                );
-              }
-              return [];
-            }}
-            searchDelay={120}
-            menuComponent={MentionsMenu}
-            menuItemComponent={MentionsMenuItem}
-            menuItemLimit={8}
-          />
-          <SubmitPlugin onSubmit={onSubmit} handleRef={handleRef} />
-          {onValueChange ? (
-            <ValueChangePlugin onChange={onValueChange} />
-          ) : null}
-        </div>
-      </LexicalComposer>
+                if (trigger === "/") {
+                  if (!q) return SLASH_COMMANDS;
+                  return SLASH_COMMANDS.filter((cmd) =>
+                    typeof cmd === "string"
+                      ? cmd.toLowerCase().includes(q)
+                      : cmd.value.toLowerCase().includes(q),
+                  );
+                }
+                return [];
+              }}
+              searchDelay={120}
+              menuComponent={MentionsMenu}
+              menuItemComponent={MentionsMenuItem}
+              menuItemLimit={8}
+            />
+            <SubmitPlugin onSubmit={onSubmit} handleRef={handleRef} />
+            {onValueChange ? (
+              <ValueChangePlugin onChange={onValueChange} />
+            ) : null}
+          </div>
+        </LexicalComposer>
+      </MenuPositionContext.Provider>
     );
   },
 );
