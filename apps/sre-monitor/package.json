@@ -1,0 +1,25 @@
+{
+  "name": "sre-monitor",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "deploy": "hylo deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@workflow/core": "workspace:*",
+    "@workflow/integrations-oauth": "workspace:*",
+    "@workflow/integrations-slack": "workspace:*",
+    "@workflow/runtime": "workspace:*",
+    "@workflow/server": "workspace:*",
+    "hono": "^4.12.14",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "@hylo/cli": "workspace:*",
+    "typescript": "~6.0.2"
+  }
+}

@@ -241,6 +241,40 @@ importers:
         specifier: ^7.3.2
         version: 7.3.2(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.3)
 
+  apps/sre-monitor:
+    dependencies:
+      '@workflow/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@workflow/integrations-oauth':
+        specifier: workspace:*
+        version: link:../../packages/integrations/_oauth
+      '@workflow/integrations-slack':
+        specifier: workspace:*
+        version: link:../../packages/integrations/slack
+      '@workflow/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
+      '@workflow/server':
+        specifier: workspace:*
+        version: link:../../packages/server
+      hono:
+        specifier: ^4.12.14
+        version: 4.12.14
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.0.0
+        version: 4.20260418.1
+      '@hylo/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
+
   examples/cloudflare-worker:
     dependencies:
       '@workflow/core':
