@@ -30,12 +30,11 @@ function printBanner() {
     "",
     ...urls.map(([label, url]) => `${label.padEnd(10)} ${url}`),
     "",
-    "Deploy a worker into this local backend:",
-    "pnpm hylo auth login \\",
-    "  --backend-url http://127.0.0.1:8787",
+    "Local worker source:",
+    "~/.flamecast/worker",
     "",
-    "pnpm hylo deploy examples/cloudflare-worker \\",
-    "  --backend-url http://127.0.0.1:8787",
+    "Run just the local worker:",
+    "pnpm hylo dev ~/.flamecast/worker",
   ];
 
   console.log("");

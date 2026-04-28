@@ -124,6 +124,11 @@ const ChatSummary = z.object({
   terminalSessionIds: z.array(z.string()),
   created: z.string(),
   lastActivity: z.string(),
+  title: z.string().nullable(),
+  pinned: z.boolean(),
+  lastEndTurnEventId: z.string().nullable(),
+  acknowledgedEndTurnEventId: z.string().nullable(),
+  hasUnacknowledgedEndTurn: z.boolean(),
 });
 
 const ListChatsResponse = z
@@ -139,6 +144,25 @@ const CreateChatResponse = z
     status: z.literal("running"),
   })
   .openapi("CreateChatResponse");
+
+const UpdateChatBody = z
+  .object({
+    title: z.string().max(120).nullable().optional(),
+    pinned: z.boolean().optional(),
+  })
+  .openapi("UpdateChatBody");
+
+const UpdateChatResponse = z
+  .object({
+    chat: ChatSummary,
+  })
+  .openapi("UpdateChatResponse");
+
+const AckChatResponse = z
+  .object({
+    chat: ChatSummary,
+  })
+  .openapi("AckChatResponse");
 
 const ChatEventsResponse = z
   .object({
@@ -173,6 +197,7 @@ const EventsResponse = z
 const ChatBody = z
   .object({
     message: z.string().min(1).openapi({ example: "hello" }),
+    clientMessageId: z.string().optional(),
   })
   .openapi("ChatBody");
 
@@ -251,6 +276,47 @@ const listChats = createRoute({
     200: {
       content: { "application/json": { schema: ListChatsResponse } },
       description: "Chat list",
+    },
+  },
+});
+
+const updateChat = createRoute({
+  method: "patch",
+  path: "/chats/{id}",
+  tags: ["Chats"],
+  summary: "Update persisted chat metadata",
+  request: {
+    params: SessionIdParam,
+    body: { content: { "application/json": { schema: UpdateChatBody } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: UpdateChatResponse } },
+      description: "Chat updated",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Chat not found",
+    },
+  },
+});
+
+const ackChat = createRoute({
+  method: "post",
+  path: "/chats/{id}/ack",
+  tags: ["Chats"],
+  summary: "Acknowledge the latest end_turn event for a chat",
+  request: {
+    params: SessionIdParam,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: AckChatResponse } },
+      description: "Chat acknowledged",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Chat not found",
     },
   },
 });
@@ -597,6 +663,34 @@ export function sessionRoutes(sessions: SessionManager, logger: SessionLogger) {
       const chats = await listChatSummaries(sessions, logger);
       return c.json({ chats }, 200);
     })
+    .openapi(updateChat, async (c) => {
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      const chat = await logger.updateChatMetadata(id, body);
+      if (!chat) return c.json({ error: "Chat not found" }, 404);
+      const [summary] = await listChatSummaries(sessions, logger).then(
+        (chats) => chats.filter((candidate) => candidate.chatId === id),
+      );
+      return c.json(
+        {
+          chat: summary ?? {
+            ...chat,
+            status: "closed" as const,
+            activeTerminalSessionId: null,
+          },
+        },
+        200,
+      );
+    })
+    .openapi(ackChat, async (c) => {
+      const { id } = c.req.valid("param");
+      const chat = await logger.ackChatEndTurn(id);
+      if (!chat) return c.json({ error: "Chat not found" }, 404);
+      const [summary] = await listChatSummaries(sessions, logger).then(
+        (chats) => chats.filter((candidate) => candidate.chatId === id),
+      );
+      return c.json({ chat: summary ?? chat }, 200);
+    })
     .openapi(getChatEvents, async (c) => {
       const { id } = c.req.valid("param");
       const claudeSessionIds = await logger.getClaudeSessionsForChat(id);
@@ -605,7 +699,7 @@ export function sessionRoutes(sessions: SessionManager, logger: SessionLogger) {
     })
     .openapi(chatMessage, async (c) => {
       const { id } = c.req.valid("param");
-      const { message } = c.req.valid("json");
+      const { clientMessageId, message } = c.req.valid("json");
       await logger.ensureChat(id);
 
       const priorClaudeSessions = await logger.getClaudeSessionsForChat(id);
@@ -624,7 +718,11 @@ export function sessionRoutes(sessions: SessionManager, logger: SessionLogger) {
         await logger.start(terminalSessionId, id);
       }
 
-      logger.recordPendingUserMessage(terminalSessionId, message);
+      logger.recordPendingUserMessage(
+        terminalSessionId,
+        message,
+        clientMessageId,
+      );
       const lastClaudeSessionId =
         priorClaudeSessions[priorClaudeSessions.length - 1];
       const resumeFlag = lastClaudeSessionId
@@ -717,8 +815,8 @@ export function sessionRoutes(sessions: SessionManager, logger: SessionLogger) {
     })
     .openapi(chat, async (c) => {
       const { id } = c.req.valid("param");
-      const { message } = c.req.valid("json");
-      logger.recordPendingUserMessage(id, message);
+      const { clientMessageId, message } = c.req.valid("json");
+      logger.recordPendingUserMessage(id, message, clientMessageId);
       // Resume the most recent claude session in this fc session so follow-up
       // messages continue the same conversation instead of starting fresh.
       const priorClaudeSessions = await logger.getClaudeSessionsForFc(id);

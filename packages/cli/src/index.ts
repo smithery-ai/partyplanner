@@ -3,13 +3,15 @@ import { runAuth } from "./commands/auth.js";
 import { runBuild } from "./commands/build.js";
 import { runDeploy } from "./commands/deploy.js";
 import { runDeployments } from "./commands/deployments.js";
+import { runDev } from "./commands/dev.js";
 import { runInit } from "./commands/init.js";
 
 const HELP = `hylo — workflow CLI
 
 Usage:
   hylo auth <command>                Sign in with WorkOS AuthKit
-  hylo init                          Create ~/.flamecast for local chats
+  hylo init                          Create ./.flamecast example Worker
+  hylo dev [dir] [--backend <url>]   Run a Hylo Worker locally
   hylo build [--backend <url>]       Bundle into a Cloudflare Worker
   hylo deploy [dir] [--backend <url>]
                                       Build and deploy via Hylo API
@@ -33,6 +35,8 @@ async function main(argv: string[]): Promise<number> {
       return runAuth(rest);
     case "init":
       return runInit(rest);
+    case "dev":
+      return runDev(rest);
     case "build":
       return runBuild(rest);
     case "deploy":
