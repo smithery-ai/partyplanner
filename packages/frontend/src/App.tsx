@@ -1030,8 +1030,8 @@ function WorkflowRunnerBody({
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <aside className="flex w-48 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground sm:w-64 lg:w-72">
-          <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border px-2.5">
+        <aside className="flex w-48 shrink-0 flex-col bg-off-black text-off-white sm:w-64 lg:w-72">
+          <div className="flex h-11 shrink-0 items-center justify-between gap-2 px-2.5">
             <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
               <History className="size-4 shrink-0" aria-hidden />
               <span className="truncate">Runs</span>
@@ -1069,9 +1069,9 @@ function WorkflowRunnerBody({
                       aria-current={active ? "true" : undefined}
                       aria-label={`${runTitle}, ${runStatusLabel(run.status)}, ${formatRunTime(run.startedAt)}`}
                       className={cn(
-                        "grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg border border-transparent px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50 disabled:pointer-events-none disabled:opacity-60",
+                        "grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50 disabled:pointer-events-none disabled:opacity-60",
                         active &&
-                          "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
+                          "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
                       )}
                     >
                       <span
@@ -1117,9 +1117,7 @@ function WorkflowRunnerBody({
             )}
           </div>
           {sidebarFooter ? (
-            <div className="shrink-0 border-t border-sidebar-border p-2">
-              {sidebarFooter}
-            </div>
+            <div className="shrink-0 p-2">{sidebarFooter}</div>
           ) : null}
         </aside>
         <div className="relative min-w-0 flex-1">
