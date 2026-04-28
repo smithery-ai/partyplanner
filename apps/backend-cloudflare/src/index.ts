@@ -46,7 +46,7 @@ export default {
     ctx.waitUntil(
       withDb(env, async (_db, deploymentRegistry) => {
         const source = deploymentSourceFromList(
-          () => listAllDeployments(deploymentRegistry),
+          () => deploymentRegistry.listAll(),
           { apiKey: env.HYLO_API_KEY },
         );
         await dispatchTickToDeployments(
@@ -71,18 +71,6 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 export type Env = BackendAppEnv;
-
-// The deployment registry is keyed per-tenant; cron is platform-global, so
-// drain every tenant's deployments. For installations with many tenants this
-// will move behind a tag-scoped index, but that change is local to this file.
-async function listAllDeployments(
-  registry: ReturnType<typeof createWorkflowDeploymentRegistry>,
-) {
-  // Until the registry exposes a global iterator, we list by the well-known
-  // "shared" tenant used for single-tenant installs. Multi-tenant deployments
-  // should override this with a tenant iterator.
-  return registry.list("shared");
-}
 
 function resolvePostgresConnectionString(env: BackendAppEnv): string {
   const connectionString =
