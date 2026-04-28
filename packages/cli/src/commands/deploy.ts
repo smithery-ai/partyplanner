@@ -3,7 +3,7 @@ import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
 import { parseBuildArgs } from "../args.js";
 import { DEFAULT_HYLO_BACKEND_URL, resolveHyloBackendUrl } from "../config.js";
 import { info } from "../log.js";
-import { loadProject } from "../project.js";
+import { defaultProjectRoot, loadProject } from "../project.js";
 import { envSecretBindings } from "../secrets.js";
 import { getHyloAccessToken } from "./auth.js";
 import { buildWorkerBundle } from "./build.js";
@@ -20,7 +20,7 @@ export async function runDeploy(args: string[]): Promise<number> {
 
     const projectRoot = rest[0]
       ? resolve(process.cwd(), rest[0])
-      : process.cwd();
+      : await defaultProjectRoot(process.cwd());
     const project = await loadProject(projectRoot);
     const backendUrl = resolveHyloBackendUrl(options.backendUrl);
     const accessToken = await getHyloAccessToken({ backendUrl });

@@ -3,7 +3,11 @@ import { resolve } from "node:path";
 import { type BuildOptions, parseBuildArgs } from "../args.js";
 import { info } from "../log.js";
 import { workerShimPath } from "../paths.js";
-import { loadProject, type ProjectInfo } from "../project.js";
+import {
+  defaultProjectRoot,
+  loadProject,
+  type ProjectInfo,
+} from "../project.js";
 import { runWrangler } from "../wrangler.js";
 
 const COMPATIBILITY_DATE = "2026-04-19";
@@ -13,7 +17,9 @@ export async function runBuild(args: string[]): Promise<number> {
   if (rest.length > 1) {
     throw new Error(`Unexpected argument for build: ${rest[1]}`);
   }
-  const projectRoot = rest[0] ? resolve(process.cwd(), rest[0]) : process.cwd();
+  const projectRoot = rest[0]
+    ? resolve(process.cwd(), rest[0])
+    : await defaultProjectRoot(process.cwd());
   const project = await loadProject(projectRoot);
   const bundle = await buildWorkerBundle(project, options);
   info(`Built ${project.workerName} → ${bundle.outputDir}`);

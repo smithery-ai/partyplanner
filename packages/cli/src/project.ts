@@ -1,5 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { flamecastWorkerRoot } from "./flamecast-root.js";
 
 export type ProjectInfo = {
   root: string;
@@ -12,6 +13,13 @@ export type ProjectInfo = {
 };
 
 const FORBIDDEN_FILES = [".env", ".dev.vars"];
+
+export async function defaultProjectRoot(cwd: string): Promise<string> {
+  const packageJson = await pathExists(resolve(cwd, "package.json"));
+  const workflowEntry = await pathExists(resolve(cwd, "src", "index.ts"));
+  if (packageJson && workflowEntry) return cwd;
+  return flamecastWorkerRoot();
+}
 
 export async function loadProject(cwd: string): Promise<ProjectInfo> {
   const root = cwd;
@@ -47,6 +55,12 @@ export async function loadProject(cwd: string): Promise<ProjectInfo> {
     workflowVersion: pkg.version || "v1",
     workerName,
   };
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  return access(path)
+    .then(() => true)
+    .catch(() => false);
 }
 
 function forbiddenError(file: string): Error {

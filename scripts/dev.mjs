@@ -1,34 +1,16 @@
 #!/usr/bin/env node
 import { execSync, spawn } from "node:child_process";
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync } from "node:fs";
 import net from "node:net";
 import { homedir } from "node:os";
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 
 const host = "127.0.0.1";
 const portlessCaPath = "/tmp/portless/ca.pem";
-const repoRoot = process.cwd();
 const flamecastRoot = process.env.FLAMECAST_LOG_DIR
   ? resolve(process.env.FLAMECAST_LOG_DIR)
   : resolve(homedir(), ".flamecast");
 const localWorkerDir = resolve(flamecastRoot, "worker");
-const exampleWorkerDir = resolve(repoRoot, "examples/cloudflare-worker");
-const workspaceDependencyPaths = {
-  "@hylo/cli": "packages/cli",
-  "@workflow/core": "packages/core",
-  "@workflow/integrations-notion": "packages/integrations/notion",
-  "@workflow/integrations-oauth": "packages/integrations/_oauth",
-  "@workflow/integrations-slack": "packages/integrations/slack",
-  "@workflow/runtime": "packages/runtime",
-  "@workflow/server": "packages/server",
-};
 const portSpecs = [
   ["HYLO_BACKEND_PORT", 8787],
   ["HYLO_BACKEND_INSPECTOR_PORT", 9230],
@@ -157,53 +139,11 @@ function ensureLocalWorker() {
   const packageJsonPath = resolve(localWorkerDir, "package.json");
   if (existsSync(packageJsonPath)) return;
 
-  if (existsSync(localWorkerDir) && readdirSync(localWorkerDir).length > 0) {
-    throw new Error(
-      `${localWorkerDir} exists but is missing package.json. Move it aside or add a valid worker package before running pnpm dev.`,
-    );
-  }
-
-  console.log(
-    `Initializing ${localWorkerDir} from examples/cloudflare-worker...`,
-  );
-  mkdirSync(flamecastRoot, { recursive: true });
-  cpSync(exampleWorkerDir, localWorkerDir, {
-    recursive: true,
-    force: false,
-    filter: shouldCopyExamplePath,
+  console.log(`Initializing ${localWorkerDir} with hylo init...`);
+  execSync("pnpm hylo init", {
+    env,
+    stdio: "inherit",
   });
-  rewriteLocalWorkerPackageJson(packageJsonPath);
-}
-
-function shouldCopyExamplePath(src) {
-  const rel = relative(exampleWorkerDir, src);
-  if (!rel) return true;
-  const parts = rel.split(/[\\/]/);
-  if (parts.includes("node_modules")) return false;
-  if (parts.includes(".hylo")) return false;
-  if (parts.includes(".turbo")) return false;
-  return !rel.endsWith(".tsbuildinfo");
-}
-
-function rewriteLocalWorkerPackageJson(packageJsonPath) {
-  const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8"));
-  pkg.scripts = {
-    ...pkg.scripts,
-    build: "hylo build",
-    dev: "hylo dev .",
-  };
-
-  for (const dependencies of [pkg.dependencies, pkg.devDependencies]) {
-    if (!dependencies) continue;
-    for (const [name, localPath] of Object.entries(workspaceDependencyPaths)) {
-      if (dependencies[name] !== "workspace:*") continue;
-      const absoluteLocalPath = resolve(repoRoot, localPath);
-      dependencies[name] =
-        `link:${relative(localWorkerDir, absoluteLocalPath)}`;
-    }
-  }
-
-  writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
 }
 
 async function resolvePort(name, fallback) {
