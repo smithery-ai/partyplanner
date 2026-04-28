@@ -94,12 +94,14 @@ export function JsonSchemaForm({
   onChange,
   idPrefix,
   secret,
+  disabled,
 }: {
   schema: JsonSchema;
   value: unknown;
   onChange: (value: unknown) => void;
   idPrefix: string;
   secret?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <JsonSchemaField
@@ -108,6 +110,7 @@ export function JsonSchemaForm({
       onChange={onChange}
       path={idPrefix}
       secret={secret}
+      disabledOverride={disabled}
     />
   );
 }
@@ -119,6 +122,7 @@ function JsonSchemaField({
   path,
   secret,
   optional,
+  disabledOverride,
 }: {
   schema: JsonSchema;
   value: unknown;
@@ -126,8 +130,10 @@ function JsonSchemaField({
   path: string;
   secret?: boolean;
   optional?: boolean;
+  disabledOverride?: boolean;
 }) {
-  const disabled = useIsRunning();
+  const isRunning = useIsRunning();
+  const disabled = disabledOverride ?? isRunning;
   const s = schema as JsonSchemaObject;
   const description =
     typeof s.description === "string" ? s.description : undefined;
@@ -142,6 +148,7 @@ function JsonSchemaField({
         path={path}
         secret={secret}
         optional={s.anyOf.some((option) => option.type === "null") || optional}
+        disabledOverride={disabledOverride}
       />
     );
   }
@@ -168,6 +175,7 @@ function JsonSchemaField({
             path={`${path}.${key}`}
             secret={secret}
             optional={!required.has(key)}
+            disabledOverride={disabledOverride}
           />
         ))}
       </div>
@@ -180,7 +188,7 @@ function JsonSchemaField({
       <FieldLabel id={id} label={fieldLabel(path)} optional={optional}>
         <select
           id={id}
-          className="flex h-8 w-full rounded-lg border border-input bg-background px-2 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60"
           value={String(value ?? s.enum[0])}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
@@ -233,7 +241,7 @@ function JsonSchemaField({
       >
         <textarea
           id={id}
-          className="min-h-20 w-full rounded-lg border border-input bg-background px-2 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-20 w-full rounded-lg border border-input bg-transparent px-2 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60"
           value={JSON.stringify(Array.isArray(value) ? value : [], null, 2)}
           onChange={(e) => {
             try {

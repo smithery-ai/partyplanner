@@ -47,6 +47,7 @@ export type WorkflowState = {
   runs: RunSummary[];
   configuration: WorkflowConfigurationDocument | undefined;
   isPending: boolean;
+  isLoadingRuns: boolean;
   error: Error | undefined;
   start(args: StartRunArgs): Promise<WorkflowRuntimeResult>;
   connectManagedConnection(
@@ -600,6 +601,7 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
     runs,
     configuration,
     isPending,
+    isLoadingRuns: runsQuery.isPending,
     error: activeError,
     start,
     connectManagedConnection,
