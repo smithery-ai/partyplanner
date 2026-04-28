@@ -18,7 +18,7 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -217,6 +217,9 @@ function RoutedChatPage({
   return (
     <ChatPage
       localApiBase={env.chatLocalApiBase}
+      onRunHistoryClick={() => {
+        void navigate({ to: "/", search });
+      }}
       selectedSessionId={selectedSessionId}
       onSelectedSessionIdChange={(nextSessionId, options) => {
         if (nextSessionId) {
@@ -450,12 +453,24 @@ function ClientApp({
         navigation={navigation}
         sidebarFooter={env.sidebarFooter}
         headerLeading={
-          <WorkerSwitcher
-            selectedWorker={selectedWorker}
-            onResetDatabase={onResetDatabase}
-            onWorkerChange={onWorkerChange}
-            workflows={workflows}
-          />
+          <div className="flex min-w-0 items-center gap-1">
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              title="Back to chats"
+              aria-label="Back to chats"
+              onClick={() => void navigate({ to: "/chat", search })}
+            >
+              <ArrowLeft className="size-3.5" aria-hidden />
+            </Button>
+            <WorkerSwitcher
+              selectedWorker={selectedWorker}
+              onResetDatabase={onResetDatabase}
+              onWorkerChange={onWorkerChange}
+              workflows={workflows}
+            />
+          </div>
         }
       />
       {resetDialog}
