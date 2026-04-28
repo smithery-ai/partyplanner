@@ -5,6 +5,7 @@ export * from "./notion";
 export * from "./scheduleProbe";
 export * from "./slack";
 export * from "./sreMonitor";
+export * from "./sreMonitorAgent";
 
 export const incidentAlert = input(
   "incidentAlert",
