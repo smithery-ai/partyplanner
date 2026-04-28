@@ -16,6 +16,68 @@ export type DeletePostgresTenantDataResult = {
   };
 };
 
+export type DeletePostgresDatabaseDataResult = {
+  deleted: DeletePostgresTenantDataResult["deleted"];
+};
+
+const emptyDeletedCounts: DeletePostgresTenantDataResult["deleted"] = {
+  workflowDeployments: 0,
+  workflowRunDocuments: 0,
+  workflowRunStates: 0,
+  workflowEvents: 0,
+  workflowQueueItems: 0,
+  oauthPending: 0,
+  oauthHandoffs: 0,
+  oauthRefreshTokens: 0,
+  providerInstallations: 0,
+};
+
+export async function deletePostgresDatabaseData(
+  db: WorkflowPostgresDb,
+): Promise<DeletePostgresDatabaseDataResult> {
+  const rows = (await asDb(db).execute(sql`
+    with deleted_provider_installations as (
+      delete from provider_installations returning 1
+    ),
+    deleted_oauth_refresh_tokens as (
+      delete from oauth_refresh_tokens returning 1
+    ),
+    deleted_oauth_handoffs as (
+      delete from oauth_handoffs returning 1
+    ),
+    deleted_oauth_pending as (
+      delete from oauth_pending returning 1
+    ),
+    deleted_queue_items as (
+      delete from workflow_queue_items returning 1
+    ),
+    deleted_events as (
+      delete from workflow_events returning 1
+    ),
+    deleted_run_states as (
+      delete from workflow_run_states returning 1
+    ),
+    deleted_run_documents as (
+      delete from workflow_run_documents returning 1
+    ),
+    deleted_deployments as (
+      delete from workflow_deployments returning 1
+    )
+    select
+      (select count(*) from deleted_deployments)::int as "workflowDeployments",
+      (select count(*) from deleted_run_documents)::int as "workflowRunDocuments",
+      (select count(*) from deleted_run_states)::int as "workflowRunStates",
+      (select count(*) from deleted_events)::int as "workflowEvents",
+      (select count(*) from deleted_queue_items)::int as "workflowQueueItems",
+      (select count(*) from deleted_oauth_pending)::int as "oauthPending",
+      (select count(*) from deleted_oauth_handoffs)::int as "oauthHandoffs",
+      (select count(*) from deleted_oauth_refresh_tokens)::int as "oauthRefreshTokens",
+      (select count(*) from deleted_provider_installations)::int as "providerInstallations"
+  `)) as Array<DeletePostgresDatabaseDataResult["deleted"]>;
+
+  return { deleted: rows[0] ?? emptyDeletedCounts };
+}
+
 export async function deletePostgresTenantData(
   db: WorkflowPostgresDb,
   tenantId: string,
@@ -126,17 +188,7 @@ export async function deletePostgresTenantData(
 
   return {
     tenantId,
-    deleted: rows[0] ?? {
-      workflowDeployments: 0,
-      workflowRunDocuments: 0,
-      workflowRunStates: 0,
-      workflowEvents: 0,
-      workflowQueueItems: 0,
-      oauthPending: 0,
-      oauthHandoffs: 0,
-      oauthRefreshTokens: 0,
-      providerInstallations: 0,
-    },
+    deleted: rows[0] ?? emptyDeletedCounts,
   };
 }
 
