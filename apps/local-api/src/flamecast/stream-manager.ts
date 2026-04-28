@@ -1,20 +1,11 @@
-import type { ChildProcess } from "node:child_process";
-import { execFile, spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
 import type { WebSocket } from "ws";
+import type { SessionLogger } from "./session-logger.js";
 import * as tmux from "./sessions/tmux.js";
 import { serializeTerminalSnapshot } from "./terminal-snapshot.js";
-
-const exec = promisify(execFile);
 
 interface StreamState {
   sessionId: string;
   clients: Set<WebSocket>;
-  outFile: string;
-  tail: ChildProcess | null;
   pendingOutput: string;
 }
 
@@ -28,20 +19,20 @@ function formatPaneSnapshot(snapshot: tmux.PaneSnapshot): string {
 
 export class StreamManager {
   private readonly streams = new Map<string, StreamState>();
-  private tmpDir: string | null = null;
+
+  constructor(private readonly logger: SessionLogger) {
+    this.logger.on("chunk", (sessionId, chunk) => {
+      this.fanout(sessionId, chunk);
+    });
+  }
 
   async addClient(sessionId: string, ws: WebSocket): Promise<void> {
     let state = this.streams.get(sessionId);
 
     if (!state) {
-      const dir = await this.getTmpDir();
-      const outFile = join(dir, `${sessionId}.out`);
-      await writeFile(outFile, "");
       state = {
         sessionId,
         clients: new Set(),
-        outFile,
-        tail: null,
         pendingOutput: "",
       };
       this.streams.set(sessionId, state);
@@ -59,10 +50,6 @@ export class StreamManager {
       }
     } catch {
       // session may not be ready yet
-    }
-
-    if (state.clients.size === 1) {
-      await this.startStream(state);
     }
 
     ws.on("close", () => this.removeClient(sessionId, ws));
@@ -92,7 +79,6 @@ export class StreamManager {
   disconnectAll(sessionId: string): void {
     const state = this.streams.get(sessionId);
     if (!state) return;
-    void this.cleanup(state);
     for (const client of state.clients) {
       try {
         client.close(1001, "session closed");
@@ -104,78 +90,25 @@ export class StreamManager {
     this.streams.delete(sessionId);
   }
 
+  private fanout(sessionId: string, chunk: string): void {
+    const state = this.streams.get(sessionId);
+    if (!state || state.clients.size === 0) return;
+    const output = this.stripUnsupportedSequences(state, chunk);
+    if (!output) return;
+    for (const client of state.clients) {
+      if (client.readyState === client.OPEN) {
+        client.send(output);
+      }
+    }
+  }
+
   private removeClient(sessionId: string, ws: WebSocket): void {
     const state = this.streams.get(sessionId);
     if (!state) return;
     state.clients.delete(ws);
     if (state.clients.size === 0) {
-      void this.cleanup(state);
+      state.pendingOutput = "";
       this.streams.delete(sessionId);
-    }
-  }
-
-  private async getTmpDir(): Promise<string> {
-    if (!this.tmpDir) {
-      this.tmpDir = await mkdtemp(join(tmpdir(), "flamecast-"));
-    }
-    return this.tmpDir;
-  }
-
-  private async startStream(state: StreamState): Promise<void> {
-    // Pipe tmux pane output to a temp file
-    await exec("tmux", [
-      "pipe-pane",
-      "-o",
-      "-t",
-      state.sessionId,
-      `cat >> ${state.outFile}`,
-    ]);
-
-    // Use tail -f to stream the file contents to WebSocket clients
-    const tail = spawn("tail", ["-f", state.outFile], {
-      stdio: ["ignore", "pipe", "ignore"],
-    });
-    state.tail = tail;
-
-    tail.stdout.on("data", (chunk: Buffer) => {
-      const output = this.stripUnsupportedSequences(
-        state,
-        chunk.toString("utf-8"),
-      );
-      if (!output) {
-        return;
-      }
-      for (const client of state.clients) {
-        if (client.readyState === client.OPEN) {
-          client.send(output);
-        }
-      }
-    });
-
-    tail.on("exit", () => {
-      if (this.streams.has(state.sessionId)) {
-        this.disconnectAll(state.sessionId);
-      }
-    });
-  }
-
-  private async cleanup(state: StreamState): Promise<void> {
-    try {
-      await exec("tmux", ["pipe-pane", "-t", state.sessionId]);
-    } catch {
-      // session may already be dead
-    }
-
-    if (state.tail) {
-      state.tail.kill();
-      state.tail = null;
-    }
-    state.pendingOutput = "";
-
-    try {
-      await rm(state.outFile, { force: true });
-    } catch {
-      // ignore
     }
   }
 

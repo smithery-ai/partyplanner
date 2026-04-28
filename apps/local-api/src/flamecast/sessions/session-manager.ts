@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { homedir } from "node:os";
+import type { SessionLogger } from "../session-logger.js";
 import { serializeTerminalSnapshot } from "../terminal-snapshot.js";
 import * as tmux from "./tmux.js";
 import type {
@@ -104,10 +105,26 @@ function mapKey(key: string): string {
 
 export class SessionManager {
   private readonly sessions = new Map<string, Session>();
+  private logger: SessionLogger | null = null;
+
+  setLogger(logger: SessionLogger): void {
+    this.logger = logger;
+  }
 
   async create(params: CreateParams = {}): Promise<CreateResult> {
     const sessionId = generateId();
-    const cwd = params.cwd ?? homedir();
+    let cwd = params.cwd;
+    if (!cwd && this.logger) {
+      try {
+        cwd = await this.logger.ensureRootDir();
+      } catch (err) {
+        console.error(
+          "[session-manager] failed to ensure .flamecast root dir:",
+          err,
+        );
+      }
+    }
+    cwd = cwd ?? homedir();
     const shell = params.shell ?? process.env.SHELL ?? "/bin/bash";
     const timeout =
       params.timeout === undefined ? DEFAULT_TIMEOUT : params.timeout;
@@ -128,6 +145,16 @@ export class SessionManager {
 
     this.sessions.set(sessionId, session);
     this.resetTimeout(session);
+    if (this.logger) {
+      try {
+        await this.logger.start(sessionId);
+      } catch (err) {
+        console.error(
+          `[session-manager] logger.start failed for ${sessionId}:`,
+          err,
+        );
+      }
+    }
 
     return {
       sessionId,
@@ -301,6 +328,14 @@ export class SessionManager {
       // already dead
     }
 
+    if (this.logger) {
+      try {
+        await this.logger.stop(params.sessionId);
+      } catch {
+        // ignore
+      }
+    }
+
     session.status = "closed";
     session.outputBuffer = finalOutput;
     this.clearTimeout(session);
@@ -362,6 +397,16 @@ export class SessionManager {
     };
     this.sessions.set(sessionId, session);
     this.resetTimeout(session);
+    if (this.logger) {
+      try {
+        await this.logger.start(sessionId);
+      } catch (err) {
+        console.error(
+          `[session-manager] logger.start failed for ${sessionId}:`,
+          err,
+        );
+      }
+    }
     return session;
   }
 
@@ -390,6 +435,16 @@ export class SessionManager {
         };
         this.sessions.set(info.name, session);
         this.resetTimeout(session);
+        if (this.logger) {
+          try {
+            await this.logger.start(info.name);
+          } catch (err) {
+            console.error(
+              `[session-manager] logger.start failed for ${info.name}:`,
+              err,
+            );
+          }
+        }
       }
     }
 
@@ -433,6 +488,13 @@ export class SessionManager {
       await tmux.killSession(session.sessionId);
     } catch {
       // already dead
+    }
+    if (this.logger) {
+      try {
+        await this.logger.stop(session.sessionId);
+      } catch {
+        // ignore
+      }
     }
     session.status = "expired";
     this.scheduleReap(session);

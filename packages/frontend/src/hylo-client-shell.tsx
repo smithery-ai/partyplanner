@@ -26,6 +26,7 @@ import {
   useState,
 } from "react";
 import { type WorkflowNavigation, WorkflowSinglePage } from "./App";
+import { ChatPage } from "./chat-page";
 import {
   Combobox,
   ComboboxContent,
@@ -60,6 +61,7 @@ export type HyloClientShellSearch = {
 };
 
 export type HyloClientShellProps = {
+  chatLocalApiBase?: string;
   getAccessToken: () => Promise<string>;
   getLocalWorkflowRegistry?: () => HyloWorkflowRegistry | undefined;
   getRequestedWorker?: (search: HyloClientShellSearch) => string | undefined;
@@ -111,6 +113,12 @@ const loginRoute = createRoute({
   component: HomeRouteComponent,
 });
 
+const chatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chat",
+  component: ChatRouteComponent,
+});
+
 const connectionInitializingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/connection/initializing",
@@ -139,6 +147,7 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   workerRoute,
   loginRoute,
+  chatRoute,
   connectionInitializingRoute,
   onboardingRoute,
   runRoute,
@@ -176,6 +185,16 @@ function RootRouteComponent() {
 
 function HomeRouteComponent() {
   return <ClientApp />;
+}
+
+function ChatRouteComponent() {
+  const env = useClientEnvironment();
+  return (
+    <ChatPage
+      localApiBase={env.chatLocalApiBase}
+      sidebarFooter={env.sidebarFooter}
+    />
+  );
 }
 
 function WorkerRouteComponent() {

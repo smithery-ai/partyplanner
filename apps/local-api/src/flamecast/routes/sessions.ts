@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import type { SessionLogger } from "../session-logger.js";
 import type { SessionManager } from "../sessions/session-manager.js";
 import { SessionError } from "../sessions/session-manager.js";
 
@@ -122,6 +123,31 @@ const ErrorResponse = z
     error: z.string(),
   })
   .openapi("ErrorResponse");
+
+const EventsResponse = z
+  .object({
+    sessionId: z.string(),
+    claudeSessionIds: z.array(z.string()),
+    events: z.array(z.unknown()),
+  })
+  .openapi("SessionEventsResponse");
+
+const ChatBody = z
+  .object({
+    message: z.string().min(1).openapi({ example: "hello" }),
+  })
+  .openapi("ChatBody");
+
+const ChatResponse = z
+  .object({
+    sessionId: z.string(),
+    status: z.literal("running"),
+  })
+  .openapi("ChatResponse");
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
 
 // --- route definitions ---
 
@@ -288,6 +314,46 @@ const execAsyncAutoCreate = createRoute({
   },
 });
 
+const chat = createRoute({
+  method: "post",
+  path: "/terminals/{id}/chat",
+  tags: ["Terminals"],
+  summary:
+    "Send a chat message: records the user prompt to the session log and runs claude -p",
+  request: {
+    params: SessionIdParam,
+    body: { content: { "application/json": { schema: ChatBody } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: ChatResponse } },
+      description: "Chat command started",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not found",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not running",
+    },
+  },
+});
+
+const getEvents = createRoute({
+  method: "get",
+  path: "/terminals/{id}/events",
+  tags: ["Terminals"],
+  summary: "Get logged Claude session events for a terminal session",
+  request: { params: SessionIdParam },
+  responses: {
+    200: {
+      content: { "application/json": { schema: EventsResponse } },
+      description: "Logged events",
+    },
+  },
+});
+
 const sendInput = createRoute({
   method: "post",
   path: "/terminals/{id}/input",
@@ -321,7 +387,7 @@ function parseIntQuery(value: string | undefined): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-export function sessionRoutes(sessions: SessionManager) {
+export function sessionRoutes(sessions: SessionManager, logger: SessionLogger) {
   const app = new OpenAPIHono({
     defaultHook: (result, c) => {
       if (!result.success) {
@@ -392,6 +458,23 @@ export function sessionRoutes(sessions: SessionManager) {
     .openapi(execAsyncAutoCreate, async (c) => {
       const body = c.req.valid("json");
       const result = await sessions.execAsync({ command: body.command });
+      return c.json(result, 200);
+    })
+    .openapi(getEvents, async (c) => {
+      const { id } = c.req.valid("param");
+      const claudeSessionIds = await logger.getClaudeSessionsForFc(id);
+      const events = await logger.getEventsForFc(id);
+      return c.json({ sessionId: id, claudeSessionIds, events }, 200);
+    })
+    .openapi(chat, async (c) => {
+      const { id } = c.req.valid("param");
+      const { message } = c.req.valid("json");
+      logger.recordPendingUserMessage(id, message);
+      const command = `claude -p --output-format stream-json --verbose ${shellQuote(message)}`;
+      const result = await sessions.execAsync({
+        sessionId: id,
+        command,
+      });
       return c.json(result, 200);
     })
     .openapi(sendInput, async (c) => {
