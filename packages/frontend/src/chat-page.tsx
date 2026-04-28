@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Clock3,
   FolderTree,
+  Mail,
   MessageSquare,
   Pencil,
   Pin,
@@ -289,6 +290,7 @@ function formatDurationMs(ms: number): string {
 
 export type ChatPageProps = {
   localApiBase?: string;
+  onRunHistoryClick?: () => void;
   onSelectedSessionIdChange?: (
     sessionId: string | null,
     options?: { replace?: boolean },
@@ -299,6 +301,7 @@ export type ChatPageProps = {
 
 export function ChatPage({
   localApiBase = DEFAULT_LOCAL_API_BASE,
+  onRunHistoryClick,
   onSelectedSessionIdChange,
   selectedSessionId,
   sidebarFooter,
@@ -306,6 +309,7 @@ export function ChatPage({
   return (
     <ChatShell
       localApiBase={localApiBase}
+      onRunHistoryClick={onRunHistoryClick}
       onSelectedSessionIdChange={onSelectedSessionIdChange}
       selectedSessionId={selectedSessionId}
       sidebarFooter={sidebarFooter}
@@ -438,11 +442,13 @@ function FilesPanel({ localApiBase }: { localApiBase: string }) {
 
 function ChatShell({
   localApiBase,
+  onRunHistoryClick,
   onSelectedSessionIdChange,
   selectedSessionId,
   sidebarFooter,
 }: {
   localApiBase: string;
+  onRunHistoryClick?: () => void;
   onSelectedSessionIdChange?: (
     sessionId: string | null,
     options?: { replace?: boolean },
@@ -932,6 +938,18 @@ function ChatShell({
                 <span className="truncate">Chats</span>
               </div>
               <div className="flex items-center gap-1">
+                {onRunHistoryClick ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    title="Run history"
+                    aria-label="Run history"
+                    onClick={onRunHistoryClick}
+                  >
+                    <Mail className="size-3.5" aria-hidden />
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   size="icon-sm"
