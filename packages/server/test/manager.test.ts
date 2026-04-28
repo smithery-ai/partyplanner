@@ -665,6 +665,43 @@ describe("WorkflowManager", () => {
       expect(settled.status).toBe(again.status);
       expect(again.status).toBe("completed");
     });
+
+    it("recovers a queue item left in 'running' after lease expiry", async () => {
+      // Models the production failure: a worker dequeued a queue item, the
+      // wall-clock killed it before processNext finished, and the row was
+      // never moved out of 'running'. claimNext must reconsider expired-
+      // lease running rows so the run isn't stuck forever.
+      const trigger = input("trigRecover", z.object({ ok: z.boolean() }));
+      atom((get) => get(trigger), { name: "after" });
+
+      const queue = new TestWorkflowQueue({ leaseMs: 30_000 });
+      const manager = new WorkflowManager({
+        stateStore: new TestWorkflowStateStore(),
+        queue,
+      });
+
+      const started = await manager.startRun({
+        inputId: "trigRecover",
+        payload: { ok: true },
+      });
+
+      // Drain one step — claims and 'processes' the input event. We then
+      // force the lease to expire to simulate a worker that died after
+      // claiming but before completing.
+      const claimed = await queue.claimNext(started.runId);
+      if (!claimed) throw new Error("expected to claim the input event");
+      expect(claimed.event.runId).toBe(started.runId);
+      queue.expireLease(claimed.event.eventId);
+      // Item is now in 'running' status with an expired lease — the bug case.
+      const stuck = await queue.snapshot(started.runId);
+      expect(stuck.running.length).toBe(1);
+      expect(stuck.pending.length).toBe(0);
+
+      // Recovery: a fresh claim must pick it up again.
+      const reclaimed = await queue.claimNext(started.runId);
+      expect(reclaimed?.event.eventId).toBe(claimed.event.eventId);
+      expect(reclaimed?.status).toBe("running");
+    });
   });
 });
 
@@ -762,7 +799,21 @@ class TestWorkflowStateStore implements WorkflowStateStore {
 }
 
 class TestWorkflowQueue implements WorkflowQueue {
-  private readonly items: QueueItem[] = [];
+  private readonly items: (QueueItem & { leaseUntilAt?: number })[] = [];
+  private readonly leaseMs: number;
+
+  constructor(opts: { leaseMs?: number } = {}) {
+    this.leaseMs = opts.leaseMs ?? 30_000;
+  }
+
+  // Test-only: force a claimed item's lease to expire so claimNext can
+  // exercise the recovery path without sleeping.
+  expireLease(eventId: string): void {
+    const item = this.items.find(
+      (candidate) => candidate.event.eventId === eventId,
+    );
+    if (item) item.leaseUntilAt = 0;
+  }
 
   async enqueue(event: QueueEvent): Promise<void> {
     this.items.push({
@@ -779,13 +830,19 @@ class TestWorkflowQueue implements WorkflowQueue {
   }
 
   async claimNext(runId: string): Promise<QueueItem | undefined> {
+    const now = Date.now();
     const item = this.items.find(
       (candidate) =>
-        candidate.status === "pending" && candidate.event.runId === runId,
+        candidate.event.runId === runId &&
+        (candidate.status === "pending" ||
+          (candidate.status === "running" &&
+            candidate.leaseUntilAt !== undefined &&
+            candidate.leaseUntilAt < now)),
     );
     if (!item) return undefined;
     item.status = "running";
-    item.startedAt = Date.now();
+    item.startedAt = now;
+    item.leaseUntilAt = now + this.leaseMs;
     return structuredClone(item);
   }
 

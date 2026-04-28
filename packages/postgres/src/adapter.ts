@@ -302,6 +302,13 @@ class PostgresWorkflowQueue implements WorkflowQueue {
     const leaseUntil = now + (this.options.leaseMs ?? 30_000);
     // Atomic claim: FOR UPDATE SKIP LOCKED lets concurrent claimers each grab
     // a distinct row in one round trip — no SELECT-then-UPDATE retry loop.
+    //
+    // Eligibility includes pending items AND running items whose lease has
+    // expired. Without lease recovery, a worker that dies mid-processNext()
+    // leaves the row in `running` forever — claimNext would never return it
+    // again, and the run stalls. Re-claiming an expired-lease row is safe
+    // because the runtime is responsible for being idempotent across retries
+    // (see processedEventIds + emitStep guards).
     const rows = (await asDb(this.db).execute(sql`
       UPDATE workflow_queue_items
       SET status = 'running',
@@ -310,7 +317,11 @@ class PostgresWorkflowQueue implements WorkflowQueue {
           attempts = attempts + 1
       WHERE event_id = (
         SELECT event_id FROM workflow_queue_items
-        WHERE run_id = ${runId} AND status = 'pending'
+        WHERE run_id = ${runId}
+          AND (
+            status = 'pending'
+            OR (status = 'running' AND lease_until < ${now})
+          )
         ORDER BY enqueued_at ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
