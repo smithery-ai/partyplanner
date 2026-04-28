@@ -26,6 +26,7 @@ export type {
   WorkflowInputManifest,
   WorkflowManagedConnectionManifest,
   WorkflowManifest,
+  WorkflowScheduleManifest,
 } from "./manifest";
 export { buildWorkflowManifest } from "./manifest";
 export type {

@@ -20,6 +20,14 @@ if (!env.NODE_EXTRA_CA_CERTS && existsSync(portlessCaPath)) {
 env.NODE_TLS_REJECT_UNAUTHORIZED ??= "0";
 env.PORTLESS_HTTPS ??= "1";
 
+// Defensive cleanup: a previous pnpm dev that was killed mid-flight (Ctrl-C
+// during a build, IDE crash, etc.) can leave wrangler/inspector children
+// holding 8787/9230/9231/8788. resolvePort() picks a different port for the
+// parent worker, but wrangler's own --inspector-port is fixed by the time we
+// spawn it, and the inspector EADDRINUSE crashes the whole dev session.
+// Kill anything still listening on the canonical ports before booting.
+killStaleListeners([8787, 8788, 9230, 9231]);
+
 for (const [name, fallback] of portSpecs) {
   env[name] = String(await resolvePort(name, fallback));
 }
@@ -152,5 +160,31 @@ function ensurePortlessHttpsProxy(env) {
       console.error("Failed to start the portless HTTPS proxy.");
     }
     process.exit(typeof error.status === "number" ? error.status : 1);
+  }
+}
+
+function killStaleListeners(ports) {
+  for (const port of ports) {
+    let pids = "";
+    try {
+      pids = execSync(`lsof -ti :${port}`, {
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .toString()
+        .trim();
+    } catch {
+      // No process is listening — nothing to do.
+      continue;
+    }
+    if (!pids) continue;
+    const pidList = pids.split("\n").filter(Boolean);
+    console.warn(
+      `Cleaning up ${pidList.length} stale process(es) on :${port} (pid ${pidList.join(", ")}).`,
+    );
+    try {
+      execSync(`kill -9 ${pidList.join(" ")}`, { stdio: "ignore" });
+    } catch {
+      // Process may have already exited; ignore.
+    }
   }
 }
