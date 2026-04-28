@@ -24,7 +24,6 @@ import {
 } from "lucide-react";
 import {
   createContext,
-  type KeyboardEvent,
   type ReactNode,
   useCallback,
   useContext,
@@ -34,6 +33,7 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+import { ChatInput, type ChatInputHandle } from "./components/chat-input";
 import { Button } from "./components/ui/button";
 import {
   ContextMenu,
@@ -43,7 +43,6 @@ import {
 } from "./components/ui/context-menu";
 import { DotmSquare1 } from "./components/ui/dotm-square-1";
 import { Input } from "./components/ui/input";
-import { Textarea } from "./components/ui/textarea";
 
 const STREAMDOWN_PLUGINS = {
   code: codePlugin,
@@ -875,8 +874,8 @@ function ChatShell({
   }, [ensureConnection, localApiBase, refresh, setSelectedId]);
 
   const sendMessage = useCallback(
-    async (chatId: string) => {
-      const text = (drafts.get(chatId) ?? "").trim();
+    async (chatId: string, overrideText?: string) => {
+      const text = (overrideText ?? drafts.get(chatId) ?? "").trim();
       if (!text) return;
       const cur = panelStates.get(chatId) ?? INITIAL_PANEL_STATE;
       if (cur.status !== "open" && cur.status !== "running") return;
@@ -1206,12 +1205,14 @@ function ChatShell({
               />
             ) : selectedId ? (
               <ChatPanel
+                key={selectedId}
                 sessionId={selectedId}
                 title={selectedChatTitle}
                 state={panelStates.get(selectedId) ?? INITIAL_PANEL_STATE}
                 draft={drafts.get(selectedId) ?? ""}
                 onDraftChange={(v) => setDraft(selectedId, v)}
-                onSend={() => void sendMessage(selectedId)}
+                onSend={(text) => void sendMessage(selectedId, text)}
+                localApiBase={localApiBase}
               />
             ) : (
               <EmptyState onNew={() => void newChat()} />
@@ -1819,16 +1820,19 @@ function ChatPanel({
   draft,
   onDraftChange,
   onSend,
+  localApiBase,
 }: {
   sessionId: string;
   title: string;
   state: PanelState;
   draft: string;
   onDraftChange: (value: string) => void;
-  onSend: () => void;
+  onSend: (text: string) => void;
+  localApiBase: string;
 }) {
   const { blocks, status, error } = state;
   const outputRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<ChatInputHandle | null>(null);
   const canSend =
     Boolean(draft.trim()) && (status === "open" || status === "running");
 
@@ -1839,13 +1843,32 @@ function ChatPanel({
     }
   }, [blocks, sessionId]);
 
-  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.nativeEvent.isComposing) return;
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      if (canSend) onSend();
-    }
-  };
+  const searchFiles = useCallback(
+    async (query: string): Promise<string[]> => {
+      try {
+        const params = new URLSearchParams({ limit: "8" });
+        if (query) params.set("q", query);
+        const res = await fetch(`${localApiBase}/api/files?${params}`);
+        if (!res.ok) return [];
+        const body = (await res.json()) as { paths: string[] };
+        return body.paths;
+      } catch {
+        return [];
+      }
+    },
+    [localApiBase],
+  );
+
+  const handleSubmit = useCallback(
+    (text: string) => {
+      onSend(text);
+    },
+    [onSend],
+  );
+
+  const handleClickSend = useCallback(() => {
+    inputRef.current?.submit();
+  }, []);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-off-white text-off-black">
@@ -1879,36 +1902,31 @@ function ChatPanel({
           {error}
         </p>
       ) : null}
-      <form
-        className="shrink-0 px-3 pb-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (canSend) onSend();
-        }}
-      >
+      <div className="shrink-0 px-3 pb-3">
         <div className="rounded-lg bg-white shadow-sm transition-colors focus-within:ring-3 focus-within:ring-ring/50">
-          <Textarea
-            value={draft}
-            onChange={(e) => onDraftChange(e.target.value)}
-            onKeyDown={onKeyDown}
+          <ChatInput
+            ref={inputRef}
+            initialValue={draft}
             placeholder="Message..."
             disabled={status === "connecting" || status === "error"}
-            rows={1}
-            className="max-h-48 min-h-12 resize-none overflow-y-auto border-0 bg-transparent px-3 py-3 text-sm shadow-none focus-visible:border-transparent focus-visible:ring-0"
+            onValueChange={onDraftChange}
+            onSubmit={handleSubmit}
+            onSearchFiles={searchFiles}
           />
           <div className="flex min-h-11 items-center justify-end px-2 py-1.5">
             <Button
-              type="submit"
+              type="button"
               size="icon-sm"
               disabled={!canSend}
               title="Send message"
               aria-label="Send message"
+              onClick={handleClickSend}
             >
               <SendHorizontal className="size-3.5" aria-hidden />
             </Button>
           </div>
         </div>
-      </form>
+      </div>
     </div>
   );
 }
