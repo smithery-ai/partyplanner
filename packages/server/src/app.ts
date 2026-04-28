@@ -77,7 +77,13 @@ export function createWorkflow(options: CreateWorkflowOptions) {
   app.openapi(routes.startRun, async (c) => {
     try {
       const body = c.req.valid("json") as StartWorkflowRunRequest;
-      return c.json(await manager.startRun(body), 200);
+      const started = await manager.startRun(body);
+      return c.json(
+        await manager.advanceUntilSettled(started.runId, {
+          secretValues: body.secretValues,
+        }),
+        200,
+      );
     } catch (e) {
       return c.json({ message: errorMessage(e) }, 400);
     }
@@ -98,8 +104,12 @@ export function createWorkflow(options: CreateWorkflowOptions) {
   app.openapi(routes.submitInput, async (c) => {
     try {
       const body = c.req.valid("json") as SubmitWorkflowInputRequest;
+      const runId = requireParam(c.req.param("runId"));
+      await manager.submitInput(runId, body);
       return c.json(
-        await manager.submitInput(requireParam(c.req.param("runId")), body),
+        await manager.advanceUntilSettled(runId, {
+          secretValues: body.secretValues,
+        }),
         200,
       );
     } catch (e) {
@@ -110,10 +120,11 @@ export function createWorkflow(options: CreateWorkflowOptions) {
   app.openapi(routes.submitWebhook, async (c) => {
     try {
       const body = c.req.valid("json") as SubmitWorkflowWebhookRequest;
-      return c.json(
-        await manager.submitWebhook(body, webhookRequestContext(c.req.raw)),
-        200,
+      const result = await manager.submitWebhook(
+        body,
+        webhookRequestContext(c.req.raw),
       );
+      return c.json(await manager.advanceUntilSettled(result.runId), 200);
     } catch (e) {
       return c.json({ message: errorMessage(e) }, 400);
     }
@@ -126,7 +137,23 @@ export function createWorkflow(options: CreateWorkflowOptions) {
       if (Number.isNaN(at.getTime())) {
         return c.json({ message: `invalid 'at' timestamp: ${body.at}` }, 400);
       }
-      return c.json(await manager.tickSchedules(at), 200);
+      const result = await manager.tickSchedules(at);
+      for (const firing of result.fired) {
+        try {
+          await manager.advanceUntilSettled(firing.runId);
+        } catch (e) {
+          console.error(
+            JSON.stringify({
+              scope: "schedule_advance",
+              level: "error",
+              scheduleId: firing.id,
+              runId: firing.runId,
+              error: e instanceof Error ? e.message : String(e),
+            }),
+          );
+        }
+      }
+      return c.json(result, 200);
     } catch (e) {
       return c.json({ message: errorMessage(e) }, 400);
     }
@@ -135,7 +162,8 @@ export function createWorkflow(options: CreateWorkflowOptions) {
   app.openapi(routes.runScheduleNow, async (c) => {
     const { scheduleId } = c.req.valid("param") as { scheduleId: string };
     try {
-      return c.json(await manager.runScheduleNow(scheduleId), 200);
+      const started = await manager.runScheduleNow(scheduleId);
+      return c.json(await manager.advanceUntilSettled(started.runId), 200);
     } catch (e) {
       const message = errorMessage(e);
       if (/^Unknown schedule:/.test(message)) {
@@ -177,12 +205,16 @@ export function createWorkflow(options: CreateWorkflowOptions) {
   app.openapi(routes.submitIntervention, async (c) => {
     try {
       const body = c.req.valid("json") as SubmitWorkflowInterventionRequest;
+      const runId = requireParam(c.req.param("runId"));
+      await manager.submitIntervention(
+        runId,
+        requireParam(c.req.param("interventionId")),
+        body,
+      );
       return c.json(
-        await manager.submitIntervention(
-          requireParam(c.req.param("runId")),
-          requireParam(c.req.param("interventionId")),
-          body,
-        ),
+        await manager.advanceUntilSettled(runId, {
+          secretValues: body.secretValues,
+        }),
         200,
       );
     } catch (e) {

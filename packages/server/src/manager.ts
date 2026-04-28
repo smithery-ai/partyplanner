@@ -573,6 +573,45 @@ export class WorkflowManager {
     };
   }
 
+  // Drive a run forward by repeatedly calling processNext() until the run
+  // either settles into a terminal status, transitions to `waiting` (deferred
+  // input or paused), or has an empty queue. The manager's mutating entry
+  // points (startRun, submitInput, submitWebhook, submitIntervention) intentionally
+  // process a single event and return — keeping a tight, observable contract.
+  // Callers that want "drive until parked" semantics — typically HTTP route
+  // handlers in reactive backends (Cloudflare and Node tenant workers, neither
+  // of which has a background pump for individual run queues) — call this
+  // explicitly. Step-at-a-time tooling and observability paths can avoid it.
+  async advanceUntilSettled(
+    runId: string,
+    request: {
+      secretValues?: Record<string, string>;
+      maxAttempts?: number;
+    } = {},
+  ): Promise<WorkflowRunDocument> {
+    const maxAttempts = request.maxAttempts ?? 32;
+    const scheduler = this.createScheduler(runId, request.secretValues);
+    let document = await this.requireRun(runId);
+    // Bind this scheduler instance to the existing run; processNext() requires
+    // it to know which workflow it's pumping. (createScheduler only allocates
+    // the scheduler — it doesn't load run state on its own.)
+    await scheduler.startRun({ workflow: this.definition.ref, runId });
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (document.status !== "running") return document;
+      if (document.queue.pending.length + document.queue.running.length === 0) {
+        return document;
+      }
+      try {
+        await scheduler.processNext();
+      } catch (e) {
+        if (isRunSaveConflictError(e)) continue;
+        throw e;
+      }
+      document = await this.publishSnapshot(await scheduler.snapshot(runId));
+    }
+    return document;
+  }
+
   private async advanceConfigurationUntilSettled(
     connectionId: string,
     secretValues?: Record<string, string>,
