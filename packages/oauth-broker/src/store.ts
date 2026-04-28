@@ -12,9 +12,12 @@
 
 export type PendingValue = {
   providerId: string;
-  runtimeHandoffUrl: string;
-  runId: string;
-  interventionId: string;
+  // Standalone installs (no workflow context) leave these undefined; the
+  // callback then redirects to a static "install complete" page instead of
+  // the runtime handoff route.
+  runtimeHandoffUrl?: string;
+  runId?: string;
+  interventionId?: string;
   scopes: string[];
   extra: Record<string, string>;
   // Identity of the runtime that started this flow (today: opaque "anonymous"
@@ -25,8 +28,8 @@ export type PendingValue = {
 
 export type HandoffValue = {
   providerId: string;
-  runId: string;
-  interventionId: string;
+  runId?: string;
+  interventionId?: string;
   // Provider-shaped token, ready to deliver to the runtime intervention.
   token: unknown;
   appId: string;

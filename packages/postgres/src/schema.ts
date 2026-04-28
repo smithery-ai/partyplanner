@@ -66,7 +66,10 @@ export const providerInstallations = pgTable("provider_installations", {
   // the deployment id (e.g. dev subdomains).
   deploymentId: text("deployment_id"),
   identityJson: text("identity_json").notNull(),
-  runtimeHandoffUrl: text("runtime_handoff_url").notNull(),
+  // Nullable for standalone installs (e.g. "Add to Slack" with no workflow
+  // bound). Webhooks for such installs are logged as
+  // installation_unresolved instead of being forwarded.
+  runtimeHandoffUrl: text("runtime_handoff_url"),
   createdAt: doublePrecision("created_at").notNull(),
   updatedAt: doublePrecision("updated_at").notNull(),
 });

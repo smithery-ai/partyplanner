@@ -65,7 +65,8 @@ async function registerOAuthInstallation(
 
   const log = createWebhookLogger(SLACK_PROVIDER_ID);
   log.info("oauth_install_received", {
-    runtimeHandoffUrl: event.pending.runtimeHandoffUrl,
+    runtimeHandoffUrl: event.pending.runtimeHandoffUrl ?? null,
+    standalone: !event.pending.runtimeHandoffUrl,
   });
 
   const token = slackAuthSchema.safeParse(event.token);
@@ -100,22 +101,24 @@ async function registerOAuthInstallation(
   // subdomain like https://<workflow>.localhost/..., where there's no path
   // segment to parse — that's fine, deploymentId is informational only and
   // webhook routing uses runtimeHandoffUrl directly.
-  const deploymentId = deploymentIdFromRuntimeHandoffUrl(
-    event.pending.runtimeHandoffUrl,
-  );
+  const deploymentId = event.pending.runtimeHandoffUrl
+    ? deploymentIdFromRuntimeHandoffUrl(event.pending.runtimeHandoffUrl)
+    : undefined;
 
   await registry.upsert({
     installationKey,
     providerId: SLACK_PROVIDER_ID,
     ...(deploymentId ? { deploymentId } : {}),
     identity,
-    runtimeHandoffUrl: event.pending.runtimeHandoffUrl,
+    ...(event.pending.runtimeHandoffUrl
+      ? { runtimeHandoffUrl: event.pending.runtimeHandoffUrl }
+      : {}),
   });
   log.info("oauth_install_persisted", {
     installationKey,
     ...(deploymentId ? { deploymentId } : { deploymentId: null }),
     identity,
-    runtimeHandoffUrl: event.pending.runtimeHandoffUrl,
+    runtimeHandoffUrl: event.pending.runtimeHandoffUrl ?? null,
   });
 }
 

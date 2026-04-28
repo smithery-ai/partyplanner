@@ -290,6 +290,7 @@ function formatDurationMs(ms: number): string {
 
 export type ChatPageProps = {
   localApiBase?: string;
+  backendUrl?: string;
   onRunHistoryClick?: () => void;
   onSelectedSessionIdChange?: (
     sessionId: string | null,
@@ -302,6 +303,7 @@ export type ChatPageProps = {
 
 export function ChatPage({
   localApiBase = DEFAULT_LOCAL_API_BASE,
+  backendUrl,
   onRunHistoryClick,
   onSelectedSessionIdChange,
   selectedSessionId,
@@ -311,6 +313,7 @@ export function ChatPage({
   return (
     <ChatShell
       localApiBase={localApiBase}
+      backendUrl={backendUrl}
       onRunHistoryClick={onRunHistoryClick}
       onSelectedSessionIdChange={onSelectedSessionIdChange}
       selectedSessionId={selectedSessionId}
@@ -478,6 +481,7 @@ function FilesPanel({
 
 function ChatShell({
   localApiBase,
+  backendUrl,
   onRunHistoryClick,
   onSelectedSessionIdChange,
   selectedSessionId,
@@ -485,6 +489,7 @@ function ChatShell({
   sidebarTopInset,
 }: {
   localApiBase: string;
+  backendUrl?: string;
   onRunHistoryClick?: () => void;
   onSelectedSessionIdChange?: (
     sessionId: string | null,
@@ -1215,7 +1220,10 @@ function ChatShell({
                 localApiBase={localApiBase}
               />
             ) : (
-              <EmptyState onNew={() => void newChat()} />
+              <EmptyState
+                onNew={() => void newChat()}
+                backendUrl={backendUrl}
+              />
             )}
           </div>
           <FilesPanel
@@ -1229,7 +1237,46 @@ function ChatShell({
   );
 }
 
-function EmptyState({ onNew }: { onNew: () => void }) {
+function EmptyState({
+  onNew,
+  backendUrl,
+}: {
+  onNew: () => void;
+  backendUrl?: string;
+}) {
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
+
+  const handleAddToSlack = async () => {
+    if (!backendUrl) {
+      setInstallError("Backend URL is not configured.");
+      return;
+    }
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      const res = await fetch(
+        `${backendUrl.replace(/\/+$/, "")}/oauth/slack/install-url`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Install URL request failed (${res.status})`);
+      }
+      const data = (await res.json()) as { authorizeUrl?: string };
+      if (!data.authorizeUrl) throw new Error("Missing authorizeUrl response.");
+      window.open(data.authorizeUrl, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      setInstallError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   return (
     <div className="grid h-full place-items-center bg-off-white p-8 text-center text-off-black">
       <div className="flex flex-col items-center gap-3">
@@ -1237,9 +1284,21 @@ function EmptyState({ onNew }: { onNew: () => void }) {
         <p className="text-sm text-muted-foreground">
           Select a chat from the sidebar, or start a new one.
         </p>
-        <Button onClick={onNew}>
-          <Plus className="size-4" aria-hidden /> New chat
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={onNew}>
+            <Plus className="size-4" aria-hidden /> New chat
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void handleAddToSlack()}
+            disabled={installing}
+          >
+            {installing ? "Opening Slack…" : "Add to Slack"}
+          </Button>
+        </div>
+        {installError ? (
+          <p className="text-xs text-red-600">{installError}</p>
+        ) : null}
       </div>
     </div>
   );

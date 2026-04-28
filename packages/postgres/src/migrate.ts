@@ -74,6 +74,8 @@ const schemaStatements = [
   )`,
   `alter table provider_installations
     alter column deployment_id drop not null`,
+  `alter table provider_installations
+    alter column runtime_handoff_url drop not null`,
   `create table if not exists workflow_deployments (
     deployment_id text primary key,
     tenant_id text not null,

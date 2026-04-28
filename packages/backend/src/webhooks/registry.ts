@@ -13,7 +13,10 @@ export type ProviderInstallationRecord = {
   // Webhook routing uses runtimeHandoffUrl, not this field.
   deploymentId?: string;
   identity: Record<string, string>;
-  runtimeHandoffUrl: string;
+  // Standalone installs (e.g. "Add to Slack" with no workflow) leave this
+  // undefined. The webhook dispatcher logs incoming events as
+  // "installation_unresolved" and 200s instead of forwarding.
+  runtimeHandoffUrl?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -81,7 +84,7 @@ export function createProviderInstallationRegistry(
           providerId: installation.providerId,
           deploymentId: installation.deploymentId ?? null,
           identityJson,
-          runtimeHandoffUrl: installation.runtimeHandoffUrl,
+          runtimeHandoffUrl: installation.runtimeHandoffUrl ?? null,
           createdAt: now,
           updatedAt: now,
         })
@@ -91,7 +94,7 @@ export function createProviderInstallationRegistry(
             providerId: installation.providerId,
             deploymentId: installation.deploymentId ?? null,
             identityJson,
-            runtimeHandoffUrl: installation.runtimeHandoffUrl,
+            runtimeHandoffUrl: installation.runtimeHandoffUrl ?? null,
             updatedAt: now,
           },
         });
@@ -115,12 +118,14 @@ function installationFromRow(
     }
   }
   const deploymentId = row.deploymentId ?? row.deployment_id ?? undefined;
+  const runtimeHandoffUrl =
+    row.runtimeHandoffUrl ?? row.runtime_handoff_url ?? undefined;
   return {
     installationKey: row.installationKey ?? row.installation_key ?? "",
     providerId: row.providerId ?? row.provider_id ?? "",
     ...(deploymentId ? { deploymentId } : {}),
     identity,
-    runtimeHandoffUrl: row.runtimeHandoffUrl ?? row.runtime_handoff_url ?? "",
+    ...(runtimeHandoffUrl ? { runtimeHandoffUrl } : {}),
     createdAt: row.createdAt ?? row.created_at ?? 0,
     updatedAt: row.updatedAt ?? row.updated_at ?? 0,
   };

@@ -30,12 +30,22 @@ export type CreateOAuthBrokerServerOptions = {
   onTokenIssued?: (value: TokenIssuedValue) => Promise<void>;
 };
 
+// runtimeHandoffUrl/runId/interventionId are required for workflow-bound
+// installs (the broker redirects back to the runtime so a pending intervention
+// can be resolved). They are optional for standalone installs — e.g. an
+// "Add to Slack" button that registers an installation without binding it to
+// any workflow. In that case the callback redirects to /install-complete.
 const startBodySchema = z.object({
-  runtimeHandoffUrl: z.string().url(),
-  runId: z.string().min(1),
-  interventionId: z.string().min(1),
+  runtimeHandoffUrl: z.string().url().optional(),
+  runId: z.string().min(1).optional(),
+  interventionId: z.string().min(1).optional(),
   scopes: z.array(z.string()).default([]),
   extra: z.record(z.string(), z.string()).default({}),
+});
+
+const installUrlBodySchema = z.object({
+  scopes: z.array(z.string()).optional(),
+  extra: z.record(z.string(), z.string()).optional(),
 });
 
 const exchangeBodySchema = z.object({
@@ -79,9 +89,11 @@ export function createOAuthBrokerServer(
     const state = randomToken();
     await opts.store.putPending(state, {
       providerId,
-      runtimeHandoffUrl: body.runtimeHandoffUrl,
-      runId: body.runId,
-      interventionId: body.interventionId,
+      ...(body.runtimeHandoffUrl
+        ? { runtimeHandoffUrl: body.runtimeHandoffUrl }
+        : {}),
+      ...(body.runId ? { runId: body.runId } : {}),
+      ...(body.interventionId ? { interventionId: body.interventionId } : {}),
       scopes:
         body.scopes.length > 0 ? body.scopes : registration.spec.defaultScopes,
       extra: body.extra,
@@ -99,6 +111,51 @@ export function createOAuthBrokerServer(
       scopes:
         body.scopes.length > 0 ? body.scopes : registration.spec.defaultScopes,
       extra: body.extra,
+    });
+    const authorizeUrl = `${registration.spec.authorizeUrl}?${params.toString()}`;
+    return c.json({ authorizeUrl });
+  });
+
+  // POST /:providerId/install-url — public, unauthenticated entry point for
+  // standalone installs (e.g. an "Add to Slack" button on a marketing/empty
+  // page). Skips the runtime handoff dance: the callback persists the
+  // installation via onTokenIssued and shows a static "you may close this
+  // window" page. Incoming webhooks for these installs land in worker logs as
+  // installation_unresolved.
+  app.post("/:providerId/install-url", async (c) => {
+    const providerId = c.req.param("providerId");
+    const registration = providers.get(providerId);
+    if (!registration) return unknownProvider(providerId, c);
+
+    let body: { scopes?: string[]; extra?: Record<string, string> };
+    try {
+      body = installUrlBodySchema.parse(await readJson(c.req.raw));
+    } catch (e) {
+      return c.json({ error: "invalid_body", message: errorMessage(e) }, 400);
+    }
+
+    const state = randomToken();
+    const scopes =
+      body.scopes && body.scopes.length > 0
+        ? body.scopes
+        : registration.spec.defaultScopes;
+    await opts.store.putPending(state, {
+      providerId,
+      scopes,
+      extra: body.extra ?? {},
+      appId: "standalone",
+      createdAt: Date.now(),
+    });
+
+    const redirectUri = providerCallbackUrl(brokerBaseUrl, providerId);
+    const buildParams =
+      registration.spec.buildAuthorizeParams ?? defaultAuthorizeParams;
+    const params = buildParams({
+      clientId: registration.clientId,
+      redirectUri,
+      state,
+      scopes,
+      extra: body.extra ?? {},
     });
     const authorizeUrl = `${registration.spec.authorizeUrl}?${params.toString()}`;
     return c.json({ authorizeUrl });
@@ -122,13 +179,22 @@ export function createOAuthBrokerServer(
     }
 
     if (error || !code) {
+      const errorCode = error ?? "missing_code";
+      if (!pending.runtimeHandoffUrl) {
+        return c.text(
+          `Install failed: ${errorCode}. You may close this window.`,
+          400,
+        );
+      }
       // Redirect back to the runtime handoff route with `?error=`. Include
       // runId/interventionId so the handoff route can POST `{ error }` to
       // the intervention and the atom can `get.skip(...)`.
       const redirect = appendQuery(pending.runtimeHandoffUrl, {
-        error: error ?? "missing_code",
-        runId: pending.runId,
-        interventionId: pending.interventionId,
+        error: errorCode,
+        ...(pending.runId ? { runId: pending.runId } : {}),
+        ...(pending.interventionId
+          ? { interventionId: pending.interventionId }
+          : {}),
       });
       return c.redirect(redirect, 302);
     }
@@ -190,11 +256,28 @@ export function createOAuthBrokerServer(
       });
     }
 
+    // Standalone install: no workflow context, so there's no handoff to
+    // exchange and nowhere to redirect. The provider's
+    // registerOAuthInstallation has already persisted the install via the
+    // onTokenIssued hook above. Render a static "you may close this window"
+    // page.
+    if (!pending.runtimeHandoffUrl) {
+      return c.html(
+        `<!doctype html><meta charset="utf-8"><title>Installed</title>` +
+          `<style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;color:#222}` +
+          `.card{text-align:center;padding:2rem}h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:0;color:#666;font-size:.9rem}</style>` +
+          `<div class="card"><h1>Installed</h1><p>You may close this window.</p></div>`,
+        200,
+      );
+    }
+
     const handoff = randomToken();
     await opts.store.putHandoff(handoff, {
       providerId,
-      runId: pending.runId,
-      interventionId: pending.interventionId,
+      ...(pending.runId ? { runId: pending.runId } : {}),
+      ...(pending.interventionId
+        ? { interventionId: pending.interventionId }
+        : {}),
       token: tokenWithSession,
       appId: pending.appId,
       createdAt: Date.now(),

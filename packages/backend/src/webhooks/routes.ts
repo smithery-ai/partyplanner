@@ -134,6 +134,18 @@ export function mountProviderWebhookApi(
       );
     }
 
+    if (!installation.runtimeHandoffUrl) {
+      // Standalone install (e.g. "Add to Slack" with no workflow bound).
+      // Acknowledge with 200 so the provider stops retrying, and log so the
+      // event is visible in worker logs as an unresolved webhook.
+      log.warn("installation_unresolved", {
+        kind: parsed.kind,
+        installationKey: installation.installationKey,
+        identity: installation.identity,
+      });
+      return c.json({ ok: true, unresolved: true }, 200);
+    }
+
     const workerUrl = workerWebhookUrlFromHandoff(
       installation.runtimeHandoffUrl,
       provider.id,

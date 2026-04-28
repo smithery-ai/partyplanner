@@ -215,9 +215,11 @@ function RoutedChatPage({
   const env = useClientEnvironment();
   const navigate = useNavigate();
   const search = useSearch({ from: rootRoute.id });
+  const registryConfig = env.getWorkflowRegistryConfig(search);
   return (
     <ChatPage
       localApiBase={env.chatLocalApiBase}
+      backendUrl={registryConfig.backendUrl ?? LOCAL_BACKEND_URL}
       onRunHistoryClick={() => {
         void navigate({ to: "/", search });
       }}
