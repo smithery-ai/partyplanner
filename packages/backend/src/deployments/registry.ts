@@ -22,6 +22,10 @@ export type WorkflowDeploymentRecord = {
 export type WorkflowDeploymentRegistry = {
   get(deploymentId: string): Promise<WorkflowDeploymentRecord | undefined>;
   list(tenantId: string): Promise<WorkflowDeploymentRecord[]>;
+  // Iterate every deployment regardless of tenant. Used by the schedule
+  // dispatcher, which is platform-global (one cron trigger ticking all
+  // tenants) — there is no per-tenant equivalent.
+  listAll(): Promise<WorkflowDeploymentRecord[]>;
   upsert(
     deployment: Omit<WorkflowDeploymentRecord, "createdAt" | "updatedAt">,
   ): Promise<void>;
@@ -44,6 +48,17 @@ export function createWorkflowDeploymentRegistry(
         .limit(1);
       const row = (rows as WorkflowDeploymentRow[])[0];
       return row ? workflowDeploymentFromRow(row) : undefined;
+    },
+
+    async listAll(): Promise<WorkflowDeploymentRecord[]> {
+      const rows = await asDb(db)
+        .select()
+        .from(workflowDeployments)
+        .orderBy(
+          desc(workflowDeployments.updatedAt),
+          workflowDeployments.deploymentId,
+        );
+      return (rows as WorkflowDeploymentRow[]).map(workflowDeploymentFromRow);
     },
 
     async list(tenantId: string): Promise<WorkflowDeploymentRecord[]> {

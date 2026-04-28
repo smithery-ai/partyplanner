@@ -42,7 +42,7 @@ export function createNodeBackendApp(
   const scheduler = createNodeScheduler({
     intervalMs: parseInterval(normalizedEnv.HYLO_SCHEDULER_INTERVAL_MS),
     resolveSource: () =>
-      deploymentSourceFromList(() => deploymentRegistry.list("shared"), {
+      deploymentSourceFromList(() => deploymentRegistry.listAll(), {
         apiKey: normalizedEnv.HYLO_API_KEY,
       }),
     onError: (error) =>
