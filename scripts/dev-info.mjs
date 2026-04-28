@@ -2,6 +2,7 @@
 
 const urls = [
   ["Client", "https://hylo-client.localhost"],
+  ["Local API", "https://local-api.localhost"],
   ["Backend", "https://api-worker.hylo.localhost"],
   ["Workflow", "https://workflow-cloudflare-worker-example.localhost"],
 ];
@@ -27,7 +28,7 @@ function printBanner() {
   const rows = [
     "Local Hylo dev URLs",
     "",
-    ...urls.map(([label, url]) => `${label.padEnd(9)} ${url}`),
+    ...urls.map(([label, url]) => `${label.padEnd(10)} ${url}`),
     "",
     "Deploy a worker into this local backend:",
     "pnpm hylo auth login \\",

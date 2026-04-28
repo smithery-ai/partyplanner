@@ -27,6 +27,7 @@ import {
   useState,
 } from "react";
 import { type WorkflowNavigation, WorkflowSinglePage } from "./App";
+import { ChatPage } from "./chat-page";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,6 +72,7 @@ export type HyloClientShellSearch = {
 };
 
 export type HyloClientShellProps = {
+  chatLocalApiBase?: string;
   getAccessToken: () => Promise<string>;
   getLocalWorkflowRegistry?: () => HyloWorkflowRegistry | undefined;
   getRequestedWorker?: (search: HyloClientShellSearch) => string | undefined;
@@ -121,6 +123,18 @@ const loginRoute = createRoute({
   component: HomeRouteComponent,
 });
 
+const chatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chat",
+  component: ChatRouteComponent,
+});
+
+const chatSessionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/chat/$sessionId",
+  component: ChatSessionRouteComponent,
+});
+
 const connectionInitializingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/connection/initializing",
@@ -143,6 +157,8 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   workerRoute,
   loginRoute,
+  chatRoute,
+  chatSessionRoute,
   connectionInitializingRoute,
   runRoute,
   workerRunRoute,
@@ -179,6 +195,44 @@ function RootRouteComponent() {
 
 function HomeRouteComponent() {
   return <ClientApp />;
+}
+
+function ChatRouteComponent() {
+  return <RoutedChatPage selectedSessionId={null} />;
+}
+
+function ChatSessionRouteComponent() {
+  const { sessionId } = useParams({ from: chatSessionRoute.id });
+  return <RoutedChatPage selectedSessionId={sessionId} />;
+}
+
+function RoutedChatPage({
+  selectedSessionId,
+}: {
+  selectedSessionId: string | null;
+}) {
+  const env = useClientEnvironment();
+  const navigate = useNavigate();
+  const search = useSearch({ from: rootRoute.id });
+  return (
+    <ChatPage
+      localApiBase={env.chatLocalApiBase}
+      selectedSessionId={selectedSessionId}
+      onSelectedSessionIdChange={(nextSessionId, options) => {
+        if (nextSessionId) {
+          void navigate({
+            to: "/chat/$sessionId",
+            params: { sessionId: nextSessionId },
+            search,
+            replace: options?.replace,
+          });
+        } else {
+          void navigate({ to: "/chat", search, replace: options?.replace });
+        }
+      }}
+      sidebarFooter={env.sidebarFooter}
+    />
+  );
 }
 
 function WorkerRouteComponent() {

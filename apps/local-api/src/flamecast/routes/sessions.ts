@@ -1,0 +1,747 @@
+import { randomUUID } from "node:crypto";
+import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import type {
+  ChatSummary as LoggedChatSummary,
+  SessionLogger,
+} from "../session-logger.js";
+import type { SessionManager } from "../sessions/session-manager.js";
+import { SessionError } from "../sessions/session-manager.js";
+
+// --- schemas ---
+
+const SessionIdParam = z.object({
+  id: z
+    .string()
+    .openapi({ param: { name: "id", in: "path" }, example: "fc_a1b2c3d4" }),
+});
+
+const CreateBody = z
+  .object({
+    cwd: z.string().optional().openapi({ example: "/home/user" }),
+    shell: z.string().optional().openapi({ example: "/bin/bash" }),
+    timeout: z.number().nullable().optional().openapi({ example: 300 }),
+    cols: z.number().int().positive().optional().openapi({ example: 120 }),
+    rows: z.number().int().positive().optional().openapi({ example: 40 }),
+  })
+  .openapi("CreateSessionBody");
+
+const CreateResponse = z
+  .object({
+    sessionId: z.string(),
+    streamUrl: z.string(),
+    cwd: z.string(),
+    shell: z.string(),
+    timeout: z.number().nullable(),
+  })
+  .openapi("CreateSessionResponse");
+
+const ExecBody = z
+  .object({
+    command: z.string().openapi({ example: "ls -la" }),
+    timeout: z.number().positive().optional().openapi({ example: 30 }),
+  })
+  .openapi("ExecBody");
+
+const ExecResponse = z
+  .object({
+    sessionId: z.string(),
+    output: z.string(),
+    exitCode: z.number().nullable(),
+  })
+  .openapi("ExecResponse");
+
+const ExecAsyncBody = z
+  .object({
+    command: z.string().openapi({ example: "npm run dev" }),
+  })
+  .openapi("ExecAsyncBody");
+
+const ExecAsyncResponse = z
+  .object({
+    sessionId: z.string(),
+    status: z.literal("running"),
+  })
+  .openapi("ExecAsyncResponse");
+
+const InputBody = z
+  .object({
+    text: z.string().nullable().optional().openapi({ example: "hello" }),
+    keys: z
+      .array(z.string())
+      .nullable()
+      .optional()
+      .openapi({ example: ["enter"] }),
+  })
+  .openapi("InputBody");
+
+const InputResponse = z
+  .object({
+    sessionId: z.string(),
+    sent: z.boolean(),
+  })
+  .openapi("InputResponse");
+
+const SessionStatusSchema = z.enum(["running", "exited", "expired", "closed"]);
+
+const GetResponse = z
+  .object({
+    sessionId: z.string(),
+    output: z.string(),
+    terminalOutput: z.string().optional(),
+    lineCount: z.number(),
+    byteOffset: z.number(),
+    status: SessionStatusSchema,
+    exitCode: z.number().nullable(),
+    cwd: z.string(),
+    streamUrl: z.string(),
+  })
+  .openapi("GetSessionResponse");
+
+const SessionSummary = z.object({
+  sessionId: z.string(),
+  status: SessionStatusSchema,
+  cwd: z.string(),
+  shell: z.string(),
+  created: z.string(),
+  lastActivity: z.string(),
+  timeout: z.number().nullable(),
+  streamUrl: z.string(),
+});
+
+const ListResponse = z
+  .object({
+    sessions: z.array(SessionSummary),
+  })
+  .openapi("ListSessionsResponse");
+
+const ChatStatusSchema = z.enum(["running", "closed"]);
+
+const ChatSummary = z.object({
+  chatId: z.string(),
+  status: ChatStatusSchema,
+  activeTerminalSessionId: z.string().nullable(),
+  claudeSessionIds: z.array(z.string()),
+  terminalSessionIds: z.array(z.string()),
+  created: z.string(),
+  lastActivity: z.string(),
+});
+
+const ListChatsResponse = z
+  .object({
+    chats: z.array(ChatSummary),
+  })
+  .openapi("ListChatsResponse");
+
+const CreateChatResponse = z
+  .object({
+    chatId: z.string(),
+    terminalSessionId: z.string(),
+    status: z.literal("running"),
+  })
+  .openapi("CreateChatResponse");
+
+const ChatEventsResponse = z
+  .object({
+    chatId: z.string(),
+    claudeSessionIds: z.array(z.string()),
+    events: z.array(z.unknown()),
+  })
+  .openapi("ChatEventsResponse");
+
+const CloseResponse = z
+  .object({
+    sessionId: z.string(),
+    finalOutput: z.string(),
+    status: z.literal("closed"),
+  })
+  .openapi("CloseSessionResponse");
+
+const ErrorResponse = z
+  .object({
+    error: z.string(),
+  })
+  .openapi("ErrorResponse");
+
+const EventsResponse = z
+  .object({
+    sessionId: z.string(),
+    claudeSessionIds: z.array(z.string()),
+    events: z.array(z.unknown()),
+  })
+  .openapi("SessionEventsResponse");
+
+const ChatBody = z
+  .object({
+    message: z.string().min(1).openapi({ example: "hello" }),
+  })
+  .openapi("ChatBody");
+
+const ChatResponse = z
+  .object({
+    sessionId: z.string(),
+    status: z.literal("running"),
+  })
+  .openapi("ChatResponse");
+
+const SendChatMessageResponse = z
+  .object({
+    chatId: z.string(),
+    terminalSessionId: z.string(),
+    status: z.literal("running"),
+  })
+  .openapi("SendChatMessageResponse");
+
+const CloseChatTerminalResponse = z
+  .object({
+    chatId: z.string(),
+    terminalSessionId: z.string().nullable(),
+    status: z.literal("closed"),
+  })
+  .openapi("CloseChatTerminalResponse");
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+// --- route definitions ---
+
+const createSession = createRoute({
+  method: "post",
+  path: "/terminals",
+  tags: ["Terminals"],
+  summary: "Create a new terminal session",
+  request: {
+    body: { content: { "application/json": { schema: CreateBody } } },
+  },
+  responses: {
+    201: {
+      content: { "application/json": { schema: CreateResponse } },
+      description: "Session created",
+    },
+    500: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Server error",
+    },
+  },
+});
+
+const createChat = createRoute({
+  method: "post",
+  path: "/chats",
+  tags: ["Chats"],
+  summary: "Create a new persisted chat with a terminal-backed agent session",
+  responses: {
+    201: {
+      content: { "application/json": { schema: CreateChatResponse } },
+      description: "Chat created",
+    },
+    500: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Server error",
+    },
+  },
+});
+
+const listChats = createRoute({
+  method: "get",
+  path: "/chats",
+  tags: ["Chats"],
+  summary: "List persisted chats regardless of terminal status",
+  responses: {
+    200: {
+      content: { "application/json": { schema: ListChatsResponse } },
+      description: "Chat list",
+    },
+  },
+});
+
+const listSessions = createRoute({
+  method: "get",
+  path: "/terminals",
+  tags: ["Terminals"],
+  summary: "List all terminal sessions",
+  responses: {
+    200: {
+      content: { "application/json": { schema: ListResponse } },
+      description: "Session list",
+    },
+  },
+});
+
+const getSession = createRoute({
+  method: "get",
+  path: "/terminals/{id}",
+  tags: ["Terminals"],
+  summary: "Get session output and status",
+  request: {
+    params: SessionIdParam,
+    query: z.object({
+      tail: z.string().optional().openapi({ example: "50" }),
+      since: z.string().optional().openapi({ example: "8391" }),
+    }),
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: GetResponse } },
+      description: "Session details",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not found",
+    },
+  },
+});
+
+const closeSession = createRoute({
+  method: "delete",
+  path: "/terminals/{id}",
+  tags: ["Terminals"],
+  summary: "Kill a session",
+  request: { params: SessionIdParam },
+  responses: {
+    200: {
+      content: { "application/json": { schema: CloseResponse } },
+      description: "Session closed",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not found",
+    },
+  },
+});
+
+const execInSession = createRoute({
+  method: "post",
+  path: "/terminals/{id}/exec",
+  tags: ["Terminals"],
+  summary: "Run a command synchronously in a session",
+  request: {
+    params: SessionIdParam,
+    body: { content: { "application/json": { schema: ExecBody } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: ExecResponse } },
+      description: "Command output",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not found",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not running",
+    },
+  },
+});
+
+const execAutoCreate = createRoute({
+  method: "post",
+  path: "/terminals/exec",
+  tags: ["Terminals"],
+  summary: "Auto-create a session and run a command synchronously",
+  request: { body: { content: { "application/json": { schema: ExecBody } } } },
+  responses: {
+    200: {
+      content: { "application/json": { schema: ExecResponse } },
+      description: "Command output",
+    },
+    500: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Server error",
+    },
+  },
+});
+
+const execAsyncInSession = createRoute({
+  method: "post",
+  path: "/terminals/{id}/exec/async",
+  tags: ["Terminals"],
+  summary: "Run a command without waiting for completion",
+  request: {
+    params: SessionIdParam,
+    body: { content: { "application/json": { schema: ExecAsyncBody } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: ExecAsyncResponse } },
+      description: "Command started",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not found",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not running",
+    },
+  },
+});
+
+const execAsyncAutoCreate = createRoute({
+  method: "post",
+  path: "/terminals/exec/async",
+  tags: ["Terminals"],
+  summary: "Auto-create a session and run a command without waiting",
+  request: {
+    body: { content: { "application/json": { schema: ExecAsyncBody } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: ExecAsyncResponse } },
+      description: "Command started",
+    },
+    500: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Server error",
+    },
+  },
+});
+
+const chat = createRoute({
+  method: "post",
+  path: "/terminals/{id}/chat",
+  tags: ["Terminals"],
+  summary:
+    "Send a chat message: records the user prompt to the session log and runs claude -p",
+  request: {
+    params: SessionIdParam,
+    body: { content: { "application/json": { schema: ChatBody } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: ChatResponse } },
+      description: "Chat command started",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not found",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not running",
+    },
+  },
+});
+
+const chatMessage = createRoute({
+  method: "post",
+  path: "/chats/{id}/chat",
+  tags: ["Chats"],
+  summary:
+    "Send a chat message, creating a terminal session and resuming Claude when needed",
+  request: {
+    params: SessionIdParam,
+    body: { content: { "application/json": { schema: ChatBody } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: SendChatMessageResponse } },
+      description: "Chat command started",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Chat not found",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not running",
+    },
+  },
+});
+
+const getChatEvents = createRoute({
+  method: "get",
+  path: "/chats/{id}/events",
+  tags: ["Chats"],
+  summary: "Get logged Claude session events for a persisted chat",
+  request: { params: SessionIdParam },
+  responses: {
+    200: {
+      content: { "application/json": { schema: ChatEventsResponse } },
+      description: "Logged events",
+    },
+  },
+});
+
+const closeChatTerminal = createRoute({
+  method: "delete",
+  path: "/chats/{id}/terminal",
+  tags: ["Chats"],
+  summary: "Close the active terminal session for a chat without deleting it",
+  request: { params: SessionIdParam },
+  responses: {
+    200: {
+      content: { "application/json": { schema: CloseChatTerminalResponse } },
+      description: "Terminal closed",
+    },
+  },
+});
+
+const getEvents = createRoute({
+  method: "get",
+  path: "/terminals/{id}/events",
+  tags: ["Terminals"],
+  summary: "Get logged Claude session events for a terminal session",
+  request: { params: SessionIdParam },
+  responses: {
+    200: {
+      content: { "application/json": { schema: EventsResponse } },
+      description: "Logged events",
+    },
+  },
+});
+
+const sendInput = createRoute({
+  method: "post",
+  path: "/terminals/{id}/input",
+  tags: ["Terminals"],
+  summary: "Send keystrokes or control sequences",
+  request: {
+    params: SessionIdParam,
+    body: { content: { "application/json": { schema: InputBody } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: InputResponse } },
+      description: "Input sent",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not found",
+    },
+    409: {
+      content: { "application/json": { schema: ErrorResponse } },
+      description: "Session not running",
+    },
+  },
+});
+
+// --- app ---
+
+function parseIntQuery(value: string | undefined): number | null {
+  if (value == null) return null;
+  const n = parseInt(value, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+type TerminalSummary = z.infer<typeof SessionSummary>;
+
+function generateChatId(): string {
+  return `chat_${randomUUID().replace(/-/g, "")}`;
+}
+
+function activeTerminalForChat(
+  chat: LoggedChatSummary,
+  terminals: TerminalSummary[],
+): TerminalSummary | null {
+  const byId = new Map(
+    terminals.map((terminal) => [terminal.sessionId, terminal]),
+  );
+  for (const terminalSessionId of [...chat.terminalSessionIds].reverse()) {
+    const terminal = byId.get(terminalSessionId);
+    if (terminal?.status === "running") return terminal;
+  }
+  return null;
+}
+
+async function listChatSummaries(
+  sessions: SessionManager,
+  logger: SessionLogger,
+): Promise<z.infer<typeof ChatSummary>[]> {
+  const [{ sessions: terminals }, chats] = await Promise.all([
+    sessions.list(),
+    logger.listChats(),
+  ]);
+  return chats.map((chat) => {
+    const activeTerminal = activeTerminalForChat(chat, terminals);
+    return {
+      ...chat,
+      status: activeTerminal ? ("running" as const) : ("closed" as const),
+      activeTerminalSessionId: activeTerminal?.sessionId ?? null,
+    };
+  });
+}
+
+export function sessionRoutes(sessions: SessionManager, logger: SessionLogger) {
+  const app = new OpenAPIHono({
+    defaultHook: (result, c) => {
+      if (!result.success) {
+        return c.json({ error: result.error.message }, 422);
+      }
+    },
+  });
+
+  app.onError((err, c) => {
+    if (err instanceof SessionError) {
+      return c.json({ error: err.message }, err.statusCode);
+    }
+    return c.json({ error: err.message }, 500);
+  });
+
+  return app
+    .openapi(createChat, async (c) => {
+      const chatId = generateChatId();
+      const created = await sessions.create({ chatId, cols: 120, rows: 40 });
+      await logger.createChat(chatId, created.sessionId);
+      return c.json(
+        {
+          chatId,
+          terminalSessionId: created.sessionId,
+          status: "running" as const,
+        },
+        201,
+      );
+    })
+    .openapi(listChats, async (c) => {
+      const chats = await listChatSummaries(sessions, logger);
+      return c.json({ chats }, 200);
+    })
+    .openapi(getChatEvents, async (c) => {
+      const { id } = c.req.valid("param");
+      const claudeSessionIds = await logger.getClaudeSessionsForChat(id);
+      const events = await logger.getEventsForChat(id);
+      return c.json({ chatId: id, claudeSessionIds, events }, 200);
+    })
+    .openapi(chatMessage, async (c) => {
+      const { id } = c.req.valid("param");
+      const { message } = c.req.valid("json");
+      await logger.ensureChat(id);
+
+      const priorClaudeSessions = await logger.getClaudeSessionsForChat(id);
+      const chats = await listChatSummaries(sessions, logger);
+      const chatSummary = chats.find((chat) => chat.chatId === id);
+      let terminalSessionId = chatSummary?.activeTerminalSessionId ?? null;
+
+      if (!terminalSessionId) {
+        const created = await sessions.create({
+          chatId: id,
+          cols: 120,
+          rows: 40,
+        });
+        terminalSessionId = created.sessionId;
+      } else {
+        await logger.start(terminalSessionId, id);
+      }
+
+      logger.recordPendingUserMessage(terminalSessionId, message);
+      const lastClaudeSessionId =
+        priorClaudeSessions[priorClaudeSessions.length - 1];
+      const resumeFlag = lastClaudeSessionId
+        ? ` --resume ${shellQuote(lastClaudeSessionId)}`
+        : "";
+      const command = `claude -p --output-format stream-json --verbose${resumeFlag} ${shellQuote(message)}`;
+      await sessions.execAsync({
+        sessionId: terminalSessionId,
+        command,
+      });
+      return c.json(
+        { chatId: id, terminalSessionId, status: "running" as const },
+        200,
+      );
+    })
+    .openapi(closeChatTerminal, async (c) => {
+      const { id } = c.req.valid("param");
+      const chats = await listChatSummaries(sessions, logger);
+      const chatSummary = chats.find((chat) => chat.chatId === id);
+      const terminalSessionId = chatSummary?.activeTerminalSessionId ?? null;
+      if (terminalSessionId) {
+        await sessions.close({ sessionId: terminalSessionId });
+      }
+      return c.json(
+        { chatId: id, terminalSessionId, status: "closed" as const },
+        200,
+      );
+    })
+    .openapi(createSession, async (c) => {
+      const body = c.req.valid("json");
+      const result = await sessions.create(body);
+      return c.json(result, 201);
+    })
+    .openapi(listSessions, async (c) => {
+      const result = await sessions.list();
+      return c.json(result, 200);
+    })
+    .openapi(getSession, async (c) => {
+      const { id } = c.req.valid("param");
+      const query = c.req.valid("query");
+      const result = await sessions.get({
+        sessionId: id,
+        tail: parseIntQuery(query.tail),
+        since: parseIntQuery(query.since),
+      });
+      return c.json(result, 200);
+    })
+    .openapi(closeSession, async (c) => {
+      const { id } = c.req.valid("param");
+      const result = await sessions.close({ sessionId: id });
+      return c.json(result, 200);
+    })
+    .openapi(execInSession, async (c) => {
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      const result = await sessions.exec({
+        command: body.command,
+        sessionId: id,
+        timeout: body.timeout,
+      });
+      return c.json(result, 200);
+    })
+    .openapi(execAutoCreate, async (c) => {
+      const body = c.req.valid("json");
+      const result = await sessions.exec({
+        command: body.command,
+        timeout: body.timeout,
+      });
+      return c.json(result, 200);
+    })
+    .openapi(execAsyncInSession, async (c) => {
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      const result = await sessions.execAsync({
+        command: body.command,
+        sessionId: id,
+      });
+      return c.json(result, 200);
+    })
+    .openapi(execAsyncAutoCreate, async (c) => {
+      const body = c.req.valid("json");
+      const result = await sessions.execAsync({ command: body.command });
+      return c.json(result, 200);
+    })
+    .openapi(getEvents, async (c) => {
+      const { id } = c.req.valid("param");
+      const claudeSessionIds = await logger.getClaudeSessionsForFc(id);
+      const events = await logger.getEventsForFc(id);
+      return c.json({ sessionId: id, claudeSessionIds, events }, 200);
+    })
+    .openapi(chat, async (c) => {
+      const { id } = c.req.valid("param");
+      const { message } = c.req.valid("json");
+      logger.recordPendingUserMessage(id, message);
+      // Resume the most recent claude session in this fc session so follow-up
+      // messages continue the same conversation instead of starting fresh.
+      const priorClaudeSessions = await logger.getClaudeSessionsForFc(id);
+      const lastClaudeSessionId =
+        priorClaudeSessions[priorClaudeSessions.length - 1];
+      const resumeFlag = lastClaudeSessionId
+        ? ` --resume ${shellQuote(lastClaudeSessionId)}`
+        : "";
+      const command = `claude -p --output-format stream-json --verbose${resumeFlag} ${shellQuote(message)}`;
+      const result = await sessions.execAsync({
+        sessionId: id,
+        command,
+      });
+      return c.json(result, 200);
+    })
+    .openapi(sendInput, async (c) => {
+      const { id } = c.req.valid("param");
+      const body = c.req.valid("json");
+      const result = await sessions.input({
+        sessionId: id,
+        text: body.text,
+        keys: body.keys,
+      });
+      return c.json(result, 200);
+    });
+}

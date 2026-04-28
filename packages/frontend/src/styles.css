@@ -3,14 +3,21 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "streamdown/styles.css";
 
 @source "./**/*.{ts,tsx}";
+@source "../node_modules/streamdown/dist/**/*.js";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: "Geist Variable", sans-serif;
+  --color-off-black: #232323;
+  --color-off-white: #efead6;
+  --color-yellow: #ffdc4a;
+  --color-orange: #ff5601;
+  --color-maroon: #7b1707;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -130,6 +137,24 @@
   html {
     @apply font-sans;
   }
+}
+
+[data-streamdown="mermaid-block"],
+[data-streamdown="code-block"] {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+
+[data-streamdown="mermaid-block"] > *:nth-child(n + 3),
+[data-streamdown="code-block"] > *:nth-child(n + 3) {
+  grid-column: 1 / -1;
+}
+
+[data-streamdown="mermaid-block"] > div:nth-child(2),
+[data-streamdown="code-block"] > div:nth-child(2) {
+  position: static;
+  margin-top: 0;
 }
 
 @keyframes workflow-node-skipped-fade {
