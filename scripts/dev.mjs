@@ -25,6 +25,7 @@ if (!env.NODE_EXTRA_CA_CERTS && existsSync(portlessCaPath)) {
 }
 env.NODE_TLS_REJECT_UNAUTHORIZED ??= "0";
 env.PORTLESS_HTTPS ??= "1";
+env.PORTLESS_PORT = "443";
 
 // Defensive cleanup: a previous pnpm dev that was killed mid-flight (Ctrl-C
 // during a build, IDE crash, etc.) can leave wrangler/inspector children
@@ -70,13 +71,6 @@ console.log(
 const children = [];
 
 children.push(
-  spawn("pnpm", ["hylo", "dev", localWorkerDir], {
-    env,
-    stdio: "inherit",
-  }),
-);
-
-children.push(
   spawn(
     "pnpm",
     [
@@ -85,6 +79,7 @@ children.push(
       "run",
       "dev",
       "dev:info",
+      "dev:worker",
       "--filter=backend-cloudflare",
       "--filter=client",
       "--filter=local-api",
@@ -189,25 +184,45 @@ function canListen(port) {
 }
 
 function ensurePortlessHttpsProxy(env) {
+  const currentPort = readCurrentPortlessProxyPort();
+  if (currentPort !== undefined && currentPort !== 443) {
+    console.log(
+      `Restarting portless HTTPS proxy on port 443 (was ${currentPort})...`,
+    );
+    try {
+      execSync(`portless proxy stop --port ${currentPort}`, {
+        env,
+        stdio: "inherit",
+      });
+    } catch (error) {
+      console.error(`Failed to stop portless proxy on port ${currentPort}.`);
+      process.exit(typeof error.status === "number" ? error.status : 1);
+    }
+  }
+
   try {
-    execSync("portless proxy start --https", {
+    execSync("portless proxy start --https --port 443", {
       env,
-      stdio: "pipe",
-      encoding: "utf-8",
+      stdio: "inherit",
     });
   } catch (error) {
-    const details = [
-      typeof error.stdout === "string" ? error.stdout.trim() : "",
-      typeof error.stderr === "string" ? error.stderr.trim() : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-    if (details) {
-      console.error(details);
-    } else {
-      console.error("Failed to start the portless HTTPS proxy.");
-    }
+    console.error("Failed to start the portless HTTPS proxy.");
     process.exit(typeof error.status === "number" ? error.status : 1);
+  }
+}
+
+function readCurrentPortlessProxyPort() {
+  try {
+    const output = execSync("portless get hylo-client", {
+      env,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf-8",
+    }).trim();
+    if (!output) return undefined;
+    const url = new URL(output);
+    return url.port ? parsePort("portless proxy port", url.port) : 443;
+  } catch {
+    return undefined;
   }
 }
 

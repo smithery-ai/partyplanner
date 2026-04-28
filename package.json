@@ -12,6 +12,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:desktop": "node scripts/dev-desktop.mjs",
     "dev:info": "node scripts/dev-info.mjs",
+    "dev:worker": "node scripts/dev-worker.mjs",
     "deploy:backend": "turbo run deploy --filter=backend-cloudflare",
     "deploy:app": "pnpm --filter client run deploy",
     "fmt": "biome check --write --unsafe .",
