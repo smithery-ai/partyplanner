@@ -9,7 +9,9 @@ export {
 } from "./adapter";
 export { ensureWorkflowPostgresSchema } from "./migrate";
 export {
+  type DeletePostgresDatabaseDataResult,
   type DeletePostgresTenantDataResult,
+  deletePostgresDatabaseData,
   deletePostgresTenantData,
 } from "./reset";
 

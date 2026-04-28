@@ -30,6 +30,7 @@ import {
   registerDeploymentOpenApiRoutes,
 } from "./deployments/routes";
 import { parseDeploymentIdParam } from "./deployments/validators";
+import { mountDevApi } from "./dev/routes";
 import { apiErrorResponse } from "./errors";
 import {
   mountOnboardingApi,
@@ -150,6 +151,7 @@ export function createApp(
 
   mountDeploymentApi(app, env, apiKey, deploymentRegistry, deploymentBackend);
   mountOnboardingApi(app, db, env, apiKey);
+  mountDevApi(app, db, env);
   mountProviderWebhookApi(app, providerInstallations, webhookProviders, {
     forward: createWorkflowWebhookForwarder(deploymentBackend),
   });
