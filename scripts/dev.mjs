@@ -1,10 +1,34 @@
 #!/usr/bin/env node
 import { execSync, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import net from "node:net";
+import { homedir } from "node:os";
+import { relative, resolve } from "node:path";
 
 const host = "127.0.0.1";
 const portlessCaPath = "/tmp/portless/ca.pem";
+const repoRoot = process.cwd();
+const flamecastRoot = process.env.FLAMECAST_LOG_DIR
+  ? resolve(process.env.FLAMECAST_LOG_DIR)
+  : resolve(homedir(), ".flamecast");
+const localWorkerDir = resolve(flamecastRoot, "worker");
+const exampleWorkerDir = resolve(repoRoot, "examples/cloudflare-worker");
+const workspaceDependencyPaths = {
+  "@hylo/cli": "packages/cli",
+  "@workflow/core": "packages/core",
+  "@workflow/integrations-notion": "packages/integrations/notion",
+  "@workflow/integrations-oauth": "packages/integrations/_oauth",
+  "@workflow/integrations-slack": "packages/integrations/slack",
+  "@workflow/runtime": "packages/runtime",
+  "@workflow/server": "packages/server",
+};
 const portSpecs = [
   ["HYLO_BACKEND_PORT", 8787],
   ["HYLO_BACKEND_INSPECTOR_PORT", 9230],
@@ -45,13 +69,7 @@ execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
   stdio: "inherit",
 });
 
-if (!existsSync(".flamecast/package.json")) {
-  console.log("Initializing .flamecast example worker...");
-  execSync("pnpm hylo init", {
-    env,
-    stdio: "inherit",
-  });
-}
+ensureLocalWorker();
 
 console.log("pnpm dev using local ports:");
 console.log("  client: https://hylo-client.localhost");
@@ -60,7 +78,7 @@ console.log(
   `  backend-cloudflare: https://api-worker.hylo.localhost (port ${env.HYLO_BACKEND_PORT})`,
 );
 console.log(
-  "  .flamecast worker: https://workflow-cloudflare-worker-example.localhost",
+  "  ~/.flamecast/worker: https://workflow-cloudflare-worker-example.localhost",
 );
 console.log(`  backend inspector: ${env.HYLO_BACKEND_INSPECTOR_PORT}`);
 console.log(
@@ -70,7 +88,7 @@ console.log(
 const children = [];
 
 children.push(
-  spawn("pnpm", ["hylo", "dev", ".flamecast"], {
+  spawn("pnpm", ["hylo", "dev", localWorkerDir], {
     env,
     stdio: "inherit",
   }),
@@ -133,6 +151,59 @@ function killChildren(signal) {
   for (const child of children) {
     if (!child.killed) child.kill(signal);
   }
+}
+
+function ensureLocalWorker() {
+  const packageJsonPath = resolve(localWorkerDir, "package.json");
+  if (existsSync(packageJsonPath)) return;
+
+  if (existsSync(localWorkerDir) && readdirSync(localWorkerDir).length > 0) {
+    throw new Error(
+      `${localWorkerDir} exists but is missing package.json. Move it aside or add a valid worker package before running pnpm dev.`,
+    );
+  }
+
+  console.log(
+    `Initializing ${localWorkerDir} from examples/cloudflare-worker...`,
+  );
+  mkdirSync(flamecastRoot, { recursive: true });
+  cpSync(exampleWorkerDir, localWorkerDir, {
+    recursive: true,
+    force: false,
+    filter: shouldCopyExamplePath,
+  });
+  rewriteLocalWorkerPackageJson(packageJsonPath);
+}
+
+function shouldCopyExamplePath(src) {
+  const rel = relative(exampleWorkerDir, src);
+  if (!rel) return true;
+  const parts = rel.split(/[\\/]/);
+  if (parts.includes("node_modules")) return false;
+  if (parts.includes(".hylo")) return false;
+  if (parts.includes(".turbo")) return false;
+  return !rel.endsWith(".tsbuildinfo");
+}
+
+function rewriteLocalWorkerPackageJson(packageJsonPath) {
+  const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+  pkg.scripts = {
+    ...pkg.scripts,
+    build: "hylo build",
+    dev: "hylo dev .",
+  };
+
+  for (const dependencies of [pkg.dependencies, pkg.devDependencies]) {
+    if (!dependencies) continue;
+    for (const [name, localPath] of Object.entries(workspaceDependencyPaths)) {
+      if (dependencies[name] !== "workspace:*") continue;
+      const absoluteLocalPath = resolve(repoRoot, localPath);
+      dependencies[name] =
+        `link:${relative(localWorkerDir, absoluteLocalPath)}`;
+    }
+  }
+
+  writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
 }
 
 async function resolvePort(name, fallback) {

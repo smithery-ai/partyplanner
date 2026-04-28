@@ -31,10 +31,10 @@ function printBanner() {
     ...urls.map(([label, url]) => `${label.padEnd(10)} ${url}`),
     "",
     "Local worker source:",
-    ".flamecast",
+    "~/.flamecast/worker",
     "",
     "Run just the local worker:",
-    "pnpm hylo dev .flamecast",
+    "pnpm hylo dev ~/.flamecast/worker",
   ];
 
   console.log("");

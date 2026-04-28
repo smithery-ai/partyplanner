@@ -1,4 +1,4 @@
-import { access, cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, cp, readFile, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { info } from "../log.js";
 import { scaffoldDir } from "../paths.js";
@@ -37,9 +37,7 @@ export async function runInit(args: string[]): Promise<number> {
     return 1;
   }
 
-  await mkdir(target, { recursive: true });
   await cp(scaffoldDir, target, {
-    errorOnExist: true,
     force: false,
     recursive: true,
   });
