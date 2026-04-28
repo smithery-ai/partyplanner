@@ -58,6 +58,9 @@ binding = "DISPATCHER"
 namespace = "hylo-tenants"
 remote = true
 
+[env.production.triggers]
+crons = ["* * * * *"]
+
 [env.preview]
 name = "hylo-backend-preview"
 preview_urls = true
@@ -78,3 +81,6 @@ id = "51815469767c42a5b531b68464f4e7cf"
 binding = "DISPATCHER"
 namespace = "hylo-tenants"
 remote = true
+
+[env.preview.triggers]
+crons = ["* * * * *"]
