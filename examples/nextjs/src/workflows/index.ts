@@ -3,12 +3,10 @@ import { z } from "zod";
 import "./notion";
 import "./scheduleProbe";
 import "./slack";
-import "./sreMonitor";
 import { exampleSecretValue } from "./secrets";
 import { slackInterventionResult } from "./slack";
 import { spotifyProfile } from "./spotify";
 import { spotifyPlaylistNotionResult } from "./spotify-notion-playlist";
-import { sreMonitorResult } from "./sreMonitor";
 
 export const incidentAlert = input(
   "incidentAlert",
@@ -365,7 +363,6 @@ export const branchSummary = atom(
     const slackMessage = get.maybe(slackInterventionResult);
     const spotify = get.maybe(spotifyProfile);
     const spotifyPlaylistNotion = get.maybe(spotifyPlaylistNotionResult);
-    const sreMonitor = get.maybe(sreMonitorResult);
 
     const completed = [
       incident,
@@ -374,7 +371,6 @@ export const branchSummary = atom(
       slackMessage,
       spotify,
       spotifyPlaylistNotion,
-      sreMonitor,
     ].filter(Boolean);
     if (completed.length === 0) {
       return get.skip("No branch completed yet");
