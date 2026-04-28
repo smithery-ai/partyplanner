@@ -45,6 +45,14 @@ execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
   stdio: "inherit",
 });
 
+if (!existsSync(".flamecast/package.json")) {
+  console.log("Initializing .flamecast example worker...");
+  execSync("pnpm hylo init", {
+    env,
+    stdio: "inherit",
+  });
+}
+
 console.log("pnpm dev using local ports:");
 console.log("  client: https://hylo-client.localhost");
 console.log("  local-api: https://local-api.localhost");
@@ -52,50 +60,79 @@ console.log(
   `  backend-cloudflare: https://api-worker.hylo.localhost (port ${env.HYLO_BACKEND_PORT})`,
 );
 console.log(
-  "  workflow-cloudflare-worker-example: https://workflow-cloudflare-worker-example.localhost",
+  "  .flamecast worker: https://workflow-cloudflare-worker-example.localhost",
 );
 console.log(`  backend inspector: ${env.HYLO_BACKEND_INSPECTOR_PORT}`);
 console.log(
   `  workflow inspector: ${env.HYLO_CLOUDFLARE_WORKER_INSPECTOR_PORT}`,
 );
 
-const child = spawn(
-  "pnpm",
-  [
-    "exec",
-    "turbo",
-    "run",
-    "dev",
-    "dev:info",
-    "--filter=backend-cloudflare",
-    "--filter=workflow-cloudflare-worker-example",
-    "--filter=client",
-    "--filter=local-api",
-    "--filter=//",
-  ],
-  {
+const children = [];
+
+children.push(
+  spawn("pnpm", ["hylo", "dev", ".flamecast"], {
     env,
     stdio: "inherit",
-  },
+  }),
 );
 
-child.on("exit", (code, signal) => {
-  if (signal) {
-    process.exit(1);
-    return;
-  }
-  process.exit(code ?? 0);
-});
+children.push(
+  spawn(
+    "pnpm",
+    [
+      "exec",
+      "turbo",
+      "run",
+      "dev",
+      "dev:info",
+      "--filter=backend-cloudflare",
+      "--filter=client",
+      "--filter=local-api",
+      "--filter=//",
+    ],
+    {
+      env,
+      stdio: "inherit",
+    },
+  ),
+);
 
-child.on("error", (error) => {
-  console.error(`Failed to start pnpm dev: ${error.message}`);
-  process.exit(1);
-});
+let exiting = false;
+
+for (const child of children) {
+  child.on("exit", (code, signal) => {
+    if (exiting) return;
+    exiting = true;
+    killChildren(signal ?? "SIGTERM");
+    if (signal) {
+      process.exit(1);
+      return;
+    }
+    process.exit(code ?? 0);
+  });
+
+  child.on("error", (error) => {
+    if (exiting) return;
+    exiting = true;
+    killChildren("SIGTERM");
+    console.error(`Failed to start pnpm dev: ${error.message}`);
+    process.exit(1);
+  });
+}
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
-    child.kill(signal);
+    if (exiting) return;
+    exiting = true;
+    killChildren(signal);
+    process.exit(0);
   });
+}
+
+function killChildren(signal) {
+  for (const child of children) {
+    if (!child.killed) child.kill(signal);
+  }
 }
 
 async function resolvePort(name, fallback) {

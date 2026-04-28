@@ -189,10 +189,6 @@ function zodIssues(error: unknown): ZodIssueLike[] | undefined {
   return issues;
 }
 
-function shortRunId(runId: string): string {
-  return runId.replace(/^run_/, "").slice(0, 8);
-}
-
 function formatRunTime(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
@@ -1071,7 +1067,7 @@ function WorkflowRunnerBody({
                       onClick={() => navigation.run(workflowId, run.runId)}
                       disabled={isPending}
                       aria-current={active ? "true" : undefined}
-                      aria-label={`${runTitle}, ${runStatusLabel(run.status)}, ${formatRunTime(run.startedAt)}, ${shortRunId(run.runId)}`}
+                      aria-label={`${runTitle}, ${runStatusLabel(run.status)}, ${formatRunTime(run.startedAt)}`}
                       className={cn(
                         "grid min-h-20 w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg border border-transparent px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50 disabled:pointer-events-none disabled:opacity-60",
                         active &&
@@ -1097,7 +1093,7 @@ function WorkflowRunnerBody({
                           </span>
                           <span aria-hidden>·</span>
                           <span className="shrink-0">
-                            {shortRunId(run.runId)}
+                            {runStatusLabel(run.status)}
                           </span>
                         </span>
                         {run.waitingOn.length > 0 && (

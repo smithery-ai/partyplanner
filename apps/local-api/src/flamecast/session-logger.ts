@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   appendFile,
@@ -20,9 +20,9 @@ const ROOT = process.env.FLAMECAST_LOG_DIR
   ? resolve(process.env.FLAMECAST_LOG_DIR)
   : resolve(homedir(), ".flamecast");
 
-const RAW_DIR = join(ROOT, "raw");
-const LOGS_DIR = join(ROOT, "logs");
-const SESSIONS_DIR = join(ROOT, "sessions");
+const RAW_DIR = join(ROOT, ".raw");
+const LOGS_DIR = join(ROOT, ".logs");
+const SESSIONS_DIR = join(ROOT, ".sessions");
 
 const ESC = String.fromCharCode(27);
 const ANSI_RE = new RegExp(
@@ -47,6 +47,7 @@ interface LoggerEntry {
 
 export interface SessionLoggerEvents {
   chunk: (fcSessionId: string, chunk: string) => void;
+  chatEvent: (event: ChatLogEvent) => void;
 }
 
 interface PendingUserMessage {
@@ -60,6 +61,11 @@ export interface ChatSummary {
   terminalSessionIds: string[];
   created: string;
   lastActivity: string;
+  title: string | null;
+  pinned: boolean;
+  lastEndTurnEventId: string | null;
+  acknowledgedEndTurnEventId: string | null;
+  hasUnacknowledgedEndTurn: boolean;
 }
 
 interface ChatMetadata {
@@ -68,6 +74,19 @@ interface ChatMetadata {
   terminalSessionIds?: string[];
   created?: string;
   lastActivity?: string;
+  title?: string | null;
+  pinned?: boolean;
+  lastEndTurnEventId?: string | null;
+  acknowledgedEndTurnEventId?: string | null;
+}
+
+export interface ChatLogEvent {
+  chatId: string;
+  terminalSessionId: string;
+  claudeSessionId: string | null;
+  eventId: string;
+  isEndTurn: boolean;
+  event: unknown;
 }
 
 function isSafeId(id: string): boolean {
@@ -77,6 +96,49 @@ function isSafeId(id: string): boolean {
 function uniqueStrings(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
   return values.filter((v): v is string => typeof v === "string");
+}
+
+function normalizeTitle(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const title = value.trim();
+  return title.length > 0 ? title.slice(0, 120) : null;
+}
+
+function eventId(claudeSessionId: string | null, event: unknown): string {
+  if (event && typeof event === "object") {
+    const obj = event as Record<string, unknown>;
+    if (typeof obj.uuid === "string") return `uuid:${obj.uuid}`;
+    const message = obj.message;
+    if (message && typeof message === "object") {
+      const id = (message as Record<string, unknown>).id;
+      if (typeof id === "string") return `message:${id}`;
+    }
+  }
+  return `hash:${claudeSessionId ?? "unknown"}:${createHash("sha1")
+    .update(JSON.stringify(event))
+    .digest("hex")}`;
+}
+
+function isEndTurnEvent(event: unknown): boolean {
+  if (!event || typeof event !== "object") return false;
+  const obj = event as Record<string, unknown>;
+  if (obj.stop_reason === "end_turn") return true;
+  const message = obj.message;
+  return (
+    Boolean(message) &&
+    typeof message === "object" &&
+    (message as Record<string, unknown>).stop_reason === "end_turn"
+  );
+}
+
+function hasUnacknowledgedEndTurn(metadata: {
+  lastEndTurnEventId?: string | null;
+  acknowledgedEndTurnEventId?: string | null;
+}): boolean {
+  return Boolean(
+    metadata.lastEndTurnEventId &&
+      metadata.lastEndTurnEventId !== metadata.acknowledgedEndTurnEventId,
+  );
 }
 
 export class SessionLogger extends EventEmitter {
@@ -99,8 +161,11 @@ export class SessionLogger extends EventEmitter {
     return ROOT;
   }
 
-  recordPendingUserMessage(fcSessionId: string, text: string): void {
-    const uuid = randomUUID();
+  recordPendingUserMessage(
+    fcSessionId: string,
+    text: string,
+    uuid: string = randomUUID(),
+  ): void {
     const entry = this.entries.get(fcSessionId);
     const claudeSessionId = entry?.currentClaudeSessionId ?? null;
 
@@ -117,6 +182,14 @@ export class SessionLogger extends EventEmitter {
     };
     const line = JSON.stringify(event);
     this.emit("chunk", fcSessionId, `${line}\n`);
+    this.emit("chatEvent", {
+      chatId: entry?.chatId ?? fcSessionId,
+      terminalSessionId: fcSessionId,
+      claudeSessionId,
+      eventId: eventId(claudeSessionId, event),
+      isEndTurn: false,
+      event,
+    });
 
     if (entry && claudeSessionId) {
       // Follow-up message in an established claude session: persist
@@ -219,6 +292,16 @@ export class SessionLogger extends EventEmitter {
       terminalSessionIds: uniqueStrings(metadata.terminalSessionIds),
       created: metadata.created ?? now,
       lastActivity: metadata.lastActivity ?? now,
+      title: normalizeTitle(metadata.title),
+      pinned: Boolean(metadata.pinned),
+      lastEndTurnEventId:
+        typeof metadata.lastEndTurnEventId === "string"
+          ? metadata.lastEndTurnEventId
+          : null,
+      acknowledgedEndTurnEventId:
+        typeof metadata.acknowledgedEndTurnEventId === "string"
+          ? metadata.acknowledgedEndTurnEventId
+          : null,
     };
     const path = join(SESSIONS_DIR, `${chatId}.json`);
     await writeFile(path, JSON.stringify(normalized, null, 2));
@@ -272,6 +355,57 @@ export class SessionLogger extends EventEmitter {
       ...existing,
       lastActivity: new Date().toISOString(),
     });
+  }
+
+  async updateChatMetadata(
+    chatId: string,
+    updates: { title?: string | null; pinned?: boolean },
+  ): Promise<ChatSummary | null> {
+    if (!isSafeId(chatId)) return null;
+    let existing = await this.readChatMetadata(chatId);
+    if (!existing) {
+      const claudeSessionIds = await this.getClaudeSessionsForChat(chatId);
+      if (claudeSessionIds.length === 0) return null;
+      existing = { chatId, claudeSessionIds, terminalSessionIds: [] };
+    }
+    await this.writeChatMetadata(chatId, {
+      ...existing,
+      title: Object.hasOwn(updates, "title")
+        ? normalizeTitle(updates.title)
+        : existing.title,
+      pinned: Object.hasOwn(updates, "pinned")
+        ? Boolean(updates.pinned)
+        : Boolean(existing.pinned),
+    });
+    const [summary] = (await this.listChats()).filter(
+      (chat) => chat.chatId === chatId,
+    );
+    return summary ?? null;
+  }
+
+  async ackChatEndTurn(chatId: string): Promise<ChatSummary | null> {
+    if (!isSafeId(chatId)) return null;
+    let existing = await this.readChatMetadata(chatId);
+    if (!existing) {
+      const claudeSessionIds = await this.getClaudeSessionsForChat(chatId);
+      if (claudeSessionIds.length === 0) return null;
+      existing = { chatId, claudeSessionIds, terminalSessionIds: [] };
+    }
+    const lastEndTurnEventId =
+      typeof existing.lastEndTurnEventId === "string"
+        ? existing.lastEndTurnEventId
+        : await this.lastEndTurnEventIdForClaudeSessions(
+            uniqueStrings(existing.claudeSessionIds),
+          );
+    await this.writeChatMetadata(chatId, {
+      ...existing,
+      lastEndTurnEventId,
+      acknowledgedEndTurnEventId: lastEndTurnEventId,
+    });
+    const [summary] = (await this.listChats()).filter(
+      (chat) => chat.chatId === chatId,
+    );
+    return summary ?? null;
   }
 
   private async recordChatToClaudeMapping(
@@ -329,6 +463,29 @@ export class SessionLogger extends EventEmitter {
     return events;
   }
 
+  private async lastEndTurnEventIdForClaudeSessions(
+    claudeSessionIds: string[],
+  ): Promise<string | null> {
+    let lastEndTurnId: string | null = null;
+    for (const claudeId of claudeSessionIds) {
+      const content = await this.readClaudeSession(claudeId);
+      if (!content) continue;
+      for (const line of content.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (isEndTurnEvent(parsed)) {
+            lastEndTurnId = eventId(claudeId, parsed);
+          }
+        } catch {
+          // skip
+        }
+      }
+    }
+    return lastEndTurnId;
+  }
+
   async listChats(): Promise<ChatSummary[]> {
     await this.ensureDirs();
     const files = await readdir(SESSIONS_DIR).catch(() => []);
@@ -345,6 +502,14 @@ export class SessionLogger extends EventEmitter {
         .then((s) => s.mtime.toISOString())
         .catch(() => new Date(0).toISOString());
       const claudeSessionIds = uniqueStrings(metadata.claudeSessionIds);
+      const lastEndTurnEventId =
+        typeof metadata.lastEndTurnEventId === "string"
+          ? metadata.lastEndTurnEventId
+          : await this.lastEndTurnEventIdForClaudeSessions(claudeSessionIds);
+      const acknowledgedEndTurnEventId =
+        typeof metadata.acknowledgedEndTurnEventId === "string"
+          ? metadata.acknowledgedEndTurnEventId
+          : null;
       for (const id of claudeSessionIds) mappedClaudeIds.add(id);
       chats.push({
         chatId: metadata.chatId ?? chatId,
@@ -352,6 +517,14 @@ export class SessionLogger extends EventEmitter {
         terminalSessionIds: uniqueStrings(metadata.terminalSessionIds),
         created: metadata.created ?? fallbackTime,
         lastActivity: metadata.lastActivity ?? fallbackTime,
+        title: normalizeTitle(metadata.title),
+        pinned: Boolean(metadata.pinned),
+        lastEndTurnEventId,
+        acknowledgedEndTurnEventId,
+        hasUnacknowledgedEndTurn: hasUnacknowledgedEndTurn({
+          lastEndTurnEventId,
+          acknowledgedEndTurnEventId,
+        }),
       });
     }
 
@@ -366,12 +539,20 @@ export class SessionLogger extends EventEmitter {
       const fallbackTime = await stat(path)
         .then((s) => s.mtime.toISOString())
         .catch(() => new Date(0).toISOString());
+      const lastEndTurnEventId = await this.lastEndTurnEventIdForClaudeSessions(
+        [claudeSessionId],
+      );
       chats.push({
         chatId: claudeSessionId,
         claudeSessionIds: [claudeSessionId],
         terminalSessionIds: [],
         created: fallbackTime,
         lastActivity: fallbackTime,
+        title: null,
+        pinned: false,
+        lastEndTurnEventId,
+        acknowledgedEndTurnEventId: null,
+        hasUnacknowledgedEndTurn: Boolean(lastEndTurnEventId),
       });
     }
 
@@ -583,7 +764,26 @@ export class SessionLogger extends EventEmitter {
 
       const path = join(LOGS_DIR, `${entry.currentClaudeSessionId}.ndjson`);
       await appendFile(path, `${trimmed}\n`);
-      await this.touchChat(entry.chatId);
+      const parsedEventId = eventId(entry.currentClaudeSessionId, obj);
+      if (isEndTurnEvent(obj)) {
+        const existing = (await this.readChatMetadata(entry.chatId)) ?? {};
+        await this.writeChatMetadata(entry.chatId, {
+          ...existing,
+          lastActivity: new Date().toISOString(),
+          lastEndTurnEventId: parsedEventId,
+        });
+      } else {
+        await this.touchChat(entry.chatId);
+      }
+
+      this.emit("chatEvent", {
+        chatId: entry.chatId,
+        terminalSessionId: entry.fcSessionId,
+        claudeSessionId: entry.currentClaudeSessionId,
+        eventId: parsedEventId,
+        isEndTurn: isEndTurnEvent(obj),
+        event: obj,
+      });
 
       if (isNewClaudeSession) {
         await this.flushPendingUserMessages(entry);

@@ -59,20 +59,20 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
+  --background: #efead6;
+  --foreground: #232323;
+  --card: #efead6;
+  --card-foreground: #232323;
+  --popover: #efead6;
+  --popover-foreground: #232323;
+  --primary: #232323;
+  --primary-foreground: #efead6;
+  --secondary: #efead6;
+  --secondary-foreground: #232323;
+  --muted: #efead6;
   --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --accent: #efead6;
+  --accent-foreground: #232323;
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
@@ -83,31 +83,31 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar: #efead6;
+  --sidebar-foreground: #232323;
+  --sidebar-primary: #232323;
+  --sidebar-primary-foreground: #efead6;
+  --sidebar-accent: #efead6;
+  --sidebar-accent-foreground: #232323;
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --background: #232323;
+  --foreground: #efead6;
+  --card: #232323;
+  --card-foreground: #efead6;
+  --popover: #232323;
+  --popover-foreground: #efead6;
+  --primary: #efead6;
+  --primary-foreground: #232323;
   --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
+  --secondary-foreground: #efead6;
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
   --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --accent-foreground: #efead6;
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
@@ -117,12 +117,12 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar: #232323;
+  --sidebar-foreground: #efead6;
+  --sidebar-primary: #efead6;
+  --sidebar-primary-foreground: #232323;
   --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-accent-foreground: #efead6;
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
@@ -130,6 +130,12 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
   }
   body {
     @apply bg-background text-foreground;
@@ -168,4 +174,35 @@
 
 .workflow-node-skipped-fade {
   animation: workflow-node-skipped-fade 1000ms ease-out 500ms forwards;
+}
+
+.hylo-file-tree {
+  --trees-bg-override: var(--color-off-black);
+  --trees-bg-muted-override: color-mix(
+    in oklab,
+    var(--color-off-white) 12%,
+    transparent
+  );
+  --trees-border-color-override: transparent;
+  --trees-fg-override: var(--color-off-white);
+  --trees-fg-muted-override: color-mix(
+    in oklab,
+    var(--color-off-white) 62%,
+    transparent
+  );
+  --trees-focus-ring-color-override: color-mix(
+    in oklab,
+    var(--color-off-white) 35%,
+    transparent
+  );
+  --trees-font-family-override: var(--font-sans);
+  --trees-font-size-override: 13px;
+  --trees-padding-inline-override: 6px;
+  --trees-selected-bg-override: color-mix(
+    in oklab,
+    var(--color-off-white) 16%,
+    transparent
+  );
+  --trees-selected-fg-override: var(--color-off-white);
+  --trees-selected-focused-border-color-override: transparent;
 }

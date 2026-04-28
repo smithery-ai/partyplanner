@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "hylo build",
+    "dev": "hylo dev .",
     "deploy": "hylo deploy",
     "typecheck": "tsc --noEmit"
   },

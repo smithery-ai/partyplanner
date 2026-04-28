@@ -7,6 +7,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import { createMcpHandler } from "./mcp.js";
 import { claudeSessionRoutes } from "./routes/claude-sessions.js";
+import { fileRoutes } from "./routes/files.js";
 import { sessionRoutes } from "./routes/sessions.js";
 import { SessionLogger } from "./session-logger.js";
 import { SessionManager } from "./sessions/session-manager.js";
@@ -34,7 +35,7 @@ function createApp(sessions: SessionManager, logger: SessionLogger) {
         "Mcp-Session-Id",
         "MCP-Protocol-Version",
       ],
-      allowMethods: ["GET", "POST", "DELETE", "OPTIONS"],
+      allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
       exposeHeaders: ["Mcp-Session-Id"],
     }),
   );
@@ -46,7 +47,8 @@ function createApp(sessions: SessionManager, logger: SessionLogger) {
   const routes = app
     .get("/", (c) => c.json({ name: "flamecast", status: "ok" }))
     .route("/api", sessionRoutes(sessions, logger))
-    .route("/api", claudeSessionRoutes(logger));
+    .route("/api", claudeSessionRoutes(logger))
+    .route("/api", fileRoutes());
 
   app.doc("/openapi.json", {
     openapi: "3.1.0",

@@ -19,10 +19,17 @@ function formatPaneSnapshot(snapshot: tmux.PaneSnapshot): string {
 
 export class StreamManager {
   private readonly streams = new Map<string, StreamState>();
+  private readonly chatLogClients = new Set<WebSocket>();
 
   constructor(private readonly logger: SessionLogger) {
     this.logger.on("chunk", (sessionId, chunk) => {
       this.fanout(sessionId, chunk);
+    });
+    this.logger.on("chatEvent", (event) => {
+      this.fanoutChatLog({
+        type: "chat_event",
+        ...event,
+      });
     });
   }
 
@@ -76,6 +83,15 @@ export class StreamManager {
     await tmux.sendKeys(sessionId, msg, true);
   }
 
+  addChatLogClient(ws: WebSocket): void {
+    this.chatLogClients.add(ws);
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: "ready" }));
+    }
+    ws.on("close", () => this.chatLogClients.delete(ws));
+    ws.on("error", () => this.chatLogClients.delete(ws));
+  }
+
   disconnectAll(sessionId: string): void {
     const state = this.streams.get(sessionId);
     if (!state) return;
@@ -98,6 +114,16 @@ export class StreamManager {
     for (const client of state.clients) {
       if (client.readyState === client.OPEN) {
         client.send(output);
+      }
+    }
+  }
+
+  private fanoutChatLog(payload: unknown): void {
+    if (this.chatLogClients.size === 0) return;
+    const message = JSON.stringify(payload);
+    for (const client of this.chatLogClients) {
+      if (client.readyState === client.OPEN) {
+        client.send(message);
       }
     }
   }

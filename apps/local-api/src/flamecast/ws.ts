@@ -4,6 +4,7 @@ import type { SessionManager } from "./sessions/session-manager.js";
 import type { StreamManager } from "./stream-manager.js";
 
 const SESSION_STREAM_RE = /^\/terminals\/(fc_[0-9a-f]+)\/stream$/;
+const CHAT_LOG_STREAM_PATH = "/api/chats/stream";
 
 export interface WebSocketServerOptions {
   validateToken?: (token: string) => boolean;
@@ -20,6 +21,23 @@ export function attachWebSocketServer(
   httpServer.on("upgrade", (request: IncomingMessage, socket, head) => {
     const url = new URL(request.url ?? "", `http://${request.headers.host}`);
     const match = url.pathname.match(SESSION_STREAM_RE);
+
+    if (url.pathname === CHAT_LOG_STREAM_PATH) {
+      if (options?.validateToken) {
+        const token = url.searchParams.get("token");
+        if (!token || !options.validateToken(token)) {
+          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+      }
+
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit("connection", ws, request);
+        streamManager.addChatLogClient(ws);
+      });
+      return;
+    }
 
     if (!match) {
       socket.destroy();

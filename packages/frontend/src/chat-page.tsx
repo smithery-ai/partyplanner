@@ -1,3 +1,4 @@
+import { FileTree, useFileTree } from "@pierre/trees/react";
 import { code as codePlugin } from "@streamdown/code";
 import { math as mathPlugin } from "@streamdown/math";
 import { mermaid as mermaidPlugin } from "@streamdown/mermaid";
@@ -8,9 +9,14 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  FolderTree,
   MessageSquare,
+  Pencil,
+  Pin,
+  PinOff,
   Plus,
   RefreshCw,
+  SendHorizontal,
   User,
   Wrench,
 } from "lucide-react";
@@ -27,7 +33,15 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 import { Button } from "./components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "./components/ui/context-menu";
 import { DotmSquare1 } from "./components/ui/dotm-square-1";
+import { Input } from "./components/ui/input";
+import { Textarea } from "./components/ui/textarea";
 
 const STREAMDOWN_PLUGINS = {
   code: codePlugin,
@@ -38,17 +52,6 @@ const STREAMDOWN_PLUGINS = {
 const DEFAULT_LOCAL_API_BASE = "https://local-api.localhost";
 
 const DebugContext = createContext(false);
-
-const ESC = String.fromCharCode(27);
-const BEL = String.fromCharCode(7);
-const ANSI_RE = new RegExp(
-  `${ESC}(?:\\[[0-?]*[ -/]*[@-~]|\\][^${BEL}${ESC}]*(?:${BEL}|${ESC}\\\\)|k[^${ESC}]*${ESC}\\\\|[PX^_].*?${ESC}\\\\|[=>]|\\([AB012])`,
-  "g",
-);
-
-function stripAnsi(input: string): string {
-  return input.replace(ANSI_RE, "");
-}
 
 function cls(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -64,16 +67,11 @@ interface ChatSummary {
   terminalSessionIds: string[];
   created: string;
   lastActivity: string;
-}
-
-const STATUS_DOT: Record<ChatStatus, string> = {
-  running: "bg-emerald-500",
-  closed: "bg-muted-foreground",
-};
-
-function shortId(id: string): string {
-  if (id.startsWith("chat_")) return id.slice(5, 13);
-  return id.startsWith("fc_") ? id.slice(3) : id;
+  title: string | null;
+  pinned: boolean;
+  lastEndTurnEventId: string | null;
+  acknowledgedEndTurnEventId: string | null;
+  hasUnacknowledgedEndTurn: boolean;
 }
 
 type Block =
@@ -98,6 +96,16 @@ type Block =
       stopReason: string;
       raw: unknown;
     };
+
+interface ChatLogStreamMessage {
+  type: "ready" | "chat_event";
+  chatId?: string;
+  terminalSessionId?: string;
+  claudeSessionId?: string | null;
+  eventId?: string;
+  isEndTurn?: boolean;
+  event?: unknown;
+}
 
 function toolResultText(content: unknown): string {
   if (typeof content === "string") return content;
@@ -216,6 +224,18 @@ function eventToBlocks(obj: unknown): Block[] {
   return [];
 }
 
+function userMessageEvent(text: string, uuid: string): unknown {
+  return {
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "text", text }],
+    },
+    uuid,
+    session_id: null,
+  };
+}
+
 function formatJson(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);
@@ -236,6 +256,28 @@ function formatRelative(iso: string): string {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.round(hr / 24);
   return `${day}d ago`;
+}
+
+function formatChatTitle(iso: string): string {
+  const created = new Date(iso);
+  if (Number.isNaN(created.getTime())) return "Chat";
+  return `Chat from ${new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(created)}`;
+}
+
+function chatTitle(chat: ChatSummary): string {
+  return chat.title ?? formatChatTitle(chat.created);
+}
+
+function sortChats(chats: ChatSummary[]): ChatSummary[] {
+  return [...chats].sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    return a.lastActivity < b.lastActivity ? 1 : -1;
+  });
 }
 
 function formatDurationMs(ms: number): string {
@@ -283,6 +325,76 @@ const INITIAL_PANEL_STATE: PanelState = {
   error: null,
 };
 
+function FilesPanel({ localApiBase }: { localApiBase: string }) {
+  const [paths, setPaths] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [root, setRoot] = useState<string | null>(null);
+  const { model } = useFileTree({ paths: [], initialExpansion: "open" });
+  const lastPathsKeyRef = useRef<string>("");
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch(`${localApiBase}/api/files`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = (await res.json()) as { paths: string[]; root: string };
+      setRoot(body.root);
+      setError(null);
+      const key = body.paths.join("\n");
+      if (key !== lastPathsKeyRef.current) {
+        lastPathsKeyRef.current = key;
+        setPaths(body.paths);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [localApiBase]);
+
+  useEffect(() => {
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 5000);
+    return () => window.clearInterval(interval);
+  }, [refresh]);
+
+  useEffect(() => {
+    model.resetPaths(paths);
+  }, [model, paths]);
+
+  return (
+    <aside className="flex w-56 shrink-0 flex-col bg-off-black text-off-white sm:w-64 lg:w-72">
+      <div className="flex h-11 shrink-0 items-center justify-between gap-2 px-2.5">
+        <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
+          <FolderTree className="size-4 shrink-0" aria-hidden />
+          <span className="truncate">Files</span>
+        </div>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          title="Refresh files"
+          aria-label="Refresh files"
+          onClick={() => void refresh()}
+        >
+          <RefreshCw className="size-3.5" aria-hidden />
+        </Button>
+      </div>
+      {root ? (
+        <div
+          className="shrink-0 truncate px-2.5 py-1.5 font-mono text-[11px] text-off-white/60"
+          title={root}
+        >
+          {root}
+        </div>
+      ) : null}
+      {error ? (
+        <div className="px-2.5 py-2 text-xs text-destructive">{error}</div>
+      ) : null}
+      <div className="hylo-file-tree min-h-0 flex-1 px-1 py-1">
+        <FileTree model={model} style={{ height: "100%" }} />
+      </div>
+    </aside>
+  );
+}
+
 function ChatShell({
   localApiBase,
   onSelectedSessionIdChange,
@@ -298,33 +410,39 @@ function ChatShell({
   sidebarFooter?: ReactNode;
 }) {
   const [chats, setChats] = useState<ChatSummary[]>([]);
-  const [uncontrolledSelectedId, setUncontrolledSelectedId] = useState<
-    string | null
-  >(null);
+  const [localSelectedId, setLocalSelectedId] = useState<string | null>(
+    selectedSessionId ?? null,
+  );
   const [listError, setListError] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
   const [panelStates, setPanelStates] = useState<Map<string, PanelState>>(
     () => new Map(),
   );
   const [drafts, setDrafts] = useState<Map<string, string>>(() => new Map());
-  const wsMapRef = useRef<Map<string, WebSocket>>(new Map());
-  const wsTerminalIdsRef = useRef<Map<string, string>>(new Map());
+  const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const chatLogWsRef = useRef<WebSocket | null>(null);
   const activeTerminalIdsRef = useRef<Map<string, string>>(new Map());
-  const lineBuffersRef = useRef<Map<string, string>>(new Map());
   const seenUuidsRef = useRef<Map<string, Set<string>>>(new Map());
-  const selectedId =
-    selectedSessionId === undefined
-      ? uncontrolledSelectedId
-      : selectedSessionId;
+  const selectedIdRef = useRef<string | null>(null);
+  const selectedId = localSelectedId;
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (selectedSessionId !== undefined) {
+      setLocalSelectedId(selectedSessionId);
+    }
+  }, [selectedSessionId]);
 
   const setSelectedId = useCallback(
     (sessionId: string | null, options?: { replace?: boolean }) => {
-      if (selectedSessionId === undefined) {
-        setUncontrolledSelectedId(sessionId);
-      }
+      setLocalSelectedId(sessionId);
       onSelectedSessionIdChange?.(sessionId, options);
     },
-    [onSelectedSessionIdChange, selectedSessionId],
+    [onSelectedSessionIdChange],
   );
 
   const updatePanel = useCallback(
@@ -339,43 +457,50 @@ function ChatShell({
     [],
   );
 
-  // Fetches /events and appends only events whose uuid we haven't seen yet.
-  // Safe to call repeatedly: as initial hydrate, as gap-fill on WS open,
-  // periodic catch-up, and on resume after close.
-  const hydrateSession = useCallback(
-    async (chatId: string) => {
+  const applyEvents = useCallback(
+    (chatId: string, events: unknown[]) => {
       let seen = seenUuidsRef.current.get(chatId);
       if (!seen) {
         seen = new Set<string>();
         seenUuidsRef.current.set(chatId, seen);
       }
+
+      const newBlocks: Block[] = [];
+      let nextStatus: "running" | "open" | null = null;
+      for (const ev of events) {
+        const key = eventDedupKey(ev);
+        if (key && seen.has(key)) continue;
+        if (key) seen.add(key);
+        const transition = statusFromEvent(ev);
+        if (transition) nextStatus = transition;
+        newBlocks.push(...eventToBlocks(ev));
+      }
+      if (newBlocks.length > 0 || nextStatus) {
+        updatePanel(chatId, (s) => ({
+          ...s,
+          blocks: newBlocks.length > 0 ? [...s.blocks, ...newBlocks] : s.blocks,
+          status: nextStatus && s.status !== "error" ? nextStatus : s.status,
+        }));
+      }
+    },
+    [updatePanel],
+  );
+
+  // Fetches /events and appends only events whose uuid we haven't seen yet.
+  // Safe to call repeatedly: as initial hydrate, as gap-fill on WS open,
+  // periodic catch-up, and on resume after close.
+  const hydrateSession = useCallback(
+    async (chatId: string) => {
       try {
         const res = await fetch(`${localApiBase}/api/chats/${chatId}/events`);
         if (!res.ok) return;
         const body = (await res.json()) as { events?: unknown[] };
-        const newBlocks: Block[] = [];
-        let nextStatus: "running" | "open" | null = null;
-        for (const ev of body.events ?? []) {
-          const key = eventDedupKey(ev);
-          if (key && seen.has(key)) continue;
-          if (key) seen.add(key);
-          const transition = statusFromEvent(ev);
-          if (transition) nextStatus = transition;
-          newBlocks.push(...eventToBlocks(ev));
-        }
-        if (newBlocks.length > 0 || nextStatus) {
-          updatePanel(chatId, (s) => ({
-            ...s,
-            blocks:
-              newBlocks.length > 0 ? [...s.blocks, ...newBlocks] : s.blocks,
-            status: nextStatus && s.status !== "error" ? nextStatus : s.status,
-          }));
-        }
+        applyEvents(chatId, body.events ?? []);
       } catch {
         // best-effort
       }
     },
-    [localApiBase, updatePanel],
+    [applyEvents, localApiBase],
   );
 
   const ensureConnection = useCallback(
@@ -388,119 +513,20 @@ function ChatShell({
         next.set(chatId, INITIAL_PANEL_STATE);
         return next;
       });
-      if (!lineBuffersRef.current.has(chatId)) {
-        lineBuffersRef.current.set(chatId, "");
-      }
       if (!seenUuidsRef.current.has(chatId)) {
         seenUuidsRef.current.set(chatId, new Set<string>());
       }
 
-      // Always hydrate on (re)entry so the user sees the latest persisted
-      // log. dedup via the seen-event set keeps this idempotent.
+      // Always hydrate on (re)entry so the user sees the latest persisted log.
+      // The single chat-log socket handles live events for all chats.
       await hydrateSession(chatId);
-
-      const terminalSessionId = activeTerminalIdsRef.current.get(chatId);
-      if (!terminalSessionId) {
-        updatePanel(chatId, (s) =>
-          s.status === "connecting" || s.status === "closed"
-            ? { ...s, status: "open" }
-            : s,
-        );
-        return;
-      }
-
-      // WS already open for this terminal? We're done — live events keep
-      // streaming. If the chat was resumed in a new terminal, close the old
-      // socket and attach below.
-      const existingTerminalId = wsTerminalIdsRef.current.get(chatId);
-      if (
-        wsMapRef.current.has(chatId) &&
-        existingTerminalId === terminalSessionId
-      ) {
-        return;
-      }
-      const existingWs = wsMapRef.current.get(chatId);
-      if (existingWs) existingWs.close();
-
-      const ingest = (text: string) => {
-        const buf =
-          (lineBuffersRef.current.get(chatId) ?? "") + stripAnsi(text);
-        const parts = buf.split("\n");
-        const remainder = parts.pop() ?? "";
-        lineBuffersRef.current.set(chatId, remainder);
-        const newBlocks: Block[] = [];
-        let nextStatus: "running" | "open" | null = null;
-        const seenForSession = seenUuidsRef.current.get(chatId);
-        for (const line of parts) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("{")) continue;
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(trimmed);
-          } catch {
-            continue;
-          }
-          const key = eventDedupKey(parsed);
-          if (key && seenForSession?.has(key)) continue;
-          if (key) seenForSession?.add(key);
-          const transition = statusFromEvent(parsed);
-          if (transition) nextStatus = transition;
-          newBlocks.push(...eventToBlocks(parsed));
-        }
-        if (newBlocks.length > 0 || nextStatus) {
-          updatePanel(chatId, (s) => ({
-            ...s,
-            blocks:
-              newBlocks.length > 0 ? [...s.blocks, ...newBlocks] : s.blocks,
-            status: nextStatus && s.status !== "error" ? nextStatus : s.status,
-          }));
-        }
-      };
-
-      const wsUrl = `${localApiBase.replace(/^http/, "ws")}/terminals/${terminalSessionId}/stream`;
-      const ws = new WebSocket(wsUrl);
-      wsMapRef.current.set(chatId, ws);
-      wsTerminalIdsRef.current.set(chatId, terminalSessionId);
-
-      ws.addEventListener("open", () => {
-        // Gap-fill: any events written between the initial hydrate and the
-        // WS being ready (or by another browser concurrently) get pulled in
-        // here. dedup via seen-event set keeps this idempotent.
-        void hydrateSession(chatId);
-        // Don't override 'running' set by hydration — claude may still be
-        // streaming after a refresh and we want to keep the indicator.
-        updatePanel(chatId, (s) =>
-          s.status === "running" ? s : { ...s, status: "open" },
-        );
-      });
-      ws.addEventListener("message", (event) => {
-        const data = event.data;
-        if (typeof data === "string") {
-          ingest(data);
-        } else if (data instanceof Blob) {
-          void data.text().then(ingest);
-        } else {
-          ingest(String(data));
-        }
-      });
-      ws.addEventListener("close", () => {
-        if (wsMapRef.current.get(chatId) !== ws) return;
-        wsMapRef.current.delete(chatId);
-        wsTerminalIdsRef.current.delete(chatId);
-        activeTerminalIdsRef.current.delete(chatId);
-        updatePanel(chatId, (s) =>
-          s.status === "error" ? s : { ...s, status: "open" },
-        );
-      });
-      ws.addEventListener("error", () => {
-        updatePanel(chatId, (s) => ({
-          ...s,
-          status: "error",
-          error: "WebSocket error",
-        }));
-      });
+      updatePanel(chatId, (s) =>
+        s.status === "connecting" || s.status === "closed"
+          ? { ...s, status: "open" }
+          : s,
+      );
     },
-    [hydrateSession, localApiBase, updatePanel],
+    [hydrateSession, updatePanel],
   );
 
   const refresh = useCallback(async () => {
@@ -508,20 +534,191 @@ function ChatShell({
       const res = await fetch(`${localApiBase}/api/chats`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { chats: ChatSummary[] };
-      data.chats.sort((a, b) => (a.lastActivity < b.lastActivity ? 1 : -1));
+      const sortedChats = sortChats(data.chats);
       const activeIds = new Map<string, string>();
-      for (const chat of data.chats) {
+      for (const chat of sortedChats) {
         if (chat.activeTerminalSessionId) {
           activeIds.set(chat.chatId, chat.activeTerminalSessionId);
         }
       }
       activeTerminalIdsRef.current = activeIds;
-      setChats(data.chats);
+      setChats(sortedChats);
       setListError(null);
     } catch (err) {
       setListError(err instanceof Error ? err.message : String(err));
     }
   }, [localApiBase]);
+
+  const updateChatMetadata = useCallback(
+    async (
+      chatId: string,
+      updates: { title?: string | null; pinned?: boolean },
+    ) => {
+      setChats((prev) =>
+        sortChats(
+          prev.map((chat) =>
+            chat.chatId === chatId ? { ...chat, ...updates } : chat,
+          ),
+        ),
+      );
+      try {
+        const res = await fetch(`${localApiBase}/api/chats/${chatId}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(updates),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = (await res.json()) as { chat: ChatSummary };
+        setChats((prev) =>
+          sortChats(
+            prev.map((chat) => (chat.chatId === chatId ? body.chat : chat)),
+          ),
+        );
+        setListError(null);
+      } catch (err) {
+        setListError(err instanceof Error ? err.message : String(err));
+        void refresh();
+      }
+    },
+    [localApiBase, refresh],
+  );
+
+  const ackChat = useCallback(
+    async (chatId: string) => {
+      setChats((prev) =>
+        prev.map((chat) =>
+          chat.chatId === chatId
+            ? {
+                ...chat,
+                acknowledgedEndTurnEventId: chat.lastEndTurnEventId,
+                hasUnacknowledgedEndTurn: false,
+              }
+            : chat,
+        ),
+      );
+      try {
+        const res = await fetch(`${localApiBase}/api/chats/${chatId}/ack`, {
+          method: "POST",
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const body = (await res.json()) as { chat: ChatSummary };
+        setChats((prev) =>
+          sortChats(
+            prev.map((chat) => (chat.chatId === chatId ? body.chat : chat)),
+          ),
+        );
+      } catch {
+        void refresh();
+      }
+    },
+    [localApiBase, refresh],
+  );
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const selected = chats.find((chat) => chat.chatId === selectedId);
+    if (selected?.hasUnacknowledgedEndTurn) {
+      void ackChat(selectedId);
+    }
+  }, [ackChat, chats, selectedId]);
+
+  useEffect(() => {
+    let closed = false;
+    let reconnectTimer: number | null = null;
+
+    const connect = () => {
+      const wsUrl = `${localApiBase.replace(/^http/, "ws")}/api/chats/stream`;
+      const ws = new WebSocket(wsUrl);
+      chatLogWsRef.current = ws;
+
+      ws.addEventListener("open", () => {
+        void refresh();
+        if (selectedIdRef.current) {
+          void hydrateSession(selectedIdRef.current);
+        }
+      });
+      ws.addEventListener("message", (event) => {
+        const raw: unknown = event.data;
+        if (raw instanceof Blob) {
+          void raw.text().then((blobText: string) => {
+            handleChatLogMessage(blobText);
+          });
+          return;
+        }
+        const text: string = typeof raw === "string" ? raw : String(raw);
+        handleChatLogMessage(text);
+      });
+      ws.addEventListener("close", () => {
+        if (chatLogWsRef.current === ws) chatLogWsRef.current = null;
+        if (closed) return;
+        reconnectTimer = window.setTimeout(connect, 1000);
+      });
+      ws.addEventListener("error", () => {
+        ws.close();
+      });
+    };
+
+    const handleChatLogMessage = (text: string) => {
+      let message: ChatLogStreamMessage;
+      try {
+        message = JSON.parse(text) as ChatLogStreamMessage;
+      } catch {
+        return;
+      }
+      if (
+        message.type !== "chat_event" ||
+        !message.chatId ||
+        message.event === undefined
+      ) {
+        return;
+      }
+      if (message.terminalSessionId) {
+        activeTerminalIdsRef.current.set(
+          message.chatId,
+          message.terminalSessionId,
+        );
+      }
+      applyEvents(message.chatId, [message.event]);
+      const selected = selectedIdRef.current === message.chatId;
+      setChats((prev) =>
+        sortChats(
+          prev.map((chat) => {
+            if (chat.chatId !== message.chatId) return chat;
+            const lastEndTurnEventId =
+              message.isEndTurn && message.eventId
+                ? message.eventId
+                : chat.lastEndTurnEventId;
+            return {
+              ...chat,
+              lastActivity: new Date().toISOString(),
+              lastEndTurnEventId,
+              acknowledgedEndTurnEventId:
+                selected && message.isEndTurn
+                  ? lastEndTurnEventId
+                  : chat.acknowledgedEndTurnEventId,
+              hasUnacknowledgedEndTurn:
+                Boolean(message.isEndTurn && message.eventId) && !selected
+                  ? true
+                  : selected
+                    ? false
+                    : chat.hasUnacknowledgedEndTurn,
+            };
+          }),
+        ),
+      );
+      if (selected && message.isEndTurn) {
+        void ackChat(message.chatId);
+      }
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      if (reconnectTimer != null) window.clearTimeout(reconnectTimer);
+      chatLogWsRef.current?.close();
+      chatLogWsRef.current = null;
+    };
+  }, [ackChat, applyEvents, hydrateSession, localApiBase, refresh]);
 
   useEffect(() => {
     void refresh();
@@ -565,13 +762,9 @@ function ChatShell({
 
   useEffect(() => {
     return () => {
-      for (const ws of wsMapRef.current.values()) {
-        ws.close();
-      }
-      wsMapRef.current.clear();
-      wsTerminalIdsRef.current.clear();
+      chatLogWsRef.current?.close();
+      chatLogWsRef.current = null;
       activeTerminalIdsRef.current.clear();
-      lineBuffersRef.current.clear();
     };
   }, []);
 
@@ -600,11 +793,20 @@ function ChatShell({
       if (!text) return;
       const cur = panelStates.get(chatId) ?? INITIAL_PANEL_STATE;
       if (cur.status !== "open" && cur.status !== "running") return;
+      const clientMessageId = crypto.randomUUID();
+      const optimisticEvent = userMessageEvent(text, clientMessageId);
+      const seen = seenUuidsRef.current.get(chatId) ?? new Set<string>();
+      seen.add(`uuid:${clientMessageId}`);
+      seenUuidsRef.current.set(chatId, seen);
+      updatePanel(chatId, (s) => ({
+        ...s,
+        blocks: [...s.blocks, ...eventToBlocks(optimisticEvent)],
+      }));
       try {
         const res = await fetch(`${localApiBase}/api/chats/${chatId}/chat`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: text }),
+          body: JSON.stringify({ clientMessageId, message: text }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const body = (await res.json()) as {
@@ -637,27 +839,46 @@ function ChatShell({
     });
   }, []);
 
-  const endChat = useCallback(
+  const beginRename = useCallback((chat: ChatSummary) => {
+    setRenamingChatId(chat.chatId);
+    setRenameDraft(chatTitle(chat));
+  }, []);
+
+  const cancelRename = useCallback(() => {
+    setRenamingChatId(null);
+    setRenameDraft("");
+  }, []);
+
+  const commitRename = useCallback(
     async (chatId: string) => {
-      const ws = wsMapRef.current.get(chatId);
-      if (ws) {
-        ws.close();
-        wsMapRef.current.delete(chatId);
-      }
-      wsTerminalIdsRef.current.delete(chatId);
-      activeTerminalIdsRef.current.delete(chatId);
-      try {
-        await fetch(`${localApiBase}/api/chats/${chatId}/terminal`, {
-          method: "DELETE",
-        });
-      } catch {
-        // best-effort
-      }
-      updatePanel(chatId, (s) => ({ ...s, status: "open" }));
-      void refresh();
+      if (renamingChatId !== chatId) return;
+      const title = renameDraft.trim();
+      cancelRename();
+      await updateChatMetadata(chatId, { title: title || null });
     },
-    [localApiBase, refresh, updatePanel],
+    [cancelRename, renameDraft, renamingChatId, updateChatMetadata],
   );
+
+  const pinnedChats = chats.filter((chat) => chat.pinned);
+  const unpinnedChats = chats.filter((chat) => !chat.pinned);
+  const chatSections = [
+    {
+      chats: pinnedChats,
+      id: "pinned",
+      label: "Pinned",
+      show: pinnedChats.length > 0,
+    },
+    {
+      chats: unpinnedChats,
+      id: "conversations",
+      label: pinnedChats.length > 0 ? "Conversations" : null,
+      show: unpinnedChats.length > 0,
+    },
+  ];
+  const selectedChat = selectedId
+    ? chats.find((chat) => chat.chatId === selectedId)
+    : null;
+  const selectedChatTitle = selectedChat ? chatTitle(selectedChat) : "Chat";
 
   return (
     <DebugContext.Provider value={debug}>
@@ -702,54 +923,149 @@ function ChatShell({
                   No chats
                 </div>
               ) : (
-                <div className="flex flex-col gap-1">
-                  {chats.map((s) => {
-                    const active = s.chatId === selectedId;
-                    const subtitle =
-                      s.claudeSessionIds[s.claudeSessionIds.length - 1] ??
-                      s.activeTerminalSessionId ??
-                      "No session yet";
-                    return (
-                      <button
-                        key={s.chatId}
-                        type="button"
-                        onClick={() => setSelectedId(s.chatId)}
-                        aria-current={active ? "true" : undefined}
+                <div className="flex flex-col gap-3">
+                  {chatSections
+                    .filter((section) => section.show)
+                    .map((section) => (
+                      <div
+                        key={section.id}
                         className={cls(
-                          "grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg border border-transparent px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50",
-                          active &&
-                            "border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
+                          "flex flex-col gap-1",
+                          section.id === "pinned" &&
+                            "rounded-lg bg-off-white/5 p-1",
                         )}
                       >
-                        <span
-                          className={cls(
-                            "mt-1 size-2 rounded-full",
-                            STATUS_DOT[s.status],
-                          )}
-                          title={s.status}
-                          aria-hidden
-                        />
-                        <span className="min-w-0">
-                          <span className="block min-w-0 truncate font-medium">
-                            {shortId(s.chatId)}
-                          </span>
-                          <span className="mt-1 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                            <Clock3 className="size-3 shrink-0" aria-hidden />
-                            <span className="min-w-0 truncate">
-                              {formatRelative(s.lastActivity)}
-                            </span>
-                            <span aria-hidden>·</span>
-                            <span className="shrink-0 capitalize">
-                              {s.status}
-                            </span>
-                          </span>
-                          <span className="mt-0.5 block min-w-0 truncate text-xs text-muted-foreground">
-                            {shortId(subtitle)}
-                          </span>
-                        </span>
-                      </button>
-                    );
-                  })}
+                        {section.label ? (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-off-white/55 uppercase">
+                            {section.id === "pinned" ? (
+                              <Pin className="size-3" aria-hidden />
+                            ) : null}
+                            {section.label}
+                          </div>
+                        ) : null}
+                        {section.chats.map((s) => {
+                          const active = s.chatId === selectedId;
+                          const title = chatTitle(s);
+                          const renaming = renamingChatId === s.chatId;
+                          const showAckCircle =
+                            s.hasUnacknowledgedEndTurn && !active;
+                          return (
+                            <ContextMenu key={s.chatId}>
+                              <ContextMenuTrigger asChild>
+                                {renaming ? (
+                                  <form
+                                    className={cls(
+                                      "grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg bg-sidebar-accent px-2.5 py-2 text-left text-sm text-sidebar-accent-foreground shadow-sm",
+                                    )}
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      void commitRename(s.chatId);
+                                    }}
+                                  >
+                                    <span className="mt-3 size-2">
+                                      {showAckCircle ? (
+                                        <span
+                                          className="block size-2 rounded-full bg-sky-400"
+                                          title="Ready to acknowledge"
+                                          aria-hidden
+                                        />
+                                      ) : null}
+                                    </span>
+                                    <Input
+                                      autoFocus
+                                      onFocus={(e) => e.currentTarget.select()}
+                                      value={renameDraft}
+                                      onBlur={() => void commitRename(s.chatId)}
+                                      onChange={(e) =>
+                                        setRenameDraft(e.target.value)
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Escape") {
+                                          e.preventDefault();
+                                          cancelRename();
+                                        }
+                                      }}
+                                      placeholder={formatChatTitle(s.created)}
+                                      className="h-7 border-0 bg-sidebar focus-visible:border-transparent"
+                                    />
+                                  </form>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedId(s.chatId)}
+                                    aria-current={active ? "true" : undefined}
+                                    aria-label={`${title}, ${s.status}, last active ${formatRelative(s.lastActivity)}${showAckCircle ? ", ready to acknowledge" : ""}`}
+                                    className={cls(
+                                      "grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50",
+                                      active &&
+                                        "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
+                                    )}
+                                  >
+                                    <span className="mt-1 size-2">
+                                      {showAckCircle ? (
+                                        <span
+                                          className="block size-2 rounded-full bg-sky-400"
+                                          title="Ready to acknowledge"
+                                          aria-hidden
+                                        />
+                                      ) : null}
+                                    </span>
+                                    <span className="min-w-0">
+                                      <span className="flex min-w-0 items-center gap-1 font-medium">
+                                        {s.pinned ? (
+                                          <Pin
+                                            className="size-3 shrink-0 text-muted-foreground"
+                                            aria-hidden
+                                          />
+                                        ) : null}
+                                        <span className="min-w-0 truncate">
+                                          {title}
+                                        </span>
+                                      </span>
+                                      <span className="mt-1 flex min-w-0 items-center gap-1 text-muted-foreground text-xs">
+                                        <Clock3
+                                          className="size-3 shrink-0"
+                                          aria-hidden
+                                        />
+                                        <span className="min-w-0 truncate">
+                                          {formatRelative(s.lastActivity)}
+                                        </span>
+                                        <span aria-hidden>·</span>
+                                        <span className="shrink-0 capitalize">
+                                          {s.status}
+                                        </span>
+                                      </span>
+                                    </span>
+                                  </button>
+                                )}
+                              </ContextMenuTrigger>
+                              <ContextMenuContent>
+                                <ContextMenuItem
+                                  onSelect={() => beginRename(s)}
+                                >
+                                  <Pencil className="size-4" aria-hidden />
+                                  Rename
+                                </ContextMenuItem>
+                                <ContextMenuItem
+                                  onSelect={() =>
+                                    void updateChatMetadata(s.chatId, {
+                                      pinned: !s.pinned,
+                                    })
+                                  }
+                                >
+                                  {s.pinned ? (
+                                    <PinOff className="size-4" aria-hidden />
+                                  ) : (
+                                    <Pin className="size-4" aria-hidden />
+                                  )}
+                                  {s.pinned ? "Unpin" : "Pin"}
+                                </ContextMenuItem>
+                              </ContextMenuContent>
+                            </ContextMenu>
+                          );
+                        })}
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
@@ -788,16 +1104,17 @@ function ChatShell({
             {selectedId ? (
               <ChatPanel
                 sessionId={selectedId}
+                title={selectedChatTitle}
                 state={panelStates.get(selectedId) ?? INITIAL_PANEL_STATE}
                 draft={drafts.get(selectedId) ?? ""}
                 onDraftChange={(v) => setDraft(selectedId, v)}
                 onSend={() => void sendMessage(selectedId)}
-                onEndChat={() => void endChat(selectedId)}
               />
             ) : (
               <EmptyState onNew={() => void newChat()} />
             )}
           </div>
+          <FilesPanel localApiBase={localApiBase} />
         </div>
       </div>
     </DebugContext.Provider>
@@ -829,7 +1146,7 @@ function AssistantMarkdown({ text }: { text: string }) {
       mode="streaming"
       parseIncompleteMarkdown
       plugins={plugins}
-      className="prose-sm max-w-none"
+      className="max-w-none [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-none [&_ul]:pl-2 [&_ol>li]:my-1 [&_ul>li]:relative [&_ul>li]:my-1 [&_ul>li]:pl-3 [&_ul>li]:before:absolute [&_ul>li]:before:left-0 [&_ul>li]:before:text-muted-foreground [&_ul>li]:before:content-['•']"
     >
       {text}
     </Streamdown>
@@ -842,7 +1159,7 @@ function BlockBody({ block }: { block: Block }) {
       return null;
     case "thinking":
       return (
-        <div className="flex gap-2 rounded-md border border-dashed border-border bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+        <div className="flex gap-2 rounded-md bg-background/40 px-3 py-2 text-xs text-muted-foreground">
           <Brain className="mt-0.5 size-3.5 shrink-0" aria-hidden />
           <p className="whitespace-pre-wrap italic">{block.text}</p>
         </div>
@@ -855,9 +1172,9 @@ function BlockBody({ block }: { block: Block }) {
       );
     case "user_text":
       return (
-        <div className="flex w-full gap-2 rounded-md border border-border bg-background/60 px-3 py-2 text-sm">
+        <div className="flex w-full gap-2 rounded-md bg-maroon px-3 py-2 text-primary-foreground text-sm">
           <User
-            className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
+            className="mt-0.5 size-3.5 shrink-0 text-primary-foreground/70"
             aria-hidden
           />
           <p className="min-w-0 whitespace-pre-wrap">{block.text}</p>
@@ -865,7 +1182,7 @@ function BlockBody({ block }: { block: Block }) {
       );
     case "tool_use":
       return (
-        <div className="rounded-md border border-border bg-background/60 px-3 py-2 text-xs">
+        <div className="rounded-md bg-background/60 px-3 py-2 text-xs">
           <div className="mb-1 flex items-center gap-1.5 font-medium">
             <Wrench className="size-3.5" aria-hidden />
             <span>{block.name || "tool"}</span>
@@ -883,10 +1200,8 @@ function BlockBody({ block }: { block: Block }) {
       return (
         <div
           className={cls(
-            "rounded-md border px-3 py-2 text-xs",
-            block.isError
-              ? "border-destructive/40 bg-destructive/10"
-              : "border-border bg-background/40",
+            "rounded-md px-3 py-2 text-xs",
+            block.isError ? "bg-destructive/10" : "bg-background/40",
           )}
         >
           <div className="mb-1 font-medium text-muted-foreground">
@@ -903,7 +1218,7 @@ function BlockBody({ block }: { block: Block }) {
         <div className="flex flex-col gap-1">
           {block.result ? (
             block.isError ? (
-              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              <div className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-sm">
                 <p className="whitespace-pre-wrap">{block.result}</p>
               </div>
             ) : (
@@ -952,7 +1267,7 @@ function SystemBlockView({
         <span>session started</span>
       </button>
       {expanded ? (
-        <div className="ml-1.5 flex flex-col gap-1 border-l-2 border-border pl-3 text-xs text-muted-foreground">
+        <div className="ml-1.5 flex flex-col gap-1 pl-3 text-muted-foreground text-xs">
           <div>
             model <code className="rounded bg-muted px-1">{block.model}</code>
           </div>
@@ -961,7 +1276,7 @@ function SystemBlockView({
             <code className="rounded bg-muted px-1 break-all">{block.cwd}</code>
           </div>
           {debug ? (
-            <pre className="overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px]">
+            <pre className="overflow-x-auto rounded-md bg-muted/40 p-2 font-mono text-[11px]">
               {formatJson(block.raw)}
             </pre>
           ) : null}
@@ -994,7 +1309,7 @@ function BlockView({ block }: { block: Block }) {
             <span>raw</span>
           </button>
           {expanded ? (
-            <pre className="mt-1 overflow-x-auto rounded-md border border-border bg-muted/40 p-2 font-mono text-[11px] text-muted-foreground">
+            <pre className="mt-1 overflow-x-auto rounded-md bg-muted/40 p-2 font-mono text-[11px] text-muted-foreground">
               {formatJson(block.raw)}
             </pre>
           ) : null}
@@ -1121,12 +1436,7 @@ function ToolCallView({
 
   const summary = summarizeToolInput(toolUse.input);
   return (
-    <div
-      className={cls(
-        "rounded-md border bg-background/60",
-        toolResult.isError ? "border-destructive/40" : "border-border",
-      )}
-    >
+    <div className="rounded-md bg-background/60">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
@@ -1150,7 +1460,7 @@ function ToolCallView({
         ) : null}
       </button>
       {expanded ? (
-        <div className="flex flex-col gap-2 border-t border-border px-3 py-2">
+        <div className="flex flex-col gap-2 px-3 py-2">
           <BlockView block={toolUse} />
           <BlockView block={toolResult} />
         </div>
@@ -1174,8 +1484,7 @@ function GroupView({
     (b) => b.kind === "thinking" || b.kind === "text",
   ).length;
   const isDone = !!group.resultBlock || !!group.finalText;
-  const showIntermediates =
-    group.intermediates.length > 0 && (toolCallCount > 0 || !isDone);
+  const showIntermediates = group.intermediates.length > 0;
   const showSystemBlock =
     group.systemBlock?.kind === "system" &&
     (!debug || isFirst) &&
@@ -1188,6 +1497,7 @@ function GroupView({
       ? `${messageCount} ${messageCount === 1 ? "message" : "messages"}`
       : "",
   ].filter(Boolean);
+  const summary = summaryParts.join(", ") || "Details";
   // Force-expand while the turn is streaming; auto-collapse on the
   // streaming -> done transition, then respect manual toggles.
   const [manualExpanded, setManualExpanded] = useState(false);
@@ -1236,17 +1546,17 @@ function GroupView({
             onClick={() => setManualExpanded((v) => !v)}
             disabled={!isDone}
             aria-expanded={expanded}
-            className="inline-flex w-fit items-center gap-1 rounded-md py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+            className="inline-flex w-fit items-center gap-1 rounded-md py-0.5 text-xs text-muted-foreground hover:text-foreground disabled:cursor-default disabled:hover:text-muted-foreground"
           >
             {expanded ? (
               <ChevronDown className="size-3.5" aria-hidden />
             ) : (
               <ChevronRight className="size-3.5" aria-hidden />
             )}
-            <span>{summaryParts.join(", ")}</span>
+            <span>{summary}</span>
           </button>
           {expanded ? (
-            <div className="ml-1.5 flex flex-col gap-2 border-l-2 border-border pl-3">
+            <div className="ml-1.5 flex flex-col gap-2 pl-3">
               {items.map((item, i) => {
                 if (item.kind === "tool_call") {
                   const key = `tc-${eventUuid(item.toolUse.raw) ?? i}-${item.toolUse.name}`;
@@ -1273,21 +1583,23 @@ function GroupView({
 
 function ChatPanel({
   sessionId,
+  title,
   state,
   draft,
   onDraftChange,
   onSend,
-  onEndChat,
 }: {
   sessionId: string;
+  title: string;
   state: PanelState;
   draft: string;
   onDraftChange: (value: string) => void;
   onSend: () => void;
-  onEndChat: () => void;
 }) {
   const { blocks, status, error } = state;
   const outputRef = useRef<HTMLDivElement | null>(null);
+  const canSend =
+    Boolean(draft.trim()) && (status === "open" || status === "running");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll-to-bottom should re-fire on every blocks/sessionId change
   useEffect(() => {
@@ -1297,26 +1609,18 @@ function ChatPanel({
   }, [blocks, sessionId]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+    if (e.nativeEvent.isComposing) return;
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      onSend();
+      if (canSend) onSend();
     }
   };
 
-  const canSend =
-    Boolean(draft.trim()) && (status === "open" || status === "running");
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-off-white text-off-black">
-      <header className="flex h-11 shrink-0 items-center justify-between gap-2 px-3">
-        <div className="flex min-w-0 items-center gap-2 text-sm">
-          <span className="font-mono text-muted-foreground">{sessionId}</span>
-          <span className="text-xs text-muted-foreground">· {status}</span>
-        </div>
-        <Button type="button" variant="ghost" size="sm" onClick={onEndChat}>
-          End session
-        </Button>
-      </header>
+      <div className="flex h-11 shrink-0 items-center gap-2 px-3">
+        <h1 className="min-w-0 truncate font-semibold text-sm">{title}</h1>
+      </div>
       <div ref={outputRef} className="min-h-0 flex-1 overflow-auto p-3">
         {blocks.length === 0 ? (
           status === "running" ? (
@@ -1340,23 +1644,40 @@ function ChatPanel({
         )}
       </div>
       {error ? (
-        <p className="shrink-0 border-t border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <p className="shrink-0 bg-destructive/10 px-3 py-2 text-destructive text-xs">
           {error}
         </p>
       ) : null}
-      <div className="flex shrink-0 items-end gap-2 p-3">
-        <textarea
-          value={draft}
-          onChange={(e) => onDraftChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Type a message. ⌘/Ctrl+Enter to send."
-          disabled={status === "connecting" || status === "error"}
-          className="field-sizing-content min-h-12 flex-1 rounded-lg border border-input bg-white px-2.5 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
-        />
-        <Button onClick={onSend} disabled={!canSend}>
-          Send
-        </Button>
-      </div>
+      <form
+        className="shrink-0 px-3 pb-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSend) onSend();
+        }}
+      >
+        <div className="rounded-lg bg-white shadow-sm transition-colors focus-within:ring-3 focus-within:ring-ring/50">
+          <Textarea
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Message..."
+            disabled={status === "connecting" || status === "error"}
+            rows={1}
+            className="max-h-48 min-h-12 resize-none overflow-y-auto border-0 bg-transparent px-3 py-3 text-sm shadow-none focus-visible:border-transparent focus-visible:ring-0"
+          />
+          <div className="flex min-h-11 items-center justify-end px-2 py-1.5">
+            <Button
+              type="submit"
+              size="icon-sm"
+              disabled={!canSend}
+              title="Send message"
+              aria-label="Send message"
+            >
+              <SendHorizontal className="size-3.5" aria-hidden />
+            </Button>
+          </div>
+        </div>
+      </form>
     </div>
   );
 }
