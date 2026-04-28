@@ -4,9 +4,12 @@ import { createNodeBackendApp } from "@hylo/backend/node";
 const port = parsePort(process.env.HYLO_BACKEND_PORT ?? process.env.PORT, 8787);
 const hostname = process.env.HOST ?? "127.0.0.1";
 
-serve(
+const backend = createNodeBackendApp(process.env);
+backend.start();
+
+const server = serve(
   {
-    fetch: createNodeBackendApp(process.env).fetch,
+    fetch: backend.fetch,
     hostname,
     port,
   },
@@ -16,6 +19,15 @@ serve(
     );
   },
 );
+
+const shutdown = (signal: NodeJS.Signals) => {
+  console.log(`Received ${signal}, shutting down`);
+  backend.stop();
+  server.close(() => process.exit(0));
+};
+
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
 
 function parsePort(raw: string | undefined, fallback: number): number {
   const port = Number(raw ?? fallback);

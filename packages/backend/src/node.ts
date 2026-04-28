@@ -2,10 +2,25 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createBackendApp } from "./app";
 import { createLocalDeploymentBackend } from "./deployments/local-backend";
-import { createWorkflowDeploymentRegistry } from "./deployments/registry";
+import {
+  createWorkflowDeploymentRegistry,
+  type WorkflowDeploymentRegistry,
+} from "./deployments/registry";
+import { deploymentSourceFromList } from "./scheduling/dispatcher";
+import { createNodeScheduler, type NodeScheduler } from "./scheduling/node";
 import type { BackendAppEnv } from "./types";
 
-export function createNodeBackendApp(env: BackendAppEnv = process.env) {
+export type NodeBackendApp = {
+  fetch: (request: Request) => Promise<Response>;
+  scheduler: NodeScheduler;
+  deploymentRegistry: WorkflowDeploymentRegistry;
+  start(): void;
+  stop(): void;
+};
+
+export function createNodeBackendApp(
+  env: BackendAppEnv = process.env,
+): NodeBackendApp {
   const normalizedEnv = normalizeNodeBackendEnv(env);
   const client = postgres(resolvePostgresConnectionString(normalizedEnv), {
     max: 20,
@@ -14,7 +29,7 @@ export function createNodeBackendApp(env: BackendAppEnv = process.env) {
   });
   const db = drizzle(client);
   const deploymentRegistry = createWorkflowDeploymentRegistry(db);
-  return createBackendApp({
+  const app = createBackendApp({
     db,
     env: normalizedEnv,
     deploymentRegistry,
@@ -23,6 +38,35 @@ export function createNodeBackendApp(env: BackendAppEnv = process.env) {
       deploymentRegistry,
     ),
   });
+
+  const scheduler = createNodeScheduler({
+    intervalMs: parseInterval(normalizedEnv.HYLO_SCHEDULER_INTERVAL_MS),
+    resolveSource: () =>
+      deploymentSourceFromList(() => deploymentRegistry.list("shared"), {
+        apiKey: normalizedEnv.HYLO_API_KEY,
+      }),
+    onError: (error) =>
+      console.error(
+        JSON.stringify({
+          scope: "schedule_dispatch",
+          level: "error",
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      ),
+  });
+
+  return {
+    fetch: app.fetch as NodeBackendApp["fetch"],
+    scheduler,
+    deploymentRegistry,
+    start() {
+      if (normalizedEnv.HYLO_SCHEDULER_DISABLED === "true") return;
+      scheduler.start();
+    },
+    stop() {
+      scheduler.stop();
+    },
+  };
 }
 
 function normalizeNodeBackendEnv(env: BackendAppEnv): BackendAppEnv {
@@ -42,4 +86,10 @@ function resolvePostgresConnectionString(env: BackendAppEnv): string {
     );
   }
   return connectionString;
+}
+
+function parseInterval(raw: string | undefined): number | undefined {
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 1_000 ? n : undefined;
 }

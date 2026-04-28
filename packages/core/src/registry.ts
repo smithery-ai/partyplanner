@@ -48,10 +48,19 @@ export type ActionDef = {
 
 export type StepDef = AtomDef | ActionDef;
 
+export type ScheduleDef = {
+  id: string;
+  cron: string;
+  inputId: string;
+  payload: unknown;
+  description?: string;
+};
+
 export class Registry {
   private _inputs = new Map<string, InputDef>();
   private _atoms = new Map<string, AtomDef>();
   private _actions = new Map<string, ActionDef>();
+  private _schedules = new Map<string, ScheduleDef>();
 
   registerInput(def: InputDef): void {
     this.assertUnique(def.id);
@@ -68,6 +77,16 @@ export class Registry {
     this._actions.set(def.id, def);
   }
 
+  registerSchedule(def: ScheduleDef): void {
+    this.assertUnique(def.id);
+    if (!this._inputs.has(def.inputId)) {
+      throw new Error(
+        `schedule "${def.id}" references unknown input "${def.inputId}". Register the input before declaring the schedule.`,
+      );
+    }
+    this._schedules.set(def.id, def);
+  }
+
   getInput(id: string): InputDef | undefined {
     return this._inputs.get(id);
   }
@@ -79,6 +98,9 @@ export class Registry {
   }
   getStep(id: string): StepDef | undefined {
     return this._atoms.get(id) ?? this._actions.get(id);
+  }
+  getSchedule(id: string): ScheduleDef | undefined {
+    return this._schedules.get(id);
   }
 
   allInputs(): InputDef[] {
@@ -93,11 +115,15 @@ export class Registry {
   allSteps(): StepDef[] {
     return [...this._atoms.values(), ...this._actions.values()];
   }
+  allSchedules(): ScheduleDef[] {
+    return [...this._schedules.values()];
+  }
   allIds(): string[] {
     return [
       ...this._inputs.keys(),
       ...this._atoms.keys(),
       ...this._actions.keys(),
+      ...this._schedules.keys(),
     ];
   }
 
@@ -105,10 +131,16 @@ export class Registry {
     this._inputs.clear();
     this._atoms.clear();
     this._actions.clear();
+    this._schedules.clear();
   }
 
   private assertUnique(id: string): void {
-    if (this._inputs.has(id) || this._atoms.has(id) || this._actions.has(id)) {
+    if (
+      this._inputs.has(id) ||
+      this._atoms.has(id) ||
+      this._actions.has(id) ||
+      this._schedules.has(id)
+    ) {
       throw new Error(`Duplicate registry ID: ${id}`);
     }
   }

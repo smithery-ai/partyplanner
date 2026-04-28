@@ -18,6 +18,7 @@ import type {
   WorkflowInputManifest,
   WorkflowManagedConnectionManifest,
   WorkflowManifest,
+  WorkflowScheduleManifest,
 } from "@workflow/server";
 
 export type JsonPayload =
@@ -46,6 +47,7 @@ export type {
   WorkflowInputManifest,
   WorkflowManagedConnectionManifest,
   WorkflowManifest,
+  WorkflowScheduleManifest,
 };
 
 export type WorkflowRuntimeResult = {

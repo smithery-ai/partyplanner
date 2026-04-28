@@ -56,7 +56,8 @@
     "dev": {
       "cache": false,
       "persistent": true,
-      "with": ["//#dev:info"]
+      "with": ["//#dev:info"],
+      "dependsOn": ["^build"]
     },
     "//#dev:info": {
       "cache": false,

@@ -58,6 +58,8 @@ export type WorkflowState = {
   ): Promise<WorkflowConfigurationDocument>;
   refreshConfiguration(): Promise<void>;
   refreshRuns(): Promise<void>;
+  runScheduleNow(scheduleId: string): Promise<WorkflowRuntimeResult>;
+  runningScheduleId: string | undefined;
 };
 
 export type WorkflowRunState = {
@@ -156,6 +158,20 @@ function useRunStateQuery(runId: string | undefined) {
         ),
       );
     },
+  });
+}
+
+function useRunScheduleNowMutation() {
+  const config = useWorkflowFrontendConfig();
+  return useMutation({
+    mutationFn: async (scheduleId: string) =>
+      documentResult(
+        await apiPost<Record<string, never>, RunStateDocument>(
+          config.apiBaseUrl,
+          `/schedules/${encodeURIComponent(scheduleId)}/run-now`,
+          {},
+        ),
+      ),
   });
 }
 
@@ -424,6 +440,7 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
   const runsQuery = useRunsQuery();
   const configurationQuery = useWorkflowConfigurationQuery();
   const startMutation = useStartWorkflowRunMutation();
+  const runScheduleNowMutation = useRunScheduleNowMutation();
   const connectManagedConnectionMutation =
     useConnectManagedConnectionMutation();
   const clearManagedConnectionMutation = useClearManagedConnectionMutation();
@@ -518,6 +535,33 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
     [clearManagedConnectionMutation, config.apiBaseUrl, queryClient],
   );
 
+  const runScheduleNow = useCallback(
+    async (scheduleId: string) => {
+      setError(undefined);
+      try {
+        const result = await runScheduleNowMutation.mutateAsync(scheduleId);
+        queryClient.setQueryData(
+          queryKeys.runState(config.apiBaseUrl, result.state.runId),
+          result,
+        );
+        queryClient.setQueryData(
+          queryKeys.runs(config.apiBaseUrl),
+          (existing: RunSummary[] = []) =>
+            mergeRunSummary(existing, summarizeRunResult(result)),
+        );
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.runs(config.apiBaseUrl),
+        });
+        return result;
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        setError(err);
+        throw err;
+      }
+    },
+    [config.apiBaseUrl, queryClient, runScheduleNowMutation],
+  );
+
   const refreshRuns = useCallback(async () => {
     try {
       const result = await runsQuery.refetch();
@@ -562,6 +606,10 @@ export function useWorkflow(workflowId: string | undefined): WorkflowState {
     clearManagedConnection,
     refreshConfiguration,
     refreshRuns,
+    runScheduleNow,
+    runningScheduleId: runScheduleNowMutation.isPending
+      ? (runScheduleNowMutation.variables as string | undefined)
+      : undefined,
   };
 }
 

@@ -72,6 +72,8 @@ function registryWithEnvSecrets(env: Env): Registry {
   for (const atom of globalRegistry.allAtoms()) registry.registerAtom(atom);
   for (const action of globalRegistry.allActions())
     registry.registerAction(action);
+  for (const schedule of globalRegistry.allSchedules())
+    registry.registerSchedule(schedule);
   return registry;
 }
 

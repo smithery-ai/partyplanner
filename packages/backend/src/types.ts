@@ -11,6 +11,8 @@ export type BackendAppEnv = {
   HYLO_BACKEND_PUBLIC_URL?: string;
   HYLO_BROKER_BASE_URL?: string;
   HYLO_LOCAL_WORKFLOW_URL_TEMPLATE?: string;
+  HYLO_SCHEDULER_DISABLED?: string;
+  HYLO_SCHEDULER_INTERVAL_MS?: string;
   HYPERDRIVE?: HyperdriveBinding;
   DATABASE_URL?: string;
   POSTGRES_URL?: string;

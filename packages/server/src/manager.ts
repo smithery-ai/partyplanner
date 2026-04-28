@@ -13,6 +13,7 @@ import {
   StaticWorkflowLoader,
   type WorkflowRef,
 } from "@workflow/runtime";
+import { cronMatches, type ParsedCron, parseCron } from "./cron";
 import { buildWorkflowManifest, type WorkflowManifest } from "./manifest";
 import type {
   ConnectManagedConnectionRequest,
@@ -47,6 +48,25 @@ export type WorkflowManagerOptions = {
 const WEBHOOK_PAYLOAD_NODE_ID = "@workflow/webhook-payload";
 const CONFIG_RUN_PREFIX = "@configuration/";
 const CONFIG_TRIGGER_ID = "@configuration";
+
+export type TickScheduleFiring = {
+  id: string;
+  cron: string;
+  runId: string;
+};
+
+export type TickScheduleSkip = {
+  id: string;
+  cron: string;
+  reason: "parse_error" | "submit_error";
+  message: string;
+};
+
+export type TickSchedulesResult = {
+  at: string;
+  fired: TickScheduleFiring[];
+  skipped: TickScheduleSkip[];
+};
 
 export type WorkflowWebhookRequestContext = {
   method: string;
@@ -356,6 +376,55 @@ export class WorkflowManager {
       });
     }
     return this.publishSnapshot(snapshot);
+  }
+
+  async tickSchedules(at: Date = new Date()): Promise<TickSchedulesResult> {
+    const fired: TickScheduleFiring[] = [];
+    const skipped: TickScheduleSkip[] = [];
+    for (const schedule of this.registry.allSchedules()) {
+      let parsed: ParsedCron;
+      try {
+        parsed = parseCron(schedule.cron);
+      } catch (error) {
+        skipped.push({
+          id: schedule.id,
+          cron: schedule.cron,
+          reason: "parse_error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
+      if (!cronMatches(parsed, at)) continue;
+      try {
+        const run = await this.startRun({
+          inputId: schedule.inputId,
+          payload: schedule.payload,
+        });
+        fired.push({ id: schedule.id, cron: schedule.cron, runId: run.runId });
+      } catch (error) {
+        skipped.push({
+          id: schedule.id,
+          cron: schedule.cron,
+          reason: "submit_error",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { at: at.toISOString(), fired, skipped };
+  }
+
+  // Fire a single registered schedule by id, using its captured payload. Used
+  // by the UI's "Run now" button so the client never has to know the payload
+  // (which only exists in workflow code).
+  async runScheduleNow(scheduleId: string): Promise<WorkflowRunDocument> {
+    const schedule = this.registry.getSchedule(scheduleId);
+    if (!schedule) {
+      throw new Error(`Unknown schedule: ${scheduleId}`);
+    }
+    return this.startRun({
+      inputId: schedule.inputId,
+      payload: schedule.payload,
+    });
   }
 
   async submitIntervention(
@@ -710,6 +779,8 @@ function cloneRegistry(registry: Registry): Registry {
   for (const input of registry.allInputs()) clone.registerInput(input);
   for (const atom of registry.allAtoms()) clone.registerAtom(atom);
   for (const action of registry.allActions()) clone.registerAction(action);
+  for (const schedule of registry.allSchedules())
+    clone.registerSchedule(schedule);
   return clone;
 }
 
@@ -731,6 +802,12 @@ function hashRegistry(registry: Registry): string {
       id: action.id,
       description: action.description,
       fn: action.fn.toString(),
+    })),
+    schedules: registry.allSchedules().map((schedule) => ({
+      id: schedule.id,
+      cron: schedule.cron,
+      inputId: schedule.inputId,
+      payload: schedule.payload,
     })),
   });
   return hashString(source);

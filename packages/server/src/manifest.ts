@@ -33,6 +33,13 @@ export type WorkflowManagedConnectionManifest = {
   internal?: boolean;
 };
 
+export type WorkflowScheduleManifest = {
+  id: string;
+  cron: string;
+  inputId: string;
+  description?: string;
+};
+
 export type WorkflowManifest = {
   workflowId: string;
   organizationId?: string;
@@ -44,6 +51,7 @@ export type WorkflowManifest = {
   managedConnections: WorkflowManagedConnectionManifest[];
   atoms: WorkflowStepManifest[];
   actions: WorkflowStepManifest[];
+  schedules: WorkflowScheduleManifest[];
 };
 
 export function buildWorkflowManifest(args: {
@@ -106,6 +114,12 @@ export function buildWorkflowManifest(args: {
       kind: "action",
       description: a.description,
       ...(a.internal ? { internal: true } : {}),
+    })),
+    schedules: args.registry.allSchedules().map((s) => ({
+      id: s.id,
+      cron: s.cron,
+      inputId: s.inputId,
+      description: s.description,
     })),
   };
 }

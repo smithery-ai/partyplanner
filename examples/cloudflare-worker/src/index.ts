@@ -2,6 +2,7 @@ import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
 
 export * from "./notion";
+export * from "./scheduleProbe";
 export * from "./slack";
 
 export const incidentAlert = input(
