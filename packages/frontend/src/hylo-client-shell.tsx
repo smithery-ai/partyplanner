@@ -82,6 +82,7 @@ export type HyloClientShellProps = {
   logPrefix?: string;
   queryKeyPrefix?: string;
   sidebarFooter: ReactNode;
+  sidebarTopInset?: number | string;
   workflowApiUrl: (
     apiBaseUrl: string,
     backendUrl: string | undefined,
@@ -234,6 +235,7 @@ function RoutedChatPage({
         }
       }}
       sidebarFooter={env.sidebarFooter}
+      sidebarTopInset={env.sidebarTopInset}
     />
   );
 }
@@ -452,6 +454,7 @@ function ClientApp({
         runId={routeRunId}
         navigation={navigation}
         sidebarFooter={env.sidebarFooter}
+        sidebarTopInset={env.sidebarTopInset}
         sidebarHeader={
           <div className="flex min-w-0 flex-col gap-0.5">
             <WorkerSwitcher

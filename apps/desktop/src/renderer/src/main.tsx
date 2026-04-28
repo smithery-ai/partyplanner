@@ -27,6 +27,7 @@ createRoot(root).render(
         logPrefix="hylo-desktop"
         queryKeyPrefix="hylo-desktop"
         sidebarFooter={sidebarFooter}
+        sidebarTopInset={sidebarTopInset()}
         workflowApiUrl={workflowApiUrl}
       />
     )}
@@ -105,6 +106,10 @@ function hyloBackendUrl(): string | undefined {
     /\/+$/,
     "",
   );
+}
+
+function sidebarTopInset(): string | undefined {
+  return firstNonEmpty(import.meta.env.VITE_HYLO_SIDEBAR_TOP_INSET);
 }
 
 function isLocalDev(): boolean {

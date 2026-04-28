@@ -298,6 +298,7 @@ export type ChatPageProps = {
   ) => void;
   selectedSessionId?: string | null;
   sidebarFooter?: ReactNode;
+  sidebarTopInset?: number | string;
 };
 
 export function ChatPage({
@@ -306,6 +307,7 @@ export function ChatPage({
   onSelectedSessionIdChange,
   selectedSessionId,
   sidebarFooter,
+  sidebarTopInset,
 }: ChatPageProps) {
   return (
     <ChatShell
@@ -314,6 +316,7 @@ export function ChatPage({
       onSelectedSessionIdChange={onSelectedSessionIdChange}
       selectedSessionId={selectedSessionId}
       sidebarFooter={sidebarFooter}
+      sidebarTopInset={sidebarTopInset}
     />
   );
 }
@@ -480,6 +483,7 @@ function ChatShell({
   onSelectedSessionIdChange,
   selectedSessionId,
   sidebarFooter,
+  sidebarTopInset,
 }: {
   localApiBase: string;
   onRunHistoryClick?: () => void;
@@ -489,6 +493,7 @@ function ChatShell({
   ) => void;
   selectedSessionId?: string | null;
   sidebarFooter?: ReactNode;
+  sidebarTopInset?: number | string;
 }) {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [localSelectedId, setLocalSelectedId] = useState<string | null>(
@@ -966,7 +971,12 @@ function ChatShell({
     <DebugContext.Provider value={debug}>
       <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
         <div className="flex min-h-0 flex-1">
-          <aside className="flex w-48 shrink-0 flex-col bg-off-black text-off-white sm:w-64 lg:w-72">
+          <aside
+            className="flex w-48 shrink-0 flex-col bg-off-black text-off-white sm:w-64 lg:w-72"
+            style={
+              sidebarTopInset ? { paddingTop: sidebarTopInset } : undefined
+            }
+          >
             <div className="flex h-11 shrink-0 items-center justify-between gap-2 px-2.5">
               <div className="flex min-w-0 items-center gap-2 text-sm font-semibold">
                 <MessageSquare className="size-4 shrink-0" aria-hidden />
