@@ -70,13 +70,6 @@ console.log(
 const children = [];
 
 children.push(
-  spawn("pnpm", ["hylo", "dev", localWorkerDir], {
-    env,
-    stdio: "inherit",
-  }),
-);
-
-children.push(
   spawn(
     "pnpm",
     [
@@ -85,6 +78,7 @@ children.push(
       "run",
       "dev",
       "dev:info",
+      "dev:worker",
       "--filter=backend-cloudflare",
       "--filter=client",
       "--filter=local-api",

@@ -1,4 +1,11 @@
 #!/usr/bin/env node
+import { homedir } from "node:os";
+import { resolve } from "node:path";
+
+const flamecastRoot = process.env.FLAMECAST_LOG_DIR
+  ? resolve(process.env.FLAMECAST_LOG_DIR)
+  : resolve(homedir(), ".flamecast");
+const localWorkerDir = resolve(flamecastRoot, "worker");
 
 const urls = [
   ["Client", "https://hylo-client.localhost"],
@@ -31,10 +38,10 @@ function printBanner() {
     ...urls.map(([label, url]) => `${label.padEnd(10)} ${url}`),
     "",
     "Local worker source:",
-    "~/.flamecast/worker",
+    localWorkerDir,
     "",
     "Run just the local worker:",
-    "pnpm hylo dev ~/.flamecast/worker",
+    `pnpm hylo dev ${localWorkerDir}`,
   ];
 
   console.log("");

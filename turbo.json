@@ -4,6 +4,7 @@
   "globalPassThroughEnv": [
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN",
+    "FLAMECAST_LOG_DIR",
     "HYLO_BACKEND",
     "HYLO_APP_URL",
     "HYLO_API_KEY",
@@ -39,7 +40,8 @@
     "OAUTH_STATE_SECRET",
     "NEXT_PUBLIC_APP_URL",
     "NODE_EXTRA_CA_CERTS",
-    "NODE_TLS_REJECT_UNAUTHORIZED"
+    "NODE_TLS_REJECT_UNAUTHORIZED",
+    "PORTLESS_HTTPS"
   ],
   "tasks": {
     "build": {
@@ -62,6 +64,11 @@
     "//#dev:info": {
       "cache": false,
       "inputs": ["scripts/dev-info.mjs"],
+      "persistent": true
+    },
+    "//#dev:worker": {
+      "cache": false,
+      "inputs": ["scripts/dev-worker.mjs"],
       "persistent": true
     }
   }
