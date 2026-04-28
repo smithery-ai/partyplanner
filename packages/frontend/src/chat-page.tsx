@@ -1836,14 +1836,12 @@ function ChatPanel({
   const searchFiles = useCallback(
     async (query: string): Promise<string[]> => {
       try {
-        const res = await fetch(`${localApiBase}/api/files`);
+        const params = new URLSearchParams({ limit: "8" });
+        if (query) params.set("q", query);
+        const res = await fetch(`${localApiBase}/api/files?${params}`);
         if (!res.ok) return [];
         const body = (await res.json()) as { paths: string[] };
-        const q = query.toLowerCase();
-        const paths = q
-          ? body.paths.filter((p) => p.toLowerCase().includes(q))
-          : body.paths;
-        return paths.slice(0, 8);
+        return body.paths;
       } catch {
         return [];
       }

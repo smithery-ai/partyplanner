@@ -34,11 +34,17 @@ const ErrorResponse = z
   .object({ error: z.string() })
   .openapi("FilesErrorResponse");
 
+const ListFilesQuery = z.object({
+  q: z.string().optional().openapi({ example: "readme" }),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
 const listFiles = createRoute({
   method: "get",
   path: "/files",
   tags: ["Files"],
   summary: "List files under the Flamecast data directory",
+  request: { query: ListFilesQuery },
   responses: {
     200: {
       content: { "application/json": { schema: ListFilesResponse } },
@@ -109,6 +115,40 @@ async function walk(
   return false;
 }
 
+function fuzzyScore(query: string, target: string): number | null {
+  const q = query.toLowerCase();
+  const t = target.toLowerCase();
+  let qi = 0;
+  let score = 0;
+  let lastMatch = -2;
+  let consecutive = 0;
+  for (let i = 0; i < t.length && qi < q.length; i++) {
+    if (t[i] === q[qi]) {
+      if (i === lastMatch + 1) {
+        consecutive++;
+        score += 10 + consecutive * 5;
+      } else {
+        consecutive = 0;
+        score += 1;
+      }
+      const prev = i > 0 ? t[i - 1] : "";
+      if (
+        i === 0 ||
+        prev === "/" ||
+        prev === "." ||
+        prev === "-" ||
+        prev === "_"
+      ) {
+        score += 8;
+      }
+      lastMatch = i;
+      qi++;
+    }
+  }
+  if (qi < q.length) return null;
+  return score - t.length * 0.1;
+}
+
 function isPathSafe(rel: string): boolean {
   if (!rel) return false;
   const normalized = rel.replace(/\\/g, "/");
@@ -138,9 +178,21 @@ export function fileRoutes() {
 
   return app
     .openapi(listFiles, async (c) => {
+      const { q, limit } = c.req.valid("query");
       const paths: string[] = [];
       const truncated = await walk(ROOT, "", 0, paths);
-      return c.json({ root: ROOT, paths, truncated }, 200);
+      if (q && q.length > 0) {
+        const scored: Array<[number, string]> = [];
+        for (const p of paths) {
+          const score = fuzzyScore(q, p);
+          if (score !== null) scored.push([score, p]);
+        }
+        scored.sort((a, b) => b[0] - a[0] || a[1].localeCompare(b[1]));
+        const top = scored.slice(0, limit ?? 50).map(([, p]) => p);
+        return c.json({ root: ROOT, paths: top, truncated }, 200);
+      }
+      const limited = limit ? paths.slice(0, limit) : paths;
+      return c.json({ root: ROOT, paths: limited, truncated }, 200);
     })
     .openapi(getFileContent, async (c) => {
       const { path: rel } = c.req.valid("query");
