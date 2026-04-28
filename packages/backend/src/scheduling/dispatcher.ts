@@ -18,9 +18,23 @@ export type DeploymentTickTarget = {
   apiKey?: string;
 };
 
+// A platform-aware fetch invoked once per deployment. Receives the target the
+// dispatcher selected (so adapters can route via dispatch namespace bindings,
+// service bindings, or just plain HTTP) and the fully-built tick request that
+// would normally go to `${workflowApiUrl}/schedules/tick`.
+//
+// Default behavior (when omitted) is plain HTTP fetch against the target URL.
+// On Cloudflare, callers should pass a fetcher that uses
+// `env.DISPATCHER.get(deploymentId).fetch(...)` because Workers cannot
+// self-fetch their own custom domain — the platform returns a 1042 error.
+export type DispatchFetch = (
+  target: DeploymentTickTarget,
+  request: Request,
+) => Promise<Response>;
+
 export type DispatchTickOptions = {
   source: DeploymentSource;
-  fetch?: typeof fetch;
+  fetch?: DispatchFetch;
   // Per-tenant timeout in milliseconds. Defaults to 10s; the cron event has its
   // own platform-level timeout that ultimately bounds the total fan-out.
   timeoutMs?: number;
@@ -34,11 +48,14 @@ export type DispatchTickResult = {
   failed: number;
 };
 
+const defaultDispatchFetch: DispatchFetch = (_target, request) =>
+  fetch(request);
+
 export async function dispatchTickToDeployments(
   options: DispatchTickOptions,
   at: Date = new Date(),
 ): Promise<DispatchTickResult> {
-  const fetchImpl = options.fetch ?? fetch;
+  const fetchImpl = options.fetch ?? defaultDispatchFetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
   const targets = await options.source.list();
   let ok = 0;
@@ -53,7 +70,7 @@ export async function dispatchTickToDeployments(
           "Content-Type": "application/json",
         };
         if (target.apiKey) headers.Authorization = `Bearer ${target.apiKey}`;
-        const response = await fetchImpl(
+        const request = new Request(
           joinUrl(target.workflowApiUrl, "/schedules/tick"),
           {
             method: "POST",
@@ -62,6 +79,7 @@ export async function dispatchTickToDeployments(
             signal: controller.signal,
           },
         );
+        const response = await fetchImpl(target, request);
         if (!response.ok) {
           failed++;
           options.onError?.(

@@ -15,7 +15,7 @@ describe("createNodeScheduler", () => {
     const sourceCalls = vi.fn(async () => []);
     const scheduler = createNodeScheduler({
       resolveSource: () => ({ list: sourceCalls }),
-      fetch: vi.fn() as unknown as typeof fetch,
+      fetch: vi.fn(async () => new Response("{}")),
     });
 
     scheduler.start();
@@ -53,7 +53,7 @@ describe("createNodeScheduler", () => {
 
     const scheduler = createNodeScheduler({
       resolveSource: () => ({ list: slowList }),
-      fetch: vi.fn() as unknown as typeof fetch,
+      fetch: vi.fn(async () => new Response("{}")),
     });
 
     scheduler.start();
@@ -80,7 +80,7 @@ describe("createNodeScheduler", () => {
     const scheduler = createNodeScheduler({
       resolveSource: () => ({ list: sourceCalls }),
       intervalMs: 60_000,
-      fetch: vi.fn() as unknown as typeof fetch,
+      fetch: vi.fn(async () => new Response("{}")),
     });
 
     scheduler.start();
@@ -115,7 +115,7 @@ describe("createNodeScheduler", () => {
         return noTargets;
       },
       onError: (err) => errors.push(err),
-      fetch: vi.fn() as unknown as typeof fetch,
+      fetch: vi.fn(async () => new Response("{}")),
     });
 
     scheduler.start();
@@ -137,7 +137,7 @@ describe("createNodeScheduler", () => {
     const scheduler = createNodeScheduler({
       resolveSource: () => ({ list: sourceCalls }),
       intervalMs: 5_000,
-      fetch: vi.fn() as unknown as typeof fetch,
+      fetch: vi.fn(async () => new Response("{}")),
     });
 
     scheduler.start();
