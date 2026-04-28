@@ -68,6 +68,16 @@ export type TickSchedulesResult = {
   skipped: TickScheduleSkip[];
 };
 
+export type PumpedRun =
+  | { runId: string; outcome: "advanced"; status: string }
+  | { runId: string; outcome: "skipped_budget" }
+  | { runId: string; outcome: "errored"; error: string };
+
+export type PumpInProgressRunsResult = {
+  attempted: number;
+  pumped: PumpedRun[];
+};
+
 export type WorkflowWebhookRequestContext = {
   method: string;
   url: string;
@@ -610,6 +620,62 @@ export class WorkflowManager {
       document = await this.publishSnapshot(await scheduler.snapshot(runId));
     }
     return document;
+  }
+
+  // Heartbeat for in-flight runs. Every cron tick, after firing schedules
+  // whose cron matches, we also walk every run still in `running` and pump
+  // it forward. Without this, a run that hit the worker's wall-clock kill
+  // mid-drain (and got recovered by claimNext's lease retry) would only
+  // resume when something explicitly poked it — `tickSchedules` itself
+  // doesn't iterate live runs, only fresh firings. The pump closes that
+  // loop so the cron actually delivers what schedule() advertises:
+  // scheduled work that progresses.
+  //
+  // Each call is bounded so it can't itself blow past the worker's
+  // wall-clock budget:
+  //   - `maxAttemptsPerRun` caps processNext invocations per run (default
+  //     4 — enough to make meaningful progress without monopolizing the
+  //     tick).
+  //   - `budgetMs` caps total wall time across all runs; once exceeded,
+  //     remaining runs are deferred to the next tick.
+  // Concurrent ticks pumping the same run are safe — claimNext is atomic
+  // (FOR UPDATE SKIP LOCKED), so one wins and the other no-ops.
+  async pumpInProgressRuns(
+    request: { maxAttemptsPerRun?: number; budgetMs?: number } = {},
+  ): Promise<PumpInProgressRunsResult> {
+    const maxAttemptsPerRun = request.maxAttemptsPerRun ?? 4;
+    const budgetMs = request.budgetMs ?? 15_000;
+    const deadline = Date.now() + budgetMs;
+    const summaries = await this.stateStore.listRunSummaries(
+      this.definition.ref.workflowId,
+    );
+    const inProgress = summaries.filter(
+      (summary) => summary.status === "running",
+    );
+    const pumped: PumpedRun[] = [];
+    for (const summary of inProgress) {
+      if (Date.now() >= deadline) {
+        pumped.push({ runId: summary.runId, outcome: "skipped_budget" });
+        continue;
+      }
+      try {
+        const document = await this.advanceUntilSettled(summary.runId, {
+          maxAttempts: maxAttemptsPerRun,
+        });
+        pumped.push({
+          runId: summary.runId,
+          outcome: "advanced",
+          status: document.status,
+        });
+      } catch (error) {
+        pumped.push({
+          runId: summary.runId,
+          outcome: "errored",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { attempted: inProgress.length, pumped };
   }
 
   private async advanceConfigurationUntilSettled(
