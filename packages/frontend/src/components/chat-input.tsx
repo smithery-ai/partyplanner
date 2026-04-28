@@ -13,7 +13,6 @@ import {
 } from "lexical";
 import {
   BeautifulMentionNode,
-  type BeautifulMentionsItem,
   type BeautifulMentionsMenuItemProps,
   type BeautifulMentionsMenuProps,
   BeautifulMentionsPlugin,
@@ -42,16 +41,7 @@ const MenuPositionContext = createContext<MenuPosition | null>(null);
 const MENTION_THEME = {
   "@": "px-1 py-0.5 rounded bg-orange/15 text-maroon font-medium",
   "@Focused": "outline-none ring-2 ring-orange/40",
-  "/": "px-1 py-0.5 rounded bg-off-black/10 text-off-black font-medium",
-  "/Focused": "outline-none ring-2 ring-off-black/30",
 };
-
-const SLASH_COMMANDS: BeautifulMentionsItem[] = [
-  { value: "clear", label: "Clear chat history" },
-  { value: "help", label: "Show help" },
-  { value: "rename", label: "Rename this chat" },
-  { value: "new", label: "Start a new chat" },
-];
 
 const MentionsMenu = forwardRef<HTMLUListElement, BeautifulMentionsMenuProps>(
   function MentionsMenu({ loading: _loading, ...props }, ref) {
@@ -274,22 +264,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             <DisabledPlugin disabled={disabled} />
             <BeautifulMentionsPlugin
               autoSpace={false}
-              triggers={["@", "/"]}
+              triggers={["@"]}
               onSearch={async (trigger, query) => {
-                const q = (query ?? "").toLowerCase();
-                if (trigger === "@") {
-                  const paths = await onSearchFiles(q);
-                  return paths.map((p) => ({ value: p }));
-                }
-                if (trigger === "/") {
-                  if (!q) return SLASH_COMMANDS;
-                  return SLASH_COMMANDS.filter((cmd) =>
-                    typeof cmd === "string"
-                      ? cmd.toLowerCase().includes(q)
-                      : cmd.value.toLowerCase().includes(q),
-                  );
-                }
-                return [];
+                if (trigger !== "@") return [];
+                const paths = await onSearchFiles((query ?? "").toLowerCase());
+                return paths.map((p) => ({ value: p }));
               }}
               searchDelay={120}
               menuComponent={MentionsMenu}
