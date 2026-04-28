@@ -30,7 +30,15 @@ class RuntimeImpl implements Runtime {
       state ?? makeEmptyRunState(event.runId),
     );
 
-    if (session.hasProcessed(event.eventId)) {
+    // Step events can have side effects (actions perform I/O, atoms run
+    // user code), so once processed we short-circuit on retry. Input events
+    // are pure value resolution + fan-out — handleInputEvent is idempotent
+    // (state mutations are nullish-coalesced or set to the same value, and
+    // emitStep skips already-resolved nodes). Re-running them on retry is
+    // both safe and necessary: if the previous attempt saved state with
+    // processedEventIds=true but died before its emitted fan-out events
+    // reached the queue, the dependent steps are otherwise lost forever.
+    if (event.kind === "step" && session.hasProcessed(event.eventId)) {
       return {
         state: session.snapshot(),
         emitted: [],
