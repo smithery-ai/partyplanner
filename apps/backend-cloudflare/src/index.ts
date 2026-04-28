@@ -52,6 +52,28 @@ export default {
         await dispatchTickToDeployments(
           {
             source,
+            // Workers cannot self-fetch their own custom domain (CF returns
+            // error 1042). Route the tick through the dispatch namespace
+            // binding so it lands on the tenant script directly. When
+            // DISPATCHER isn't configured (local dev / Node), fall back to
+            // plain HTTP — that path works because there's no self-fetch.
+            fetch: env.DISPATCHER
+              ? async (target, request) => {
+                  // Workflow server is mounted at /api/workflow on the tenant
+                  // script. The public URL embeds /workers/<id>/ for routing
+                  // through the backend's HTTP proxy — strip that prefix
+                  // before sending to the dispatch stub.
+                  const incoming = new URL(request.url);
+                  const prefix = `/workers/${target.deploymentId}`;
+                  if (incoming.pathname.startsWith(prefix)) {
+                    incoming.pathname = incoming.pathname.slice(prefix.length);
+                  }
+                  const dispatched = new Request(incoming.toString(), request);
+                  const stub = env.DISPATCHER?.get(target.deploymentId);
+                  if (!stub) return new Response("", { status: 503 });
+                  return stub.fetch(dispatched);
+                }
+              : undefined,
             onError: (error, target) => {
               console.error(
                 JSON.stringify({
