@@ -11,6 +11,10 @@
       "import": "./src/hylo-client-shell.tsx",
       "types": "./src/hylo-client-shell.tsx"
     },
+    "./components/ui/alert-dialog": {
+      "import": "./src/components/ui/alert-dialog.tsx",
+      "types": "./src/components/ui/alert-dialog.tsx"
+    },
     "./components/ui/button": {
       "import": "./src/components/ui/button.tsx",
       "types": "./src/components/ui/button.tsx"
@@ -28,6 +32,7 @@
   "dependencies": {
     "@base-ui/react": "^1.4.0",
     "@fontsource-variable/geist": "^5.2.8",
+    "@radix-ui/react-alert-dialog": "^1.1.15",
     "@tanstack/react-query": "^5.99.1",
     "@tanstack/react-router": "^1.168.23",
     "@workflow/core": "workspace:*",

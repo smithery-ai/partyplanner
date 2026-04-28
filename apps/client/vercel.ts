@@ -17,7 +17,6 @@ export const config: VercelConfig = {
         ]
       : []),
     routes.rewrite("/connection/initializing", "/"),
-    routes.rewrite("/onboarding", "/"),
     routes.rewrite("/login", "/"),
     routes.rewrite("/worker/:path*", "/"),
     routes.rewrite("/runs/:path*", "/"),

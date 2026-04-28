@@ -18,6 +18,7 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
 import {
   createContext,
   type ReactNode,
@@ -27,6 +28,17 @@ import {
 } from "react";
 import { type WorkflowNavigation, WorkflowSinglePage } from "./App";
 import { ChatPage } from "./chat-page";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./components/ui/alert-dialog";
+import { Button } from "./components/ui/button";
 import {
   Combobox,
   ComboboxContent,
@@ -54,7 +66,6 @@ export type HyloWorkflowRegistryConfig = {
 };
 
 export type HyloClientShellSearch = {
-  onboardingReset?: string;
   tenantId?: string;
   workflowRegistryUrl?: string;
   worker?: string;
@@ -87,7 +98,6 @@ const clientQueryClient = new QueryClient();
 
 const rootRoute = createRootRoute({
   validateSearch: (search): HyloClientShellSearch => ({
-    onboardingReset: searchParam(search.onboardingReset),
     tenantId: searchParam(search.tenantId),
     workflowRegistryUrl: searchParam(search.workflowRegistryUrl),
     worker: searchParam(search.worker),
@@ -125,12 +135,6 @@ const connectionInitializingRoute = createRoute({
   component: ConnectionInitializingRouteComponent,
 });
 
-const onboardingRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/onboarding",
-  component: OnboardingRouteComponent,
-});
-
 const runRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/runs/$runId",
@@ -149,7 +153,6 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   chatRoute,
   connectionInitializingRoute,
-  onboardingRoute,
   runRoute,
   workerRunRoute,
 ]);
@@ -226,62 +229,6 @@ function ConnectionInitializingRouteComponent() {
   );
 }
 
-function OnboardingRouteComponent() {
-  const env = useClientEnvironment();
-  const navigate = useNavigate();
-  const search = useSearch({ from: rootRoute.id });
-  const registryConfig = env.getWorkflowRegistryConfig(search);
-  const registryBackendUrl = onboardingBackendUrl(registryConfig);
-  const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function resetOnboarding() {
-      try {
-        const backendUrl = registryBackendUrl;
-        if (!backendUrl) {
-          throw new Error("Onboarding reset requires a backend URL.");
-        }
-        const resetUrl = `${backendUrl.replace(/\/+$/, "")}/tenants/me/onboarding`;
-        const accessToken = await env.getAccessToken();
-        const response = await fetch(resetUrl, {
-          method: "DELETE",
-          headers: workflowRegistryHeaders(resetUrl, accessToken, backendUrl),
-        });
-        if (!response.ok) {
-          throw new Error(await responseErrorMessage(response));
-        }
-        await clientQueryClient.invalidateQueries({
-          queryKey: [
-            env.queryKeyPrefix ?? DEFAULT_QUERY_KEY_PREFIX,
-            "workflow-registry",
-          ],
-        });
-        if (!cancelled) {
-          void navigate({
-            to: "/",
-            search: withOnboardingReset,
-            replace: true,
-          });
-        }
-      } catch (e) {
-        if (!cancelled) setError(errorMessage(e));
-      }
-    }
-
-    void resetOnboarding();
-    return () => {
-      cancelled = true;
-    };
-  }, [env, navigate, registryBackendUrl]);
-
-  if (error) {
-    return <ClientStateMessage>{error}</ClientStateMessage>;
-  }
-  return <ClientStateMessage>Resetting onboarding...</ClientStateMessage>;
-}
-
 function ClientApp({
   routeRunId,
   routeWorkerId,
@@ -334,7 +281,6 @@ function ClientApp({
     registryConfig.url,
     registryQuery,
     env.getLocalWorkflowRegistry,
-    search.onboardingReset === "1",
   );
   const registryError = workflowRegistryError(
     registryConfig.url,
@@ -376,9 +322,42 @@ function ClientApp({
       search: withoutWorker,
     });
   };
-  const onOnboarding = () => {
-    void navigate({ to: "/onboarding", search: withoutWorker });
-  };
+  const resetBackendUrl = onboardingBackendUrl(registryConfig);
+  const resetDatabase =
+    isLocalDevClient() &&
+    resetBackendUrl &&
+    isLocalDevBackendUrl(resetBackendUrl)
+      ? async () => {
+          const backendUrl = resetBackendUrl;
+          const resetUrl = `${backendUrl.replace(/\/+$/, "")}/dev/database`;
+          const accessToken = await env.getAccessToken();
+          const response = await fetch(resetUrl, {
+            method: "DELETE",
+            headers: workflowRegistryHeaders(resetUrl, accessToken, backendUrl),
+          });
+          if (!response.ok) {
+            throw new Error(await responseErrorMessage(response));
+          }
+          await clientQueryClient.invalidateQueries({
+            queryKey: [
+              env.queryKeyPrefix ?? DEFAULT_QUERY_KEY_PREFIX,
+              "workflow-registry",
+            ],
+          });
+        }
+      : undefined;
+
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const onResetDatabase = resetDatabase
+    ? () => setResetDialogOpen(true)
+    : undefined;
+  const resetDialog = resetDatabase ? (
+    <ResetDatabaseDialog
+      open={resetDialogOpen}
+      onOpenChange={setResetDialogOpen}
+      doReset={resetDatabase}
+    />
+  ) : null;
 
   if (!registry) {
     return <ClientStateMessage>Loading your workers...</ClientStateMessage>;
@@ -386,11 +365,15 @@ function ClientApp({
 
   if (workflows.length === 0) {
     return (
-      <TenantWorkersEmptyState
-        backendUrl={registryConfig.backendUrl}
-        registryError={registryError}
-        sidebarFooter={env.sidebarFooter}
-      />
+      <>
+        <TenantWorkersEmptyState
+          backendUrl={registryConfig.backendUrl}
+          registryError={registryError}
+          sidebarFooter={env.sidebarFooter}
+          onResetDatabase={onResetDatabase}
+        />
+        {resetDialog}
+      </>
     );
   }
 
@@ -424,36 +407,39 @@ function ClientApp({
   };
 
   return (
-    <WorkflowSinglePage
-      apiBaseUrl={env.workflowApiUrl(workflow.url, registryConfig.backendUrl)}
-      managedConnectionInitializingUrl="/connection/initializing"
-      runId={routeRunId}
-      navigation={navigation}
-      sidebarFooter={env.sidebarFooter}
-      headerLeading={
-        <WorkerSwitcher
-          selectedWorker={selectedWorker}
-          onOnboarding={onOnboarding}
-          onWorkerChange={onWorkerChange}
-          workflows={workflows}
-        />
-      }
-    />
+    <>
+      <WorkflowSinglePage
+        apiBaseUrl={env.workflowApiUrl(workflow.url, registryConfig.backendUrl)}
+        managedConnectionInitializingUrl="/connection/initializing"
+        runId={routeRunId}
+        navigation={navigation}
+        sidebarFooter={env.sidebarFooter}
+        headerLeading={
+          <WorkerSwitcher
+            selectedWorker={selectedWorker}
+            onResetDatabase={onResetDatabase}
+            onWorkerChange={onWorkerChange}
+            workflows={workflows}
+          />
+        }
+      />
+      {resetDialog}
+    </>
   );
 }
 
 type WorkerItem =
   | { kind: "worker"; id: string; label: string }
-  | { kind: "onboarding"; id: "__onboarding"; label: string };
+  | { kind: "reset-db"; id: "__reset_db"; label: string };
 
 function WorkerSwitcher({
   selectedWorker,
-  onOnboarding,
+  onResetDatabase,
   onWorkerChange,
   workflows,
 }: {
   selectedWorker: string | undefined;
-  onOnboarding: () => void;
+  onResetDatabase?: () => void;
   onWorkerChange: (worker: string) => void;
   workflows: [string, { label?: string; url: string }][];
 }) {
@@ -462,11 +448,13 @@ function WorkerSwitcher({
     id,
     label: workflow.label ?? labelFromId(id),
   }));
-  items.push({
-    kind: "onboarding",
-    id: "__onboarding",
-    label: "Reset onboarding",
-  });
+  if (onResetDatabase) {
+    items.push({
+      kind: "reset-db",
+      id: "__reset_db",
+      label: "Reset DB",
+    });
+  }
   const value =
     items.find(
       (item) => item.kind === "worker" && item.id === selectedWorker,
@@ -481,8 +469,8 @@ function WorkerSwitcher({
       value={value}
       onValueChange={(next) => {
         if (!next) return;
-        if (next.kind === "onboarding") {
-          onOnboarding();
+        if (next.kind === "reset-db") {
+          onResetDatabase?.();
           return;
         }
         if (next.id !== selectedWorker) onWorkerChange(next.id);
@@ -500,7 +488,13 @@ function WorkerSwitcher({
         <ComboboxEmpty>No workers</ComboboxEmpty>
         <ComboboxList>
           {(item: WorkerItem) => (
-            <ComboboxItem key={item.id} value={item}>
+            <ComboboxItem
+              key={item.id}
+              value={item}
+              className={
+                item.kind === "reset-db" ? "text-destructive" : undefined
+              }
+            >
               {item.label}
             </ComboboxItem>
           )}
@@ -518,14 +512,85 @@ function ClientStateMessage({ children }: { children: ReactNode }) {
   );
 }
 
+function ResetDatabaseDialog({
+  open,
+  onOpenChange,
+  doReset,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  doReset: () => Promise<void>;
+}) {
+  const [resetting, setResetting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function confirmReset() {
+    setError("");
+    setResetting(true);
+    try {
+      await doReset();
+      onOpenChange(false);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (resetting) return;
+        onOpenChange(nextOpen);
+        if (nextOpen) setError("");
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Reset local database?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This deletes every workflow, run, queue, OAuth, and provider row
+            from the local database.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {error ? <p className="text-destructive text-sm">{error}</p> : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={resetting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            type="button"
+            variant="destructive"
+            disabled={resetting}
+            onClick={(event) => {
+              event.preventDefault();
+              void confirmReset();
+            }}
+          >
+            {resetting ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                Resetting
+              </>
+            ) : (
+              "Reset database"
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function TenantWorkersEmptyState({
   backendUrl,
   registryError,
   sidebarFooter,
+  onResetDatabase,
 }: {
   backendUrl?: string;
   registryError?: string;
   sidebarFooter: ReactNode;
+  onResetDatabase?: () => void;
 }) {
   const deployCommand = workflowDeployCommand(backendUrl);
   return (
@@ -541,6 +606,13 @@ function TenantWorkersEmptyState({
           </pre>
           {registryError ? (
             <p className="mt-3 text-xs text-destructive">{registryError}</p>
+          ) : null}
+          {onResetDatabase ? (
+            <div className="mt-4 flex justify-end">
+              <Button size="sm" variant="destructive" onClick={onResetDatabase}>
+                Reset DB
+              </Button>
+            </div>
           ) : null}
         </div>
       </div>
@@ -578,6 +650,30 @@ function isDefaultBackendUrl(backendUrl: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isLocalDevClient(): boolean {
+  const hostname = window.location.hostname.toLowerCase();
+  return isLocalDevHostname(hostname);
+}
+
+function isLocalDevBackendUrl(value: string): boolean {
+  try {
+    return isLocalDevHostname(
+      new URL(value, window.location.origin).hostname.toLowerCase(),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isLocalDevHostname(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname.endsWith(".localhost")
+  );
 }
 
 function workflowRegistryHeaders(
@@ -684,15 +780,6 @@ function withoutWorker(search: HyloClientShellSearch): HyloClientShellSearch {
   };
 }
 
-function withOnboardingReset(
-  search: HyloClientShellSearch,
-): HyloClientShellSearch {
-  return {
-    ...withoutWorker(search),
-    onboardingReset: "1",
-  };
-}
-
 function resolvedWorkflowRegistry(
   url: string | undefined,
   query: {
@@ -702,12 +789,11 @@ function resolvedWorkflowRegistry(
   getLocalWorkflowRegistry:
     | (() => HyloWorkflowRegistry | undefined)
     | undefined,
-  suppressLocalFallback = false,
 ): HyloWorkflowRegistry | undefined {
   if (!url || query.error) return emptyWorkflowRegistry();
   if (!query.data) return undefined;
   const fallback =
-    !suppressLocalFallback && Object.keys(query.data.workflows).length === 0
+    Object.keys(query.data.workflows).length === 0
       ? getLocalWorkflowRegistry?.()
       : undefined;
   return fallback ?? query.data;
@@ -741,7 +827,7 @@ function searchParam(value: unknown): string | undefined {
 }
 
 async function responseErrorMessage(response: Response): Promise<string> {
-  const fallback = `Onboarding reset failed with ${response.status}`;
+  const fallback = `Request failed with ${response.status}`;
   try {
     const body = (await response.json()) as {
       message?: unknown;
