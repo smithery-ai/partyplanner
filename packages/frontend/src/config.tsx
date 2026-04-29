@@ -43,8 +43,7 @@ export function WorkflowFrontendProvider({
       ...defaultConfig,
       ...config,
       apiBaseUrl: normalizeApiBaseUrl(config?.apiBaseUrl ?? "/api"),
-      localApiBaseUrl:
-        config?.localApiBaseUrl ?? defaultConfig.localApiBaseUrl,
+      localApiBaseUrl: config?.localApiBaseUrl ?? defaultConfig.localApiBaseUrl,
       managedConnectionInitializingUrl:
         config?.managedConnectionInitializingUrl ??
         defaultConfig.managedConnectionInitializingUrl,

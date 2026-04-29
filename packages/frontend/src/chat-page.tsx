@@ -762,9 +762,7 @@ function ChatShell({
         prev.map((chat) => {
           if (chat.chatId !== m.chatId) return chat;
           const lastEndTurnEventId =
-            m.isEndTurn && m.eventId
-              ? m.eventId
-              : chat.lastEndTurnEventId;
+            m.isEndTurn && m.eventId ? m.eventId : chat.lastEndTurnEventId;
           return {
             ...chat,
             lastActivity: new Date().toISOString(),
