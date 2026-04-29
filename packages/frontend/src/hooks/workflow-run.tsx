@@ -41,6 +41,7 @@ export function WorkflowRunProvider({
   const hasActiveQueueWork =
     (run.queue?.pending.length ?? 0) + (run.queue?.running.length ?? 0) > 0;
   const apiHasRunningWork = (run.queue?.running.length ?? 0) > 0;
+  const effectiveIsRunning = isRunning || hasActiveQueueWork;
 
   useEffect(() => {
     if (!run.isPending) {
@@ -65,7 +66,7 @@ export function WorkflowRunProvider({
   useEffect(() => {
     if (!runId) return;
     if (
-      !isRunning ||
+      !effectiveIsRunning ||
       !run.runState ||
       runComplete ||
       runIsWaiting ||
@@ -102,7 +103,7 @@ export function WorkflowRunProvider({
     };
   }, [
     runId,
-    isRunning,
+    effectiveIsRunning,
     run.runState,
     run.isPending,
     hasActiveQueueWork,
@@ -128,15 +129,15 @@ export function WorkflowRunProvider({
   });
 
   useEffect(() => {
-    if (!isRunning) return;
+    if (!effectiveIsRunning) return;
     if (!run.runState) return;
     if (hasActiveQueueWork || run.isPending) return;
     setRunning(false);
-  }, [isRunning, run.runState, run.isPending, hasActiveQueueWork]);
+  }, [effectiveIsRunning, run.runState, run.isPending, hasActiveQueueWork]);
 
   const value: WorkflowRunContextValue = {
     ...run,
-    isRunning,
+    isRunning: effectiveIsRunning,
     setRunning,
     executingNodeId,
     runComplete,
