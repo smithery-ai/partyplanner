@@ -115,6 +115,90 @@ describe("WorkflowManager", () => {
     expect(completed.state.trigger).toBeUndefined();
   });
 
+  it("presents next pending work as running even when a queue item is already running", async () => {
+    const stateStore = new TestWorkflowStateStore();
+    const manager = new WorkflowManager({
+      stateStore,
+      queue: new TestWorkflowQueue(),
+    });
+
+    await stateStore.saveRunDocument({
+      runId: "run_running_and_pending",
+      workflow: manager.definition.ref,
+      status: "running",
+      nodes: [
+        {
+          id: "claimed",
+          kind: "atom",
+          status: "queued",
+          deps: [],
+          attempts: 0,
+        },
+        {
+          id: "nextUp",
+          kind: "atom",
+          status: "queued",
+          deps: [],
+          attempts: 0,
+        },
+      ],
+      edges: [],
+      queue: {
+        pending: [
+          {
+            event: {
+              kind: "step",
+              eventId: "event_next",
+              runId: "run_running_and_pending",
+              stepId: "nextUp",
+            },
+            status: "pending",
+            enqueuedAt: 2,
+          },
+        ],
+        running: [
+          {
+            event: {
+              kind: "step",
+              eventId: "event_claimed",
+              runId: "run_running_and_pending",
+              stepId: "claimed",
+            },
+            status: "running",
+            enqueuedAt: 1,
+            startedAt: 1,
+          },
+        ],
+        completed: [],
+        failed: [],
+      },
+      state: {
+        runId: "run_running_and_pending",
+        startedAt: 1,
+        inputs: {},
+        interventions: {},
+        nodes: {},
+        waiters: {},
+        processedEventIds: {},
+      },
+      version: 1,
+      events: [],
+      publishedAt: 1,
+    });
+
+    const run = await manager.getRun("run_running_and_pending");
+
+    expect(run?.queue.pending).toHaveLength(0);
+    expect(run?.queue.running.map((item) => item.event.eventId)).toEqual([
+      "event_next",
+      "event_claimed",
+    ]);
+    expect(run?.nodes.map((node) => [node.id, node.status])).toEqual([
+      ["claimed", "running"],
+      ["nextUp", "running"],
+    ]);
+  });
+
   it("matches all trigger inputs for a webhook-started run", async () => {
     input("leadA", z.object({ source: z.literal("webhook"), id: z.string() }));
     input("leadB", z.object({ source: z.literal("webhook"), id: z.string() }));

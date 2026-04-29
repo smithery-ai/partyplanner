@@ -808,16 +808,13 @@ function presentRunDocument(
   document: WorkflowRunDocument,
 ): WorkflowRunDocument {
   const projected = structuredClone(document);
-  if (projected.queue.running.length > 0) {
-    projected.status = "running";
+  const nextUp = projected.queue.pending[0];
+  if (!nextUp) {
     for (const item of projected.queue.running) {
       markNodeRunning(projected, queueNodeId(item.event));
     }
     return projected;
   }
-
-  const nextUp = projected.queue.pending[0];
-  if (!nextUp) return projected;
 
   projected.status = "running";
   projected.queue = {
@@ -826,6 +823,9 @@ function presentRunDocument(
     running: [{ ...nextUp, status: "running" }, ...projected.queue.running],
   };
   markNodeRunning(projected, queueNodeId(nextUp.event));
+  for (const item of projected.queue.running) {
+    markNodeRunning(projected, queueNodeId(item.event));
+  }
   return projected;
 }
 
