@@ -17,6 +17,7 @@ export type WorkflowRunContextValue = WorkflowRunState & {
   isRunning: boolean;
   setRunning: (running: boolean) => void;
   executingNodeId: string | null;
+  setExecutingNodeId: (nodeId: string | null) => void;
   runComplete: boolean;
 };
 
@@ -140,6 +141,7 @@ export function WorkflowRunProvider({
     isRunning: effectiveIsRunning,
     setRunning,
     executingNodeId,
+    setExecutingNodeId,
     runComplete,
   };
 
