@@ -1,9 +1,11 @@
 export const AUTH_CHANNELS = {
   GET_ACCESS_TOKEN: "auth:get-access-token",
+  GET_ORGANIZATION_ID: "auth:get-organization-id",
   GET_USER: "auth:get-user",
   ON_AUTH_CHANGE: "auth:on-auth-change",
   SIGN_IN: "auth:sign-in",
   SIGN_OUT: "auth:sign-out",
+  SWITCH_TO_ORGANIZATION: "auth:switch-to-organization",
 } as const;
 
 export type AuthUser = {
@@ -15,6 +17,7 @@ export type AuthUser = {
 };
 
 export type AuthChangePayload = {
+  organizationId: string | null;
   user: AuthUser | null;
 };
 

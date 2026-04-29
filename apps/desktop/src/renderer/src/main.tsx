@@ -18,8 +18,9 @@ if (!root) {
 
 createRoot(root).render(
   <App>
-    {({ getAccessToken, sidebarFooter }) => (
+    {({ getAccessToken, organizationId, sidebarFooter }) => (
       <HyloClientShell
+        key={organizationId ?? "no-organization"}
         getAccessToken={getAccessToken}
         getLocalWorkflowRegistry={localWorkflowRegistry}
         getRequestedWorker={requestedWorker}
@@ -81,11 +82,12 @@ function workflowApiUrl(apiBaseUrl: string, backendUrl: string | undefined) {
 
 function localWorkflowRegistry(): HyloWorkflowRegistry | undefined {
   if (!isLocalDev()) return undefined;
+  const explicitWorkflow = firstNonEmpty(import.meta.env.VITE_HYLO_WORKFLOW);
+  if (!isLocalBackend() && !explicitWorkflow) return undefined;
+
   const workflowId =
-    firstNonEmpty(
-      requestedWorker({ worker: undefined }),
-      import.meta.env.VITE_HYLO_WORKFLOW,
-    ) ?? DEFAULT_LOCAL_WORKFLOW_ID;
+    firstNonEmpty(requestedWorker({ worker: undefined }), explicitWorkflow) ??
+    DEFAULT_LOCAL_WORKFLOW_ID;
   return {
     defaultWorkflow: workflowId,
     workflows: {
@@ -121,6 +123,22 @@ function isLocalDev(): boolean {
     hostname === "::1" ||
     hostname.endsWith(".localhost")
   );
+}
+
+function isLocalBackend(): boolean {
+  const backendUrl = hyloBackendUrl();
+  if (!backendUrl) return false;
+  try {
+    const hostname = new URL(backendUrl).hostname;
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname.endsWith(".localhost")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function localWorkflowHost(raw: string): string {
