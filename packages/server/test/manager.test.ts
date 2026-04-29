@@ -47,17 +47,25 @@ describe("WorkflowManager", () => {
     });
 
     expect(started.status).toBe("running");
-    expect(started.queue.pending).toHaveLength(1);
-    expect(started.queue.pending[0]?.event.kind).toBe("input");
+    expect(started.queue.pending).toHaveLength(0);
+    expect(started.queue.running).toHaveLength(1);
+    expect(started.queue.running[0]?.event.kind).toBe("input");
 
     const afterInput = await manager.advanceRun(started.runId);
 
     expect(afterInput.status).toBe("running");
-    expect(afterInput.queue.pending).toHaveLength(1);
-    expect(afterInput.queue.pending[0]?.event.kind).toBe("step");
+    expect(afterInput.queue.pending).toHaveLength(0);
+    expect(afterInput.queue.running).toHaveLength(1);
+    expect(afterInput.queue.running[0]?.event.kind).toBe("step");
     expect(
       afterInput.nodes.find((node) => node.id === "increment")?.status,
-    ).toBe("queued");
+    ).toBe("running");
+
+    const reloaded = await manager.getRun(started.runId);
+    expect(reloaded?.queue.running[0]?.event.kind).toBe("step");
+    expect(
+      reloaded?.nodes.find((node) => node.id === "increment")?.status,
+    ).toBe("running");
 
     const completed = await manager.advanceRun(started.runId);
 
@@ -87,8 +95,10 @@ describe("WorkflowManager", () => {
     const started = await manager.startRun({});
 
     expect(started.status).toBe("running");
-    expect(started.queue.pending.map((item) => item.event.kind)).toEqual([
+    expect(started.queue.running.map((item) => item.event.kind)).toEqual([
       "step",
+    ]);
+    expect(started.queue.pending.map((item) => item.event.kind)).toEqual([
       "step",
     ]);
 
@@ -143,7 +153,7 @@ describe("WorkflowManager", () => {
       receivedAt: started.state.webhook?.receivedAt,
     });
     expect(
-      started.queue.pending
+      [...started.queue.running, ...started.queue.pending]
         .filter((item) => item.event.kind === "input")
         .map((item) => item.event.inputId),
     ).toEqual(["leadA", "leadB"]);
@@ -598,7 +608,7 @@ describe("WorkflowManager", () => {
       // Way outside the 03:00 cron window — runScheduleNow ignores cron.
       const run = await manager.runScheduleNow("us-nightly");
       expect(run.runId).toMatch(/^run_/);
-      expect(run.queue.pending[0]?.event.kind).toBe("input");
+      expect(run.queue.running[0]?.event.kind).toBe("input");
     });
 
     it("rejects unknown schedule ids", async () => {

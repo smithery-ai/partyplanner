@@ -30,7 +30,6 @@ import {
 } from "../components/ai-elements/node";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import { inferClientRunningNodeIds } from "../lib/workflow-running";
 import type { WorkflowManifest } from "../types";
 
 /** Visual bucket for theming (includes deferred-input gate) */
@@ -1018,11 +1017,10 @@ function FlowInner({
 
   /**
    * Nodes the visualizer should render with the "running" visual. Seeded with
-   * runtime queue state, client-side runnable blocked nodes, and the current
-   * advance request. If a running node is filtered out (e.g. a
-   * `@workflow/integrations-*` atom), we walk its dependents through hidden
-   * intermediaries so the nearest visible child (the one the user actually
-   * sees, like `notion`) pulses instead.
+   * API queue state and the current advance request. If a running node is
+   * filtered out (e.g. a `@workflow/integrations-*` atom), we walk its
+   * dependents through hidden intermediaries so the nearest visible child (the
+   * one the user actually sees, like `notion`) pulses instead.
    */
   const visibleRunningIds = useMemo(() => {
     const result = new Set<string>();
@@ -1051,9 +1049,6 @@ function FlowInner({
 
     for (const item of queue?.running ?? []) {
       addRunningId(queueNodeId(item.event));
-    }
-    for (const nodeId of inferClientRunningNodeIds(runState)) {
-      addRunningId(nodeId);
     }
     if (executingNodeId) addRunningId(executingNodeId);
 
