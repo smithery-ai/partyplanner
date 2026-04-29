@@ -50,7 +50,9 @@ process.on("SIGTERM", shutdown);
 const WORKSPACE_DEPENDENCY_PATHS: Record<string, string> = {
   "@hylo/cli": "packages/cli",
   "@workflow/core": "packages/core",
+  "@workflow/integrations-arcade": "packages/integrations/arcade",
   "@workflow/integrations-gmail": "packages/integrations/gmail",
+  "@workflow/integrations-linear": "packages/integrations/linear",
   "@workflow/integrations-oauth": "packages/integrations/_oauth",
   "@workflow/runtime": "packages/runtime",
   "@workflow/server": "packages/server",
@@ -104,12 +106,14 @@ export async function runInit(args: string[]): Promise<number> {
 
   await ensureRoot(root);
 
-  const workerExists = await access(target)
+  const workerPackageJson = resolve(target, "package.json");
+  const workerExists = await access(workerPackageJson)
     .then(() => true)
     .catch(() => false);
   if (workerExists) {
     info(`Hylo example worker already exists at ${target}, leaving it alone.`);
   } else {
+    await rm(target, { force: true, recursive: true });
     await cp(scaffoldDir, target, {
       force: false,
       recursive: true,
