@@ -35,6 +35,7 @@ export type StartRunArgs = {
   }[];
   secretBindings?: Record<string, string | { vaultEntryId: string }>;
   secretValues?: Record<string, string>;
+  runId?: string;
 };
 
 export type ConnectManagedConnectionArgs = {
@@ -188,6 +189,7 @@ function useStartWorkflowRunMutation() {
           | undefined,
         secretBindings: args.secretBindings,
         secretValues: args.secretValues,
+        runId: args.runId,
       };
       return documentResult(
         await apiPost<StartWorkflowRunRequest, RunStateDocument>(

@@ -242,6 +242,12 @@ function runStatusClass(status: RunSummary["status"]): string {
   }
 }
 
+function newRunId(): string {
+  const id =
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `run_${id}`;
+}
+
 export function SecretVaultApp({
   navigation = noopNavigation,
 }: {
@@ -701,7 +707,7 @@ function WorkflowRunnerBody({
     navigation.workflow(workflowId);
   }
 
-  async function runWorkflow(seedOverride?: string) {
+  function runWorkflow(seedOverride?: string) {
     setPayloadError("");
     const immediate =
       workflow.manifest?.inputs.filter((input) => input.kind === "input") ?? [];
@@ -724,10 +730,19 @@ function WorkflowRunnerBody({
     }
 
     try {
-      const result = await workflowRun.submitWebhook({
-        payload,
-      });
-      navigation.run(workflowId, result.state.runId);
+      const runId = newRunId();
+      void workflow
+        .start({
+          inputId: seed.id,
+          payload,
+          runId,
+        })
+        .catch((e) => {
+          setPayloadError(
+            errorMessage(e, "Processing failed — check input values."),
+          );
+        });
+      navigation.run(workflowId, runId);
       setPane(null);
     } catch (e) {
       setPayloadError(
