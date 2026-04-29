@@ -6,12 +6,12 @@ export type {
   ArcadeToolOptions,
   ArcadeToolResult,
   MaybeHandle,
-} from "./arcade";
+} from "@workflow/integrations-arcade";
 export {
   arcade,
   createArcadeToolAction,
   createArcadeToolAtom,
-} from "./arcade";
+} from "@workflow/integrations-arcade";
 export type {
   AddCommentInput,
   AddCommentOptions,

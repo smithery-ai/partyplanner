@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@workflow/core": "workspace:*",
+    "@workflow/integrations-arcade": "workspace:*",
     "zod": "^4.3.6"
   },
   "devDependencies": {

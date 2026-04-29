@@ -3,6 +3,7 @@ import { dirname, extname, join, resolve } from "node:path";
 
 const SOURCE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const SECRET_DECLARATION = /\bsecret\s*\(\s*["']([A-Z][A-Z0-9_]*)["']/g;
+const BACKEND_MANAGED_SECRETS = new Set(["ARCADE_API_KEY"]);
 
 export async function envSecretBindings(
   srcDir: string,
@@ -32,6 +33,7 @@ export async function declaredSecretNames(srcDir: string): Promise<string[]> {
     for (const file of await sourceFiles(root)) {
       const source = await readFile(file, "utf8");
       for (const match of source.matchAll(SECRET_DECLARATION)) {
+        if (BACKEND_MANAGED_SECRETS.has(match[1])) continue;
         names.add(match[1]);
       }
     }
@@ -42,6 +44,19 @@ export async function declaredSecretNames(srcDir: string): Promise<string[]> {
 async function secretSourceRoots(srcDir: string): Promise<string[]> {
   const projectRoot = dirname(srcDir);
   const roots = new Set<string>([srcDir]);
+  const visited = new Set<string>();
+  await addWorkflowDependencyRoots(projectRoot, roots, visited);
+  return [...roots].sort();
+}
+
+async function addWorkflowDependencyRoots(
+  projectRoot: string,
+  roots: Set<string>,
+  visited: Set<string>,
+): Promise<void> {
+  if (visited.has(projectRoot)) return;
+  visited.add(projectRoot);
+
   const packageJson = await readPackageJson(
     resolve(projectRoot, "package.json"),
   );
@@ -55,8 +70,8 @@ async function secretSourceRoots(srcDir: string): Promise<string[]> {
     if (!packageRoot) continue;
     const sourceRoot = resolve(packageRoot, "src");
     if (await pathExists(sourceRoot)) roots.add(sourceRoot);
+    await addWorkflowDependencyRoots(packageRoot, roots, visited);
   }
-  return [...roots].sort();
 }
 
 async function readPackageJson(path: string): Promise<{
@@ -88,6 +103,10 @@ async function dependencyRoot(
     packageJson.devDependencies?.[packageName];
   if (spec?.startsWith("link:")) {
     const linked = resolve(projectRoot, spec.slice("link:".length));
+    if (await pathExists(resolve(linked, "package.json"))) return linked;
+  }
+  if (spec?.startsWith("file:")) {
+    const linked = resolve(projectRoot, spec.slice("file:".length));
     if (await pathExists(resolve(linked, "package.json"))) return linked;
   }
   return undefined;

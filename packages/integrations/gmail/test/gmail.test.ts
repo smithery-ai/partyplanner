@@ -51,13 +51,13 @@ describe("Arcade Gmail tools", () => {
       .spyOn(globalThis, "fetch")
       .mockImplementation(async (url) => {
         const href = String(url);
-        if (href === "https://api.arcade.dev/v1/tools/authorize") {
+        if (href === "https://backend.test/arcade/v1/tools/authorize") {
           return new Response(JSON.stringify({ status: "completed" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
         }
-        if (href === "https://api.arcade.dev/v1/tools/execute") {
+        if (href === "https://backend.test/arcade/v1/tools/execute") {
           return new Response(
             JSON.stringify({
               id: "exec_1",
@@ -84,7 +84,7 @@ describe("Arcade Gmail tools", () => {
     const auth = atom(
       () => ({
         apiKey: "arcade-test-key",
-        baseUrl: "https://api.arcade.dev",
+        baseUrl: "https://backend.test/arcade",
       }),
       { name: "arcadeAuth" },
     );
@@ -156,13 +156,13 @@ describe("Arcade Gmail tools", () => {
       .spyOn(globalThis, "fetch")
       .mockImplementation(async (url) => {
         const href = String(url);
-        if (href === "https://api.arcade.dev/v1/tools/authorize") {
+        if (href === "https://backend.test/arcade/v1/tools/authorize") {
           return new Response(JSON.stringify({ status: "completed" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });
         }
-        if (href === "https://api.arcade.dev/v1/tools/execute") {
+        if (href === "https://backend.test/arcade/v1/tools/execute") {
           return new Response(
             JSON.stringify({
               status: "completed",
@@ -187,7 +187,7 @@ describe("Arcade Gmail tools", () => {
     const auth = atom(
       () => ({
         apiKey: "arcade-test-key",
-        baseUrl: "https://api.arcade.dev",
+        baseUrl: "https://backend.test/arcade",
       }),
       { name: "arcadeAuth" },
     );

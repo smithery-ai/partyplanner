@@ -126,20 +126,18 @@ it("leaves an existing ~/.flamecast/worker alone without --force", async () => {
   );
 });
 
-it("skips an existing ~/.flamecast/worker directory without --force", async () => {
+it("replaces an incomplete ~/.flamecast/worker directory without --force", async () => {
   const worker = join(workspace, ".flamecast", "worker");
-  const stdout = vi
-    .spyOn(process.stdout, "write")
-    .mockImplementation(() => true);
+  vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
   await mkdir(worker, { recursive: true });
 
   await expect(runInit(["--no-empty-state-app"])).resolves.toBe(0);
 
-  expect(stdout).toHaveBeenCalledWith(
-    expect.stringContaining("leaving it alone"),
-  );
+  await expect(
+    readFile(join(worker, "package.json"), "utf8"),
+  ).resolves.toContain("workflow-cloudflare-worker-example");
 });
 
 it("replaces an existing ~/.flamecast/worker with --force", async () => {
