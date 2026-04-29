@@ -80,26 +80,26 @@ interface ChatSummary {
 
 type Block =
   | {
-    kind: "system";
-    model: string;
-    sessionId: string;
-    cwd: string;
-    raw: unknown;
-  }
+      kind: "system";
+      model: string;
+      sessionId: string;
+      cwd: string;
+      raw: unknown;
+    }
   | { kind: "thinking"; text: string; raw: unknown }
   | { kind: "text"; text: string; raw: unknown }
   | { kind: "user_text"; text: string; raw: unknown }
   | { kind: "tool_use"; name: string; input: unknown; raw: unknown }
   | { kind: "tool_result"; content: string; isError: boolean; raw: unknown }
   | {
-    kind: "result";
-    result: string;
-    durationMs: number;
-    cost: number;
-    isError: boolean;
-    stopReason: string;
-    raw: unknown;
-  };
+      kind: "result";
+      result: string;
+      durationMs: number;
+      cost: number;
+      isError: boolean;
+      stopReason: string;
+      raw: unknown;
+    };
 
 interface ChatLogStreamMessage {
   type: "ready" | "chat_event";
@@ -708,10 +708,10 @@ function ChatShell({
         prev.map((chat) =>
           chat.chatId === chatId
             ? {
-              ...chat,
-              acknowledgedEndTurnEventId: chat.lastEndTurnEventId,
-              hasUnacknowledgedEndTurn: false,
-            }
+                ...chat,
+                acknowledgedEndTurnEventId: chat.lastEndTurnEventId,
+                hasUnacknowledgedEndTurn: false,
+              }
             : chat,
         ),
       );
@@ -1068,7 +1068,7 @@ function ChatShell({
                         className={cls(
                           "flex flex-col gap-1",
                           section.id === "pinned" &&
-                          "rounded-lg bg-off-white/5 p-1",
+                            "rounded-lg bg-off-white/5 p-1",
                         )}
                       >
                         {section.label ? (
@@ -1126,7 +1126,7 @@ function ChatShell({
                                     className={cls(
                                       "grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-lg px-2.5 py-2 text-left text-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50",
                                       active &&
-                                      "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
+                                        "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm",
                                     )}
                                   >
                                     <span className="mt-1 size-2">
@@ -1415,7 +1415,9 @@ function EmptyState({
         {slackConnected ? (
           <p className="inline-flex items-center text-xs text-muted-foreground">
             <CheckCircle2 className="size-3.5 text-emerald-600" aria-hidden />
-            <span className="ml-1.5 mr-1">Slack connected — send a message to{" "}</span>
+            <span className="ml-1.5 mr-1">
+              Slack connected — send a message to{" "}
+            </span>
             <span className="font-bold">@Hylo</span>
           </p>
         ) : null}
@@ -1927,10 +1929,10 @@ function GroupView({
   const items: Array<
     | { kind: "block"; block: Block }
     | {
-      kind: "tool_call";
-      toolUse: ToolUseBlock;
-      toolResult: ToolResultBlock | null;
-    }
+        kind: "tool_call";
+        toolUse: ToolUseBlock;
+        toolResult: ToolResultBlock | null;
+      }
   > = [];
   for (let i = 0; i < group.intermediates.length; i++) {
     const b = group.intermediates[i];
