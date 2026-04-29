@@ -353,9 +353,17 @@ class RunSession {
   }
 
   private wakeWaiters(depId: string): QueueEvent[] {
-    const waiters = this.state.waiters[depId] ?? [];
+    const waiters = new Set(this.state.waiters[depId] ?? []);
+    for (const [stepId, record] of Object.entries(this.state.nodes)) {
+      if (record.status === "waiting" && record.waitingOn === depId) {
+        waiters.add(stepId);
+      }
+      if (record.status === "blocked" && record.blockedOn === depId) {
+        waiters.add(stepId);
+      }
+    }
     delete this.state.waiters[depId];
-    return waiters.flatMap((stepId) => this.emitStep(stepId));
+    return [...waiters].flatMap((stepId) => this.emitStep(stepId));
   }
 
   private waitersForInput(inputId: string): string[] {

@@ -142,6 +142,24 @@ function legacyArcadeUserInputId(): string {
   return ["ARCADE", "USER", "ID"].join("_");
 }
 
+function hyloArcadeUserInputId(): string {
+  return "HYLO_USER_ID";
+}
+
+function configuredHyloArcadeUserId(
+  additionalInputs: Record<string, unknown>,
+): string | undefined {
+  const value = additionalInputs[hyloArcadeUserInputId()];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function runStateHyloArcadeUserId(
+  runState: RunState | undefined,
+): string | undefined {
+  const value = runState?.inputs[hyloArcadeUserInputId()];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function runStateWaitsOnInput(
   runState: RunState | undefined,
   inputId: string,
@@ -552,6 +570,7 @@ function WorkflowRunnerBody({
     useState<string | undefined>();
   const managedConnectionPopups = useRef<Record<string, Window | null>>({});
   const redirectedLegacyArcadeRunIds = useRef<Set<string>>(new Set());
+  const redirectedMismatchedArcadeRunIds = useRef<Set<string>>(new Set());
   const autoSubmittedAdditionalInputs = useRef<Set<string>>(new Set());
   const frontendConfig = useWorkflowFrontendConfig();
 
@@ -643,6 +662,25 @@ function WorkflowRunnerBody({
     );
     navigation.workflow(workflowId, { replace: true });
   }, [navigation, runState, workflowId]);
+
+  useEffect(() => {
+    if (!runState?.runId) return;
+
+    const configuredUserId = configuredHyloArcadeUserId(
+      frontendConfig.additionalInputs,
+    );
+    const runUserId = runStateHyloArcadeUserId(runState);
+    if (!configuredUserId || !runUserId || configuredUserId === runUserId) {
+      return;
+    }
+    if (redirectedMismatchedArcadeRunIds.current.has(runState.runId)) return;
+
+    redirectedMismatchedArcadeRunIds.current.add(runState.runId);
+    setPayloadError(
+      `This run was created for ${runUserId}. You are signed in as ${configuredUserId}. Start a new run to reauthorize Arcade for the signed-in WorkOS email.`,
+    );
+    navigation.workflow(workflowId, { replace: true });
+  }, [frontendConfig.additionalInputs, navigation, runState, workflowId]);
 
   useEffect(() => {
     if (!runState) return;

@@ -255,6 +255,31 @@ export class LocalScheduler implements Scheduler {
     );
   }
 
+  async recoverReadyWaiters(
+    runId: string,
+    workflow?: WorkflowRef,
+  ): Promise<RunSnapshot | undefined> {
+    const resolvedWorkflow = workflow ?? this.workflowForRun(runId);
+    const definition = await this.opts.loader.load(resolvedWorkflow);
+    this.runWorkflows.set(runId, resolvedWorkflow);
+
+    const stored = await this.opts.stateStore.load(runId);
+    if (!stored) throw new Error(`Unknown run: ${runId}`);
+
+    const queue = await this.opts.queue.snapshot();
+    const events = readyWaiterEvents(stored.state, queue);
+    if (events.length === 0) return undefined;
+
+    await this.enqueueAndPublishMany(events);
+    return this.buildSnapshot(
+      runId,
+      resolvedWorkflow,
+      definition,
+      stored.state,
+      stored.version,
+    );
+  }
+
   async processNext(): Promise<void> {
     const item = await this.opts.queue.dequeue();
     if (!item) return;
@@ -795,8 +820,55 @@ function waitersForDependency(state: RunState, depId: string): string[] {
     if (record.status === "waiting" && record.waitingOn === depId) {
       waiters.add(stepId);
     }
+    if (record.status === "blocked" && record.blockedOn === depId) {
+      waiters.add(stepId);
+    }
   }
   return [...waiters];
+}
+
+function readyWaiterEvents(
+  state: RunState,
+  queue: Awaited<ReturnType<InspectableWorkQueue["snapshot"]>>,
+): QueueEvent[] {
+  const active = new Set(
+    [...queue.pending, ...queue.running].map((item) => queueNodeId(item.event)),
+  );
+  const ready = new Set<string>();
+
+  for (const [depId, waiters] of Object.entries(state.waiters)) {
+    if (!dependencyReady(state, depId)) continue;
+    for (const stepId of waiters) ready.add(stepId);
+  }
+
+  for (const [stepId, record] of Object.entries(state.nodes)) {
+    if (
+      record.status === "waiting" &&
+      record.waitingOn &&
+      dependencyReady(state, record.waitingOn)
+    ) {
+      ready.add(stepId);
+    }
+    if (
+      record.status === "blocked" &&
+      record.blockedOn &&
+      dependencyReady(state, record.blockedOn)
+    ) {
+      ready.add(stepId);
+    }
+  }
+
+  return [...ready]
+    .filter((stepId) => !active.has(stepId))
+    .flatMap((stepId) => emitStepEvent(state, stepId));
+}
+
+function dependencyReady(state: RunState, depId: string): boolean {
+  if (Object.hasOwn(state.inputs, depId)) return true;
+  if (state.interventions?.[depId]?.status === "resolved") return true;
+
+  const record = state.nodes[depId];
+  return record !== undefined && isTerminal(record.status);
 }
 
 function emitStepEvent(state: RunState, stepId: string): QueueEvent[] {

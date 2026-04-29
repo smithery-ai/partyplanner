@@ -4,7 +4,12 @@ import { action } from "../src/action";
 import { atom } from "../src/atom";
 import { input } from "../src/input";
 import { createRuntime } from "../src/runtime";
-import { assertResolved, resetRegistry, runToIdle } from "./helpers";
+import {
+  assertBlocked,
+  assertResolved,
+  resetRegistry,
+  runToIdle,
+} from "./helpers";
 
 describe("action() primitive", () => {
   resetRegistry();
@@ -158,5 +163,61 @@ describe("action() primitive", () => {
     assertResolved(trace, "computeName", "hello-derived");
     assertResolved(trace, "writeIt", { wrote: "hello-derived" });
     assertResolved(trace, "consumer", "hello-derived");
+  });
+
+  it("wakes blocked downstream atoms even if the waiter index is missing", async () => {
+    const trigger = input("trigger", z.object({ id: z.string() }));
+
+    const writeRecord = action(
+      (get) => {
+        const { id } = get(trigger);
+        return { recordId: `rec_${id}` };
+      },
+      { name: "writeRecord" },
+    );
+
+    atom(
+      (get) => {
+        const { recordId } = get(writeRecord);
+        return `seen:${recordId}`;
+      },
+      { name: "consumer" },
+    );
+
+    const runtime = createRuntime();
+    const inputResult = await runtime.process({
+      kind: "input",
+      eventId: "e-1",
+      runId: "r-missing-waiter",
+      inputId: "trigger",
+      payload: { id: "123" },
+    });
+    expect(inputResult.emitted).toEqual([
+      expect.objectContaining({ kind: "step", stepId: "consumer" }),
+    ]);
+
+    const blockedResult = await runtime.process(
+      inputResult.emitted[0],
+      inputResult.state,
+    );
+    assertBlocked(blockedResult.trace, "consumer", "writeRecord");
+    expect(blockedResult.emitted).toEqual([
+      expect.objectContaining({ kind: "step", stepId: "writeRecord" }),
+    ]);
+
+    delete blockedResult.state.waiters.writeRecord;
+    const actionResult = await runtime.process(
+      blockedResult.emitted[0],
+      blockedResult.state,
+    );
+    expect(actionResult.emitted).toEqual([
+      expect.objectContaining({ kind: "step", stepId: "consumer" }),
+    ]);
+
+    const resumedResult = await runtime.process(
+      actionResult.emitted[0],
+      actionResult.state,
+    );
+    assertResolved(resumedResult.trace, "consumer", "seen:rec_123");
   });
 });
