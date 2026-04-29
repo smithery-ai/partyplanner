@@ -14,6 +14,8 @@ export type AuthClientConfig =
   paths["/auth/client-config"]["get"]["responses"][200]["content"]["application/json"];
 export type CurrentIdentity =
   paths["/me"]["get"]["responses"][200]["content"]["application/json"];
+export type CurrentUserOrganization =
+  paths["/me/organizations"]["get"]["responses"][200]["content"]["application/json"]["organizations"][number];
 export type WorkflowDeployment =
   paths["/tenants/{tenantId}/deployments"]["get"]["responses"][200]["content"]["application/json"]["deployments"][number];
 
@@ -55,6 +57,12 @@ export function createHyloApiClient(options: HyloApiClientOptions) {
       me: () =>
         unwrap(
           client.GET("/me", {
+            headers: requestHeaders(options),
+          }),
+        ),
+      organizations: () =>
+        unwrap(
+          client.GET("/me/organizations", {
             headers: requestHeaders(options),
           }),
         ),

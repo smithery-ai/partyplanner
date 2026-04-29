@@ -19,8 +19,9 @@ if (!root) {
 
 createRoot(root).render(
   <App>
-    {({ getAccessToken, sidebarFooter }) => (
+    {({ getAccessToken, organizationId, sidebarFooter }) => (
       <HyloClientShell
+        key={organizationId ?? "no-organization"}
         getAccessToken={getAccessToken}
         getLocalWorkflowRegistry={localWorkflowRegistry}
         getRequestedWorker={requestedWorker}

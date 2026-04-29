@@ -37,6 +37,10 @@ Hylo backend to a first-party AuthKit API domain. If clients fall back to
 `api.workos.com`, the browser app uses AuthKit dev-mode storage so reloads do
 not immediately discard the session.
 
+The sidebar organization switcher calls the backend `/me/organizations`
+endpoint. Set `WORKOS_API_KEY` on the backend so it can read the signed-in
+user's WorkOS organization memberships.
+
 In the WorkOS Dashboard, configure the client URL as an AuthKit Redirect URI,
 configure `/login` on that same origin as the sign-in endpoint, and add the
 client origin to the Authentication CORS allow list.
