@@ -14,18 +14,26 @@ export type WorkflowFrontendConfig = {
   apiBaseUrl?: string;
   localApiBaseUrl?: string;
   managedConnectionInitializingUrl?: string;
+  additionalInputs?: Record<string, unknown>;
+  prepareExternalActionUrl?: (url: string) => Promise<void>;
+  secretValues?: Record<string, string>;
 };
 
 export type ResolvedWorkflowFrontendConfig = {
   apiBaseUrl: string;
   localApiBaseUrl: string;
   managedConnectionInitializingUrl: string;
+  additionalInputs: Record<string, unknown>;
+  prepareExternalActionUrl?: (url: string) => Promise<void>;
+  secretValues: Record<string, string>;
 };
 
 const defaultConfig: ResolvedWorkflowFrontendConfig = {
   apiBaseUrl: "/api",
   localApiBaseUrl: "https://local-api.localhost",
   managedConnectionInitializingUrl: "/connection/initializing",
+  additionalInputs: {},
+  secretValues: {},
 };
 
 const WorkflowFrontendConfigContext =

@@ -21,6 +21,7 @@ import type { AuthUser } from "../../shared/auth";
 
 type AppProps = {
   children: (props: {
+    arcadeUserId: string;
     getAccessToken: () => Promise<string>;
     organizationId: string | null;
     sidebarFooter: ReactNode;
@@ -85,6 +86,7 @@ export function App({ children }: AppProps) {
   }
 
   return children({
+    arcadeUserId: user.email,
     getAccessToken,
     organizationId,
     sidebarFooter: (

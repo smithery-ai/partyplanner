@@ -138,6 +138,23 @@ function pendingInputNeedsForm(
   return workflowInputRequested(globalRegistry, manifest, runState, nodeId);
 }
 
+function legacyArcadeUserInputId(): string {
+  return ["ARCADE", "USER", "ID"].join("_");
+}
+
+function runStateWaitsOnInput(
+  runState: RunState | undefined,
+  inputId: string,
+): boolean {
+  return Object.values(runState?.nodes ?? {}).some(
+    (node) => node.status === "waiting" && node.waitingOn === inputId,
+  );
+}
+
+function hidesLegacyArcadeUserInput(inputId: string): boolean {
+  return inputId === legacyArcadeUserInputId();
+}
+
 function displayNodeRecord(
   registry: Registry,
   nodeId: string | null,
@@ -524,6 +541,8 @@ function WorkflowRunnerBody({
   const [awaitingManagedConnectionId, setAwaitingManagedConnectionId] =
     useState<string | undefined>();
   const managedConnectionPopups = useRef<Record<string, Window | null>>({});
+  const redirectedLegacyArcadeRunIds = useRef<Set<string>>(new Set());
+  const autoSubmittedAdditionalInputs = useRef<Set<string>>(new Set());
   const frontendConfig = useWorkflowFrontendConfig();
 
   const {
@@ -602,6 +621,44 @@ function WorkflowRunnerBody({
       };
     });
   }, [pendingIntervention]);
+
+  useEffect(() => {
+    if (!runState?.runId) return;
+    if (!runStateWaitsOnInput(runState, legacyArcadeUserInputId())) return;
+    if (redirectedLegacyArcadeRunIds.current.has(runState.runId)) return;
+
+    redirectedLegacyArcadeRunIds.current.add(runState.runId);
+    setPayloadError(
+      "This run was created before Arcade user injection changed. Start a new run to use the signed-in WorkOS email.",
+    );
+    navigation.workflow(workflowId, { replace: true });
+  }, [navigation, runState, workflowId]);
+
+  useEffect(() => {
+    if (!runState) return;
+
+    for (const [inputId, payload] of Object.entries(
+      frontendConfig.additionalInputs,
+    )) {
+      if (!runStateWaitsOnInput(runState, inputId)) continue;
+
+      const key = `${runState.runId}:${inputId}`;
+      if (autoSubmittedAdditionalInputs.current.has(key)) continue;
+      autoSubmittedAdditionalInputs.current.add(key);
+
+      void workflowRun
+        .submitInput({
+          state: runState,
+          inputId,
+          payload,
+        })
+        .catch((e) => {
+          setPayloadError(
+            errorMessage(e, `Failed to resolve "${inputId}".`),
+          );
+        });
+    }
+  }, [frontendConfig.additionalInputs, runState, workflowRun]);
 
   useEffect(() => {
     if (!awaitingManagedConnectionId) return;
@@ -914,6 +971,25 @@ function WorkflowRunnerBody({
     setRunning(!isRunning);
   }
 
+  async function openExternalActionUrl(url: string) {
+    const popup = window.open(
+      frontendConfig.managedConnectionInitializingUrl,
+      "_blank",
+    );
+    try {
+      await frontendConfig.prepareExternalActionUrl?.(url);
+      if (popup && !popup.closed) {
+        popup.location.href = url;
+        popup.focus();
+      } else {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } catch (e) {
+      if (popup && !popup.closed) popup.close();
+      setPayloadError(errorMessage(e, "Unable to open authorization URL."));
+    }
+  }
+
   const selectedRecord = displayNodeRecord(
     globalRegistry,
     selectedNodeId,
@@ -1007,6 +1083,12 @@ function WorkflowRunnerBody({
                   findManifestInput(workflow.manifest, run.triggerInputId),
                   run.triggerInputId,
                 );
+                const visibleWaitingOn = run.waitingOn.filter(
+                  (inputId) => !hidesLegacyArcadeUserInput(inputId),
+                );
+                const legacyArcadeWaiting = run.waitingOn.some((inputId) =>
+                  hidesLegacyArcadeUserInput(inputId),
+                );
                 return (
                   <button
                     key={run.runId}
@@ -1043,10 +1125,10 @@ function WorkflowRunnerBody({
                           {runStatusLabel(run.status)}
                         </span>
                       </span>
-                      {run.waitingOn.length > 0 && (
+                      {visibleWaitingOn.length > 0 ? (
                         <span className="mt-1 block truncate text-xs text-muted-foreground">
                           Waiting on{" "}
-                          {run.waitingOn
+                          {visibleWaitingOn
                             .map((inputId) =>
                               workflowInputLabel(
                                 findManifestInput(workflow.manifest, inputId),
@@ -1055,7 +1137,11 @@ function WorkflowRunnerBody({
                             )
                             .join(", ")}
                         </span>
-                      )}
+                      ) : legacyArcadeWaiting ? (
+                        <span className="mt-1 block truncate text-xs text-muted-foreground">
+                          Stale Arcade auth run
+                        </span>
+                      ) : null}
                     </span>
                   </button>
                 );
@@ -1219,6 +1305,7 @@ function WorkflowRunnerBody({
                 ? void submitPendingIntervention()
                 : void submitPendingInput()
             }
+            onOpenActionUrl={(url) => void openExternalActionUrl(url)}
             error={pane === "pending" ? payloadError || undefined : undefined}
           />
 
@@ -1328,9 +1415,15 @@ export function WorkflowSinglePage({
   navigation,
   sidebarHeader,
   sidebarTopInset,
+  additionalInputs,
+  prepareExternalActionUrl,
+  secretValues,
 }: {
   apiBaseUrl?: string;
   managedConnectionInitializingUrl?: string;
+  additionalInputs?: Record<string, unknown>;
+  prepareExternalActionUrl?: (url: string) => Promise<void>;
+  secretValues?: Record<string, string>;
   sidebarFooter?: ReactNode;
   runId?: string;
   navigation?: WorkflowNavigation;
@@ -1339,7 +1432,13 @@ export function WorkflowSinglePage({
 }) {
   return (
     <WorkflowFrontendRoot
-      config={{ apiBaseUrl, managedConnectionInitializingUrl }}
+      config={{
+        apiBaseUrl,
+        managedConnectionInitializingUrl,
+        additionalInputs,
+        prepareExternalActionUrl,
+        secretValues,
+      }}
     >
       <WorkflowSingleApp
         sidebarFooter={sidebarFooter}

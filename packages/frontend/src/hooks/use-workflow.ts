@@ -206,8 +206,12 @@ function useStartWorkflowRunMutation() {
           payload: JsonPayload;
         }[];
       }
+      body.additionalInputs = mergeAdditionalInputs(
+        config,
+        body.additionalInputs,
+      );
       if (args.secretBindings) body.secretBindings = args.secretBindings;
-      if (args.secretValues) body.secretValues = args.secretValues;
+      body.secretValues = mergeSecretValues(config, args.secretValues);
       if (args.runId) body.runId = args.runId;
       return documentResult(
         await apiPost<StartWorkflowRunRequest, RunStateDocument>(
@@ -232,6 +236,7 @@ function useConnectManagedConnectionMutation() {
     }) => {
       const body: ConnectManagedConnectionRequest = {};
       if (args?.restart) body.restart = true;
+      body.secretValues = mergeSecretValues(config);
       return apiPost<
         ConnectManagedConnectionRequest,
         WorkflowConfigurationDocument
@@ -313,7 +318,7 @@ function useSubmitInputMutation() {
       const body: SubmitBackendInputRequest = {
         inputId: args.inputId,
         payload: args.payload as JsonPayload,
-        secretValues: args.secretValues,
+        secretValues: mergeSecretValues(config, args.secretValues),
       };
       return documentResult(
         await apiPost<SubmitBackendInputRequest, RunStateDocument>(
@@ -335,7 +340,7 @@ function useSubmitInterventionMutation() {
 
       const body: SubmitBackendInterventionRequest = {
         payload: args.payload as JsonPayload,
-        secretValues: args.secretValues,
+        secretValues: mergeSecretValues(config, args.secretValues),
       };
       return documentResult(
         await apiPost<SubmitBackendInterventionRequest, RunStateDocument>(
@@ -380,7 +385,7 @@ function useAdvanceRunMutation() {
         >(
           config.apiBaseUrl,
           `/runs/${encodeURIComponent(args.state.runId)}/advance`,
-          { secretValues: args.secretValues },
+          { secretValues: mergeSecretValues(config, args.secretValues) },
         ),
       );
     },
@@ -950,6 +955,30 @@ function apiUrl(apiBaseUrl: string, path: string): string {
   }
 
   return `${apiBaseUrl}${path}`;
+}
+
+function mergeSecretValues(
+  config: ReturnType<typeof useWorkflowFrontendConfig>,
+  values?: Record<string, string>,
+): Record<string, string> | undefined {
+  const merged = { ...config.secretValues, ...values };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function mergeAdditionalInputs(
+  config: ReturnType<typeof useWorkflowFrontendConfig>,
+  inputs?: { inputId: string; payload: unknown }[],
+): { inputId: string; payload: JsonPayload }[] | undefined {
+  const merged = new Map<string, JsonPayload>();
+  for (const [inputId, payload] of Object.entries(config.additionalInputs)) {
+    merged.set(inputId, payload as JsonPayload);
+  }
+  for (const input of inputs ?? []) {
+    merged.set(input.inputId, input.payload as JsonPayload);
+  }
+  return merged.size > 0
+    ? Array.from(merged, ([inputId, payload]) => ({ inputId, payload }))
+    : undefined;
 }
 
 async function apiGet<TResponse>(

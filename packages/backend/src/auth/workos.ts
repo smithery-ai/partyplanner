@@ -50,7 +50,28 @@ export async function authenticateWorkOSUserRequest(
 ): Promise<WorkOSUserAuthContext | undefined> {
   const token = bearerToken(c);
   if (!token || token === apiKey) return undefined;
-  return authenticateWorkOSToken(env, token, { requireOrganization: false });
+  return authenticateWorkOSAccessToken(env, token, {
+    requireOrganization: false,
+  });
+}
+
+export function authenticateWorkOSAccessToken(
+  env: BackendAppEnv,
+  token: string,
+  options: { requireOrganization: false },
+): Promise<WorkOSUserAuthContext>;
+export function authenticateWorkOSAccessToken(
+  env: BackendAppEnv,
+  token: string,
+): Promise<Extract<AuthContext, { kind: "workos" }>>;
+export function authenticateWorkOSAccessToken(
+  env: BackendAppEnv,
+  token: string,
+  options: { requireOrganization?: boolean } = {},
+): Promise<WorkOSUserAuthContext> {
+  return options.requireOrganization === false
+    ? authenticateWorkOSToken(env, token, { requireOrganization: false })
+    : authenticateWorkOSToken(env, token);
 }
 
 export function resolveAuthorizedTenant(
