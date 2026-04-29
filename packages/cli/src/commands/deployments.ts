@@ -1,5 +1,6 @@
 import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
 import { resolveHyloBackendUrl } from "../config.js";
+import { cliFetch } from "../fetch.js";
 import { getHyloAccessToken } from "./auth.js";
 
 type DeploymentCommandOptions = {
@@ -111,6 +112,7 @@ async function deploymentApi(options: DeploymentCommandOptions) {
   return createHyloApiClient({
     bearerToken: adminApiKey ?? accessToken,
     baseUrl: backendUrl,
+    fetch: cliFetch,
   });
 }
 

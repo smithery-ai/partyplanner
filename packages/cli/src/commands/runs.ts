@@ -4,6 +4,7 @@ import {
   type WorkflowDeployment,
 } from "@hylo/api-client";
 import { resolveHyloBackendUrl } from "../config.js";
+import { cliFetch } from "../fetch.js";
 import { getHyloAccessToken } from "./auth.js";
 
 type RunsCommandOptions = {
@@ -102,6 +103,7 @@ async function resolveWorkflowApi(options: RunsCommandOptions): Promise<{
   const api = createHyloApiClient({
     bearerToken: adminApiKey ?? accessToken,
     baseUrl: backendUrl,
+    fetch: cliFetch,
   });
   const tenantId = options.tenantId ?? "me";
   const result = await api.tenants.listDeployments(tenantId);
@@ -157,7 +159,7 @@ async function fetchJson(
 ): Promise<unknown> {
   const headers: Record<string, string> = { Accept: "application/json" };
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-  const response = await fetch(url, { headers });
+  const response = await cliFetch(url, { headers });
   const text = await response.text();
   if (!response.ok) {
     const trimmed = text.trim();

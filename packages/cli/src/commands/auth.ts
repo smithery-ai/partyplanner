@@ -9,6 +9,7 @@ import {
   writeStoredAuth,
 } from "../auth-store.js";
 import { resolveHyloBackendUrl } from "../config.js";
+import { cliFetch } from "../fetch.js";
 
 type AuthOptions = {
   local?: boolean;
@@ -212,6 +213,7 @@ async function fetchAuthClientConfig(
   try {
     return await createHyloApiClient({
       baseUrl: backendUrl,
+      fetch: cliFetch,
     }).auth.clientConfig();
   } catch (e) {
     if (e instanceof HyloApiError) {
@@ -221,7 +223,7 @@ async function fetchAuthClientConfig(
           : `HTTP ${e.response.status}`;
       throw new Error(`Hylo auth config request failed: ${message}`);
     }
-    if (e instanceof TypeError) {
+    if (isFetchReachabilityError(e)) {
       throw new Error(
         `Could not reach Hylo backend at ${backendUrl}. Start the local backend with \`pnpm dev\` when using --local.`,
       );
@@ -320,6 +322,17 @@ async function parseResponse<T>(response: Response): Promise<T> {
 
 function isInvalidWorkOSClientError(e: unknown): boolean {
   return e instanceof Error && /invalid[_ ]client|client id/i.test(e.message);
+}
+
+function isFetchReachabilityError(e: unknown): boolean {
+  const message =
+    typeof e === "object" &&
+    e !== null &&
+    "message" in e &&
+    typeof e.message === "string"
+      ? e.message
+      : undefined;
+  return e instanceof TypeError || message?.toLowerCase() === "fetch failed";
 }
 
 function staleWorkOSClientMessage(backendUrl: string): string {

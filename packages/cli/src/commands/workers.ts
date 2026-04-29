@@ -1,5 +1,6 @@
 import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
 import { resolveHyloBackendUrl } from "../config.js";
+import { cliFetch } from "../fetch.js";
 import { getHyloAccessToken } from "./auth.js";
 
 type WorkersCommandOptions = {
@@ -57,6 +58,7 @@ async function listWorkers(args: string[]): Promise<void> {
   const api = createHyloApiClient({
     bearerToken: adminApiKey ?? accessToken,
     baseUrl: backendUrl,
+    fetch: cliFetch,
   });
   const result = await api.tenants.listDeployments(
     options.organizationId ?? "me",
