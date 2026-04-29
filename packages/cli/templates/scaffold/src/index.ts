@@ -4,6 +4,7 @@ import { z } from "zod";
 export const incidentAlert = input(
   "incidentAlert",
   z.object({
+    incidentId: z.string(),
     service: z.string().default("checkout-api"),
     severity: z.enum(["sev1", "sev2", "sev3"]).default("sev2"),
     customerImpact: z

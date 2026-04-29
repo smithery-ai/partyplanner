@@ -13,7 +13,10 @@ export type ProviderInstallationRecord = {
   // Webhook routing uses runtimeHandoffUrl, not this field.
   deploymentId?: string;
   identity: Record<string, string>;
-  runtimeHandoffUrl: string;
+  // Standalone installs (e.g. "Add to Slack" with no workflow) leave this
+  // undefined. The webhook dispatcher logs incoming events as
+  // "installation_unresolved" and 200s instead of forwarding.
+  runtimeHandoffUrl?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -34,6 +37,8 @@ export type ProviderInstallationRegistry = {
   upsert(
     installation: Omit<ProviderInstallationRecord, "createdAt" | "updatedAt">,
   ): Promise<void>;
+  list(providerId: string): Promise<ProviderInstallationRecord[]>;
+  deleteByKey(installationKey: string): Promise<boolean>;
 };
 
 export function createProviderInstallationRegistry(
@@ -69,6 +74,24 @@ export function createProviderInstallationRegistry(
       return row ? installationFromRow(row) : undefined;
     },
 
+    async list(providerId: string): Promise<ProviderInstallationRecord[]> {
+      const rows = await asDb(db)
+        .select()
+        .from(providerInstallations)
+        .where(eq(providerInstallations.providerId, providerId))
+        .orderBy(desc(providerInstallations.updatedAt))
+        .limit(100);
+      return (rows as ProviderInstallationRow[]).map(installationFromRow);
+    },
+
+    async deleteByKey(installationKey: string): Promise<boolean> {
+      const rows = await asDb(db)
+        .delete(providerInstallations)
+        .where(eq(providerInstallations.installationKey, installationKey))
+        .returning();
+      return Array.isArray(rows) && rows.length > 0;
+    },
+
     async upsert(
       installation: Omit<ProviderInstallationRecord, "createdAt" | "updatedAt">,
     ): Promise<void> {
@@ -81,7 +104,7 @@ export function createProviderInstallationRegistry(
           providerId: installation.providerId,
           deploymentId: installation.deploymentId ?? null,
           identityJson,
-          runtimeHandoffUrl: installation.runtimeHandoffUrl,
+          runtimeHandoffUrl: installation.runtimeHandoffUrl ?? null,
           createdAt: now,
           updatedAt: now,
         })
@@ -91,7 +114,7 @@ export function createProviderInstallationRegistry(
             providerId: installation.providerId,
             deploymentId: installation.deploymentId ?? null,
             identityJson,
-            runtimeHandoffUrl: installation.runtimeHandoffUrl,
+            runtimeHandoffUrl: installation.runtimeHandoffUrl ?? null,
             updatedAt: now,
           },
         });
@@ -115,12 +138,14 @@ function installationFromRow(
     }
   }
   const deploymentId = row.deploymentId ?? row.deployment_id ?? undefined;
+  const runtimeHandoffUrl =
+    row.runtimeHandoffUrl ?? row.runtime_handoff_url ?? undefined;
   return {
     installationKey: row.installationKey ?? row.installation_key ?? "",
     providerId: row.providerId ?? row.provider_id ?? "",
     ...(deploymentId ? { deploymentId } : {}),
     identity,
-    runtimeHandoffUrl: row.runtimeHandoffUrl ?? row.runtime_handoff_url ?? "",
+    ...(runtimeHandoffUrl ? { runtimeHandoffUrl } : {}),
     createdAt: row.createdAt ?? row.created_at ?? 0,
     updatedAt: row.updatedAt ?? row.updated_at ?? 0,
   };
@@ -149,6 +174,7 @@ function asDb(db: WorkflowPostgresDb) {
       from: (table: unknown) => QueryBuilder;
     };
     insert: (table: unknown) => InsertBuilder;
+    delete: (table: unknown) => DeleteBuilder;
   };
 }
 
@@ -161,4 +187,10 @@ type QueryBuilder = {
 type InsertBuilder = {
   values(value: unknown): InsertBuilder;
   onConflictDoUpdate(args: unknown): Promise<unknown>;
+};
+
+type DeleteBuilder = {
+  where(condition: unknown): {
+    returning(): Promise<unknown[]>;
+  };
 };

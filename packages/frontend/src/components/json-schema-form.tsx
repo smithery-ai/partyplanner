@@ -1,5 +1,12 @@
 import type { ReactNode } from "react";
 import { Input } from "../components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 import { useIsRunning } from "../hooks/workflow-run";
 import type { JsonSchema } from "../types";
 
@@ -186,19 +193,22 @@ function JsonSchemaField({
     const id = path;
     return (
       <FieldLabel id={id} label={fieldLabel(path)} optional={optional}>
-        <select
-          id={id}
-          className="flex h-8 w-full rounded-lg border border-input bg-transparent px-2 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-60"
+        <Select
           value={String(value ?? s.enum[0])}
-          onChange={(e) => onChange(e.target.value)}
+          onValueChange={(v) => onChange(v ?? "")}
           disabled={disabled}
         >
-          {s.enum.map((option) => (
-            <option key={String(option)} value={String(option)}>
-              {String(option)}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id={id} className="h-8 font-mono text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {s.enum.map((option) => (
+              <SelectItem key={String(option)} value={String(option)}>
+                {String(option)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </FieldLabel>
     );
   }

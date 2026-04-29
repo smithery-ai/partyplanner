@@ -3,7 +3,13 @@ import type { ZodTypeAny } from "zod";
 import { z } from "zod";
 
 import { Input } from "../components/ui/input";
-import { cn } from "../lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 
 /** Default value suitable for controlled form state (Zod parse may still refine). */
 export function defaultForSchema(schema: ZodTypeAny): unknown {
@@ -306,20 +312,21 @@ function ZodFieldInner({
         optional={optionalOuter}
         description={desc}
       >
-        <select
-          id={id}
-          className={cn(
-            "flex h-8 w-full rounded-lg border border-input bg-background px-2 text-xs",
-          )}
+        <Select
           value={typeof value === "string" ? value : opts[0]}
-          onChange={(e) => onChange(e.target.value)}
+          onValueChange={(v) => onChange(v ?? "")}
         >
-          {opts.map((o) => (
-            <option key={o} value={o}>
-              {o}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id={id} className="h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {opts.map((o) => (
+              <SelectItem key={o} value={o}>
+                {o}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </FieldLabelBlock>
     );
   }

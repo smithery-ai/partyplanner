@@ -5,10 +5,10 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node ../../scripts/ensure-electron.mjs && electron-vite dev",
     "build": "tsc -b && electron-vite build",
     "lint": "eslint .",
-    "preview": "electron-vite preview"
+    "preview": "node ../../scripts/ensure-electron.mjs && electron-vite preview"
   },
   "dependencies": {
     "@workflow/frontend": "workspace:*",

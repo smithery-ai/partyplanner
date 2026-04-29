@@ -18,6 +18,7 @@ import {
   Plus,
   RefreshCw,
   SendHorizontal,
+  Settings,
   User,
   Wrench,
   X,
@@ -33,6 +34,8 @@ import {
   useState,
 } from "react";
 import { Streamdown } from "streamdown";
+// Slack mark from Wikimedia Commons (Slack_icon_2019.svg).
+import slackIconUrl from "./assets/slack-icon.svg";
 import { ChatInput, type ChatInputHandle } from "./components/chat-input";
 import { Button } from "./components/ui/button";
 import {
@@ -288,9 +291,23 @@ function formatDurationMs(ms: number): string {
   return `${seconds >= 10 ? Math.round(seconds) : seconds.toFixed(1)}s`;
 }
 
+export type ChatWorkflowOption = {
+  id: string;
+  label: string;
+  apiUrl: string;
+};
+
 export type ChatPageProps = {
   localApiBase?: string;
+  backendUrl?: string;
+  // When set, renders this content in the main panel instead of the chat /
+  // empty state. The sidebar (chats) and right files panel stay in place.
+  mainContent?: ReactNode;
+  // Used by the EmptyState "Add to Slack" button to default to the first
+  // worker for the install. Manage flow lives on the settings page.
+  workflowOptions?: ChatWorkflowOption[];
   onRunHistoryClick?: () => void;
+  onManageSlackClick?: () => void;
   onSelectedSessionIdChange?: (
     sessionId: string | null,
     options?: { replace?: boolean },
@@ -302,7 +319,11 @@ export type ChatPageProps = {
 
 export function ChatPage({
   localApiBase = DEFAULT_LOCAL_API_BASE,
+  backendUrl,
+  mainContent,
+  workflowOptions,
   onRunHistoryClick,
+  onManageSlackClick,
   onSelectedSessionIdChange,
   selectedSessionId,
   sidebarFooter,
@@ -311,7 +332,11 @@ export function ChatPage({
   return (
     <ChatShell
       localApiBase={localApiBase}
+      backendUrl={backendUrl}
+      mainContent={mainContent}
+      workflowOptions={workflowOptions}
       onRunHistoryClick={onRunHistoryClick}
+      onManageSlackClick={onManageSlackClick}
       onSelectedSessionIdChange={onSelectedSessionIdChange}
       selectedSessionId={selectedSessionId}
       sidebarFooter={sidebarFooter}
@@ -478,14 +503,22 @@ function FilesPanel({
 
 function ChatShell({
   localApiBase,
+  backendUrl,
+  mainContent,
+  workflowOptions,
   onRunHistoryClick,
+  onManageSlackClick,
   onSelectedSessionIdChange,
   selectedSessionId,
   sidebarFooter,
   sidebarTopInset,
 }: {
   localApiBase: string;
+  backendUrl?: string;
+  mainContent?: ReactNode;
+  workflowOptions?: ChatWorkflowOption[];
   onRunHistoryClick?: () => void;
+  onManageSlackClick?: () => void;
   onSelectedSessionIdChange?: (
     sessionId: string | null,
     options?: { replace?: boolean },
@@ -1167,6 +1200,18 @@ function ChatShell({
             {sidebarFooter ? (
               <div className="flex shrink-0 items-center gap-1 p-2">
                 <div className="min-w-0 flex-1">{sidebarFooter}</div>
+                {onManageSlackClick ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    title="Settings"
+                    aria-label="Open settings"
+                    onClick={onManageSlackClick}
+                  >
+                    <Settings className="size-3.5" aria-hidden />
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   size="icon-sm"
@@ -1180,7 +1225,19 @@ function ChatShell({
                 </Button>
               </div>
             ) : (
-              <div className="flex shrink-0 items-center justify-end p-2">
+              <div className="flex shrink-0 items-center justify-end gap-1 p-2">
+                {onManageSlackClick ? (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    title="Settings"
+                    aria-label="Open settings"
+                    onClick={onManageSlackClick}
+                  >
+                    <Settings className="size-3.5" aria-hidden />
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   size="icon-sm"
@@ -1196,7 +1253,9 @@ function ChatShell({
             )}
           </aside>
           <div className="relative min-w-0 flex-1">
-            {viewedFilePath ? (
+            {mainContent ? (
+              mainContent
+            ) : viewedFilePath ? (
               <FileViewer
                 key={viewedFilePath}
                 localApiBase={localApiBase}
@@ -1215,7 +1274,12 @@ function ChatShell({
                 localApiBase={localApiBase}
               />
             ) : (
-              <EmptyState onNew={() => void newChat()} />
+              <EmptyState
+                onNew={() => void newChat()}
+                backendUrl={backendUrl}
+                workflowOptions={workflowOptions}
+                onManageSlackClick={onManageSlackClick}
+              />
             )}
           </div>
           <FilesPanel
@@ -1229,7 +1293,102 @@ function ChatShell({
   );
 }
 
-function EmptyState({ onNew }: { onNew: () => void }) {
+type SlackInstallation = {
+  installationKey: string;
+  identity: Record<string, string>;
+  runtimeHandoffUrl?: string;
+  updatedAt: number;
+};
+
+function SlackIcon({ className }: { className?: string }) {
+  return <img src={slackIconUrl} alt="" className={className} aria-hidden />;
+}
+
+function EmptyState({
+  onNew,
+  backendUrl,
+  workflowOptions,
+  onManageSlackClick,
+}: {
+  onNew: () => void;
+  backendUrl?: string;
+  workflowOptions?: ChatWorkflowOption[];
+  onManageSlackClick?: () => void;
+}) {
+  const [installations, setInstallations] = useState<
+    SlackInstallation[] | null
+  >(null);
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!backendUrl || !onManageSlackClick) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `${backendUrl.replace(/\/+$/, "")}/integrations/slack/installations`,
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          installations?: SlackInstallation[];
+        };
+        if (!cancelled) setInstallations(data.installations ?? []);
+      } catch {
+        // Best-effort.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [backendUrl, onManageSlackClick]);
+
+  const firstWorkflow = workflowOptions?.[0];
+  // Show "Add to Slack" only when there are no installs yet AND we have at
+  // least one worker to default to. Once installed, the user manages it via
+  // the settings gear in the user row.
+  const showAddToSlack =
+    Boolean(onManageSlackClick) &&
+    Boolean(firstWorkflow) &&
+    installations !== null &&
+    installations.length === 0;
+  const slackConnected =
+    Boolean(onManageSlackClick) &&
+    installations !== null &&
+    installations.length > 0;
+
+  const handleAddToSlack = async () => {
+    if (!backendUrl || !firstWorkflow) return;
+    setInstalling(true);
+    setInstallError(null);
+    try {
+      const runtimeHandoffUrl = `${firstWorkflow.apiUrl.replace(
+        /\/+$/,
+        "",
+      )}/integrations/slack/handoff`;
+      const clientReturnUrl = `${window.location.origin}/settings/slack`;
+      const res = await fetch(
+        `${backendUrl.replace(/\/+$/, "")}/oauth/slack/install-url`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ runtimeHandoffUrl, clientReturnUrl }),
+        },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Install URL request failed (${res.status})`);
+      }
+      const data = (await res.json()) as { authorizeUrl?: string };
+      if (!data.authorizeUrl) throw new Error("Missing authorizeUrl response.");
+      window.open(data.authorizeUrl, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      setInstallError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   return (
     <div className="grid h-full place-items-center bg-off-white p-8 text-center text-off-black">
       <div className="flex flex-col items-center gap-3">
@@ -1237,9 +1396,34 @@ function EmptyState({ onNew }: { onNew: () => void }) {
         <p className="text-sm text-muted-foreground">
           Select a chat from the sidebar, or start a new one.
         </p>
-        <Button onClick={onNew}>
-          <Plus className="size-4" aria-hidden /> New chat
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={onNew}>
+            <Plus className="size-4" aria-hidden /> New chat
+          </Button>
+          {showAddToSlack ? (
+            <Button
+              variant="outline"
+              onClick={() => void handleAddToSlack()}
+              disabled={installing}
+              className="border-0 bg-white text-off-black hover:bg-white"
+            >
+              <SlackIcon className="size-4" />{" "}
+              {installing ? "Opening Slack…" : "Add to Slack"}
+            </Button>
+          ) : null}
+        </div>
+        {slackConnected ? (
+          <p className="inline-flex items-center text-xs text-muted-foreground">
+            <CheckCircle2 className="size-3.5 text-emerald-600" aria-hidden />
+            <span className="ml-1.5 mr-1">
+              Slack connected — send a message to{" "}
+            </span>
+            <span className="font-bold">@Hylo</span>
+          </p>
+        ) : null}
+        {installError ? (
+          <p className="text-destructive text-xs">{installError}</p>
+        ) : null}
       </div>
     </div>
   );

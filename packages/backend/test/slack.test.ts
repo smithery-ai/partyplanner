@@ -404,6 +404,16 @@ class MemoryProviderInstallationRegistry
       updatedAt: now,
     });
   }
+
+  async list(providerId: string): Promise<ProviderInstallationRecord[]> {
+    return Array.from(this.installations.values())
+      .filter((record) => record.providerId === providerId)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  async deleteByKey(installationKey: string): Promise<boolean> {
+    return this.installations.delete(installationKey);
+  }
 }
 
 function fakeDb(): WorkflowPostgresDb {
