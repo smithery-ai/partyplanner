@@ -145,7 +145,7 @@ class RunSession {
 
   private async runStep(
     def: StepDef,
-    invocationReason: "dependency" | "managed_connection",
+    invocationReason: "dependency" | "managed_connection" | "start",
   ): Promise<unknown> {
     const start = Date.now();
     const deps: string[] = [];

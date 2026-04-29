@@ -180,15 +180,19 @@ function useStartWorkflowRunMutation() {
   const config = useWorkflowFrontendConfig();
   return useMutation({
     mutationFn: async (args: StartRunArgs) => {
-      const body: StartWorkflowRunRequest = {
-        inputId: requiredInputId(args.inputId),
-        payload: args.payload as JsonPayload,
-        additionalInputs: args.additionalInputs as
-          | { inputId: string; payload: JsonPayload }[]
-          | undefined,
-        secretBindings: args.secretBindings,
-        secretValues: args.secretValues,
-      };
+      const body: StartWorkflowRunRequest = {};
+      if (args.inputId) {
+        body.inputId = args.inputId;
+        body.payload = args.payload as JsonPayload;
+      }
+      if (args.additionalInputs) {
+        body.additionalInputs = args.additionalInputs as {
+          inputId: string;
+          payload: JsonPayload;
+        }[];
+      }
+      if (args.secretBindings) body.secretBindings = args.secretBindings;
+      if (args.secretValues) body.secretValues = args.secretValues;
       return documentResult(
         await apiPost<StartWorkflowRunRequest, RunStateDocument>(
           config.apiBaseUrl,
@@ -919,11 +923,4 @@ function documentResult(document: RunStateDocument): WorkflowRuntimeResult {
     queue: document.queue,
     events: document.events,
   };
-}
-
-function requiredInputId(value: string | undefined): string {
-  if (!value) {
-    throw new Error("An inputId is required to start a workflow run.");
-  }
-  return value;
 }

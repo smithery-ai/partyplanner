@@ -1,6 +1,8 @@
 import { atom, input, secret } from "@workflow/core";
 import { z } from "zod";
 
+export * from "./gmail";
+
 export const incidentAlert = input(
   "incidentAlert",
   z.object({

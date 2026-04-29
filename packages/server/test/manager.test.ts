@@ -68,6 +68,43 @@ describe("WorkflowManager", () => {
     ).toBe("resolved");
   });
 
+  it("starts blank runs and resolves atoms that do not need an input", async () => {
+    const seed = input("seed", z.object({ value: z.number() }));
+    atom(() => "ready", { name: "standalone" });
+    atom(
+      (get) => {
+        const payload = get(seed);
+        return payload.value + 1;
+      },
+      { name: "needsSeed" },
+    );
+
+    const manager = new WorkflowManager({
+      stateStore: new TestWorkflowStateStore(),
+      queue: new TestWorkflowQueue(),
+    });
+
+    const started = await manager.startRun({});
+
+    expect(started.status).toBe("running");
+    expect(started.queue.pending.map((item) => item.event.kind)).toEqual([
+      "step",
+      "step",
+    ]);
+
+    const completed = await manager.advanceUntilSettled(started.runId);
+
+    expect(completed.status).toBe("completed");
+    expect(
+      completed.nodes.find((node) => node.id === "standalone")?.status,
+    ).toBe("resolved");
+    expect(completed.state.nodes.standalone?.value).toBe("ready");
+    expect(
+      completed.nodes.find((node) => node.id === "needsSeed")?.status,
+    ).toBe("skipped");
+    expect(completed.state.trigger).toBeUndefined();
+  });
+
   it("matches all trigger inputs for a webhook-started run", async () => {
     input("leadA", z.object({ source: z.literal("webhook"), id: z.string() }));
     input("leadB", z.object({ source: z.literal("webhook"), id: z.string() }));

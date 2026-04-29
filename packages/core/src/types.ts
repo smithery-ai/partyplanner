@@ -51,7 +51,7 @@ export type RequestIntervention = <T>(
 export type AtomRuntimeContext = {
   runId: string;
   stepId: string;
-  invocationReason?: "dependency" | "managed_connection";
+  invocationReason?: "dependency" | "managed_connection" | "start";
   interventionId: (key: string) => string;
 };
 
@@ -137,7 +137,7 @@ export type QueueEvent =
       eventId: string;
       runId: string;
       stepId: string;
-      reason?: "dependency" | "managed_connection";
+      reason?: "dependency" | "managed_connection" | "start";
     };
 
 export type DispatchResult = {

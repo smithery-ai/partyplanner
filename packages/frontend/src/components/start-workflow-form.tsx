@@ -48,7 +48,7 @@ export function StartWorkflowForm({
   inputValues: Record<string, unknown>;
   onInputValuesChange: (id: string, value: unknown) => void;
   canSubmitSeed: boolean;
-  onSubmitSeed: (inputId: string) => void;
+  onSubmitSeed: (inputId?: string) => void;
   onConnectManagedConnection: (
     connectionId: string,
     options?: { restart?: boolean },
@@ -85,6 +85,8 @@ export function StartWorkflowForm({
     [secrets, inputValues],
   );
   const secretsNeedAttention = secrets.length > 0 && !allSecretsResolved;
+  const canStartBlank =
+    canSubmitSeed && !starting && !startBlockedByManagedConnections;
 
   const [step, setStep] = useState<Step>(
     secretsNeedAttention
@@ -117,10 +119,26 @@ export function StartWorkflowForm({
 
   if (immediate.length === 0 && visibleManagedConnections.length === 0) {
     return (
-      <Shell>
-        <p className="text-muted-foreground text-sm">
-          This workflow has no immediate inputs.
-        </p>
+      <Shell
+        title="Start the workflow"
+        description="This workflow has no immediate inputs."
+      >
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => onSubmitSeed()}
+            disabled={!canStartBlank}
+            aria-busy={starting}
+          >
+            {starting ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Play className="size-3.5" aria-hidden />
+            )}
+            {starting ? "Starting" : "Start"}
+          </Button>
+        </div>
       </Shell>
     );
   }
@@ -142,7 +160,22 @@ export function StartWorkflowForm({
           ))}
         </div>
         {error ? <ErrorText>{error}</ErrorText> : null}
-        <div className="flex items-center justify-end gap-2 pt-1">
+        <div className="flex items-center justify-between gap-2 pt-1">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onSubmitSeed()}
+            disabled={!canStartBlank}
+            aria-busy={starting}
+          >
+            {starting ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Play className="size-3.5" aria-hidden />
+            )}
+            Blank run
+          </Button>
           <Button
             type="button"
             size="sm"
@@ -210,11 +243,48 @@ export function StartWorkflowForm({
       }
     >
       {dataInputs.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          Add a non-secret input to start a run from the UI.
-        </p>
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => onSubmitSeed()}
+            disabled={!canStartBlank}
+            aria-busy={starting}
+          >
+            {starting ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            ) : (
+              <Play className="size-3.5" aria-hidden />
+            )}
+            {starting ? "Starting" : "Start blank run"}
+          </Button>
+        </div>
       ) : (
         <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background/60 p-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-foreground">
+                Blank run
+              </p>
+              <p className="mt-0.5 line-clamp-2 text-muted-foreground text-xs">
+                Start without an initial input.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => onSubmitSeed()}
+              disabled={!canStartBlank}
+              aria-busy={starting}
+            >
+              {starting ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Play className="size-3.5" aria-hidden />
+              )}
+              {starting ? "Starting" : "Start"}
+            </Button>
+          </div>
           {dataInputs.map((input) => {
             const expanded = selectedInputId === input.id;
             return (
