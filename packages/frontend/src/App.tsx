@@ -663,9 +663,7 @@ function WorkflowRunnerBody({
           payload,
         })
         .catch((e) => {
-          setPayloadError(
-            errorMessage(e, `Failed to resolve "${inputId}".`),
-          );
+          setPayloadError(errorMessage(e, `Failed to resolve "${inputId}".`));
         });
     }
   }, [frontendConfig.additionalInputs, runState, workflowRun]);

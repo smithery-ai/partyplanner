@@ -48,8 +48,7 @@ describe("Arcade custom user verifier", () => {
           });
         }
         if (
-          url ===
-          "https://api.arcade.dev/v1/auth/status?id=auth_123&wait=59"
+          url === "https://api.arcade.dev/v1/auth/status?id=auth_123&wait=59"
         ) {
           const headers = new Headers(init?.headers);
           expect(headers.get("Authorization")).toBe("Bearer arcade-api-key");
