@@ -30,6 +30,7 @@ import {
 } from "../components/ai-elements/node";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
+import { inferClientRunningNodeIds } from "../lib/workflow-running";
 import type { WorkflowManifest } from "../types";
 
 /** Visual bucket for theming (includes deferred-input gate) */
@@ -716,6 +717,18 @@ function animatedEdgesFromState(state: RunState | undefined): Set<string> {
   return s;
 }
 
+function dependentsBySource(
+  state: RunState | undefined,
+): Map<string, string[]> {
+  const adjacency = new Map<string, string[]>();
+  for (const edge of edgesFromObservedDeps(state)) {
+    const next = adjacency.get(edge.source);
+    if (next) next.push(edge.target);
+    else adjacency.set(edge.source, [edge.target]);
+  }
+  return adjacency;
+}
+
 /**
  * A deferred input is “in play” when a step is blocked waiting for it, even though
  * `state.nodes[inputId]` does not exist until the user submits that input.
@@ -1005,40 +1018,45 @@ function FlowInner({
 
   /**
    * Nodes the visualizer should render with the "running" visual. Seeded with
-   * any items in `queue.running`, plus `executingNodeId`. If the executing
-   * node is filtered out (e.g. a `@workflow/integrations-*` atom), we walk
-   * its dependents through hidden intermediaries so the nearest visible child
-   * (the one the user actually sees, like `notion`) pulses instead.
+   * runtime queue state, client-side runnable blocked nodes, and the current
+   * advance request. If a running node is filtered out (e.g. a
+   * `@workflow/integrations-*` atom), we walk its dependents through hidden
+   * intermediaries so the nearest visible child (the one the user actually
+   * sees, like `notion`) pulses instead.
    */
   const visibleRunningIds = useMemo(() => {
     const result = new Set<string>();
-    for (const item of queue?.running ?? []) {
-      result.add(queueNodeId(item.event));
-    }
-    if (!executingNodeId) return result;
     const vis = new Set(visibleIds);
-    if (vis.has(executingNodeId)) {
-      result.add(executingNodeId);
-      return result;
-    }
-    const adjacency = new Map<string, string[]>();
-    for (const edge of edgesFromObservedDeps(runState)) {
-      const next = adjacency.get(edge.source);
-      if (next) next.push(edge.target);
-      else adjacency.set(edge.source, [edge.target]);
-    }
-    const frontier = [executingNodeId];
-    const seen = new Set<string>([executingNodeId]);
-    while (frontier.length > 0) {
-      const current = frontier.shift();
-      if (current === undefined) break;
-      for (const next of adjacency.get(current) ?? []) {
-        if (seen.has(next)) continue;
-        seen.add(next);
-        if (vis.has(next)) result.add(next);
-        else frontier.push(next);
+    let adjacency: Map<string, string[]> | undefined;
+    const addRunningId = (nodeId: string) => {
+      if (vis.has(nodeId)) {
+        result.add(nodeId);
+        return;
       }
+
+      adjacency ??= dependentsBySource(runState);
+      const frontier = [nodeId];
+      const seen = new Set<string>([nodeId]);
+      while (frontier.length > 0) {
+        const current = frontier.shift();
+        if (current === undefined) break;
+        for (const next of adjacency.get(current) ?? []) {
+          if (seen.has(next)) continue;
+          seen.add(next);
+          if (vis.has(next)) result.add(next);
+          else frontier.push(next);
+        }
+      }
+    };
+
+    for (const item of queue?.running ?? []) {
+      addRunningId(queueNodeId(item.event));
     }
+    for (const nodeId of inferClientRunningNodeIds(runState)) {
+      addRunningId(nodeId);
+    }
+    if (executingNodeId) addRunningId(executingNodeId);
+
     return result;
   }, [executingNodeId, queue, runState, visibleIds]);
 
