@@ -14,27 +14,20 @@ console.log("pnpm dev:desktop using:");
 console.log(`  backend: ${backendUrl}`);
 console.log("  WorkOS: discovered from the backend auth client config");
 console.log("  local-api: https://local-api.localhost");
-console.log(
-  "  workflow-cloudflare-worker-example: https://workflow-cloudflare-worker-example.localhost",
-);
 console.log("  desktop: launches Electron with the selected backend");
 
-const child = spawn(
-  "pnpm",
-  [
-    "exec",
-    "turbo",
-    "run",
-    "dev",
-    "--filter=workflow-cloudflare-worker-example",
-    "--filter=local-api",
-    "--filter=desktop",
-  ],
-  {
-    env,
-    stdio: "inherit",
-  },
-);
+const filters = ["--filter=local-api", "--filter=desktop"];
+if (env.VITE_HYLO_WORKFLOW || env.HYLO_WORKFLOW) {
+  filters.unshift("--filter=workflow-cloudflare-worker-example");
+  console.log(
+    "  workflow-cloudflare-worker-example: https://workflow-cloudflare-worker-example.localhost",
+  );
+}
+
+const child = spawn("pnpm", ["exec", "turbo", "run", "dev", ...filters], {
+  env,
+  stdio: "inherit",
+});
 
 child.on("exit", (code, signal) => {
   if (signal) {
