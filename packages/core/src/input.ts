@@ -56,6 +56,10 @@ export function secret(
   }
   const resolved =
     typeof value === "string" && value.length > 0 ? value : undefined;
+  const existing = globalRegistry.getInput(name);
+  if (existing?.secret)
+    return makeHandle<string>("input", name) as Input<string>;
+
   globalRegistry.registerInput({
     kind: "input",
     id: name,

@@ -51,6 +51,7 @@ const WORKSPACE_DEPENDENCY_PATHS: Record<string, string> = {
   "@hylo/cli": "packages/cli",
   "@workflow/core": "packages/core",
   "@workflow/integrations-gmail": "packages/integrations/gmail",
+  "@workflow/integrations-linear": "packages/integrations/linear",
   "@workflow/integrations-oauth": "packages/integrations/_oauth",
   "@workflow/runtime": "packages/runtime",
   "@workflow/server": "packages/server",
