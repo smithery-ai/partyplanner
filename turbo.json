@@ -49,6 +49,14 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@hylo/api-client#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "src/generated/**"]
+    },
+    "desktop#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["out/**"]
+    },
     "test": {
       "dependsOn": ["^build"]
     },
