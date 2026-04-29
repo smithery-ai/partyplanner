@@ -47,6 +47,14 @@ describe("Arcade custom user verifier", () => {
             next_uri: "https://client.test/arcade/success",
           });
         }
+        if (
+          url ===
+          "https://api.arcade.dev/v1/auth/status?id=auth_123&wait=59"
+        ) {
+          const headers = new Headers(init?.headers);
+          expect(headers.get("Authorization")).toBe("Bearer arcade-api-key");
+          return Response.json({ status: "completed" });
+        }
         throw new Error(`Unexpected fetch: ${url}`);
       },
     );
@@ -86,10 +94,10 @@ describe("Arcade custom user verifier", () => {
       },
     );
 
-    expect(verifier.status).toBe(303);
-    expect(verifier.headers.get("Location")).toBe(
-      "https://client.test/arcade/success",
-    );
+    expect(verifier.status).toBe(200);
+    const html = await verifier.text();
+    expect(html).toContain("Arcade authorization complete");
+    expect(html).toContain("hylo:external-action-complete");
   });
 });
 

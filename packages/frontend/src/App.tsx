@@ -155,6 +155,16 @@ function hidesLegacyArcadeUserInput(inputId: string): boolean {
   return inputId === legacyArcadeUserInputId();
 }
 
+function isExternalActionCompleteMessage(
+  value: unknown,
+): value is { type: "hylo:external-action-complete" } {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    (value as { type?: unknown }).type === "hylo:external-action-complete"
+  );
+}
+
 function displayNodeRecord(
   registry: Registry,
   nodeId: string | null,
@@ -931,9 +941,12 @@ function WorkflowRunnerBody({
     }
   }
 
-  async function submitPendingIntervention() {
-    if (!pendingInterventionId) return;
-    const request = pendingFormForIntervention(pendingIntervention);
+  async function submitPendingIntervention(explicitInterventionId?: string) {
+    const interventionId = explicitInterventionId ?? pendingInterventionId;
+    if (!interventionId) return;
+    const request = pendingFormForIntervention(
+      runState?.interventions?.[interventionId],
+    );
     if (!request) return;
 
     setPayloadError("");
@@ -941,11 +954,11 @@ function WorkflowRunnerBody({
     try {
       payload = sanitizeJsonSchemaValue(
         request.schema,
-        inputValues[pendingInterventionId],
+        inputValues[interventionId],
       );
     } catch (e) {
       setPayloadError(
-        errorMessage(e, `Validation failed for "${pendingInterventionId}".`),
+        errorMessage(e, `Validation failed for "${interventionId}".`),
       );
       return;
     }
@@ -954,7 +967,7 @@ function WorkflowRunnerBody({
     try {
       await workflowRun.submitIntervention({
         state: runState,
-        interventionId: pendingInterventionId,
+        interventionId,
         payload,
       });
       setPane(null);
@@ -972,19 +985,60 @@ function WorkflowRunnerBody({
   }
 
   async function openExternalActionUrl(url: string) {
-    const popup = window.open(
+    let popup = window.open(
       frontendConfig.managedConnectionInitializingUrl,
       "_blank",
     );
+    const interventionId = pendingInterventionId;
+    let cleanupExternalActionListener = () => {};
+    if (interventionId) {
+      let timeout: number | undefined;
+      let popupClosedInterval: number | undefined;
+      let submitted = false;
+      const openedAt = Date.now();
+      const submitOnce = () => {
+        if (submitted) return;
+        submitted = true;
+        cleanupExternalActionListener();
+        void submitPendingIntervention(interventionId);
+      };
+      const submitAfterReturn = () => {
+        if (Date.now() - openedAt < 2_000) return;
+        if (document.visibilityState !== "visible") return;
+        submitOnce();
+      };
+      const onMessage = (event: MessageEvent) => {
+        if (popup && event.source !== popup) return;
+        if (!isExternalActionCompleteMessage(event.data)) return;
+        submitOnce();
+      };
+      cleanupExternalActionListener = () => {
+        if (timeout !== undefined) window.clearTimeout(timeout);
+        if (popupClosedInterval !== undefined) {
+          window.clearInterval(popupClosedInterval);
+        }
+        window.removeEventListener("message", onMessage);
+        window.removeEventListener("focus", submitAfterReturn);
+        document.removeEventListener("visibilitychange", submitAfterReturn);
+      };
+      timeout = window.setTimeout(cleanupExternalActionListener, 600_000);
+      popupClosedInterval = window.setInterval(() => {
+        if (popup?.closed) submitOnce();
+      }, 1_000);
+      window.addEventListener("message", onMessage);
+      window.addEventListener("focus", submitAfterReturn);
+      document.addEventListener("visibilitychange", submitAfterReturn);
+    }
     try {
       await frontendConfig.prepareExternalActionUrl?.(url);
       if (popup && !popup.closed) {
         popup.location.href = url;
         popup.focus();
       } else {
-        window.open(url, "_blank", "noopener,noreferrer");
+        popup = window.open(url, "_blank", "noopener,noreferrer");
       }
     } catch (e) {
+      cleanupExternalActionListener();
       if (popup && !popup.closed) popup.close();
       setPayloadError(errorMessage(e, "Unable to open authorization URL."));
     }

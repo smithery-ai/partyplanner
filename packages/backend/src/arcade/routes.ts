@@ -10,8 +10,12 @@ import type { BackendAppEnv } from "../types";
 
 const ARCADE_USER_COOKIE = "hylo_arcade_user_token";
 const ARCADE_USER_COOKIE_MAX_AGE_SECONDS = 10 * 60;
+const ARCADE_API_BASE_URL = "https://api.arcade.dev";
 const ARCADE_CLOUD_BASE_URL = "https://cloud.arcade.dev/api";
 const WorkOSUserSchema = z.object({ email: z.string().email() }).passthrough();
+const ArcadeAuthorizationStatusSchema = z
+  .object({ status: z.string().optional() })
+  .passthrough();
 
 export function mountArcadeAuthApi(app: OpenAPIHono, env: BackendAppEnv) {
   app.post("/arcade/user-session", async (c) => {
@@ -71,11 +75,8 @@ export function mountArcadeAuthApi(app: OpenAPIHono, env: BackendAppEnv) {
         flowId,
         userId: arcadeUserId,
       });
-      if (result.nextUri) return c.redirect(result.nextUri, 303);
-      return c.html(
-        "<!doctype html><title>Arcade authorized</title><p>Arcade authorization complete. You can close this window.</p>",
-        200,
-      );
+      if (result.authId) await waitForArcadeAuthorization(env, result.authId);
+      return c.html(arcadeAuthorizedHtml(), 200);
     } catch (e) {
       return apiErrorResponse(c, e);
     }
@@ -158,6 +159,65 @@ async function confirmArcadeUser(
     authId: typeof body.auth_id === "string" ? body.auth_id : undefined,
     nextUri: typeof body.next_uri === "string" ? body.next_uri : undefined,
   };
+}
+
+async function waitForArcadeAuthorization(
+  env: BackendAppEnv,
+  authId: string,
+): Promise<void> {
+  const apiKey = env.ARCADE_API_KEY?.trim();
+  if (!apiKey) {
+    throw new PlatformApiError(
+      503,
+      "arcade_api_key_missing",
+      "ARCADE_API_KEY is required to check Arcade authorization status.",
+    );
+  }
+  const url = new URL("/v1/auth/status", arcadeApiBaseUrl(env));
+  url.searchParams.set("id", authId);
+  url.searchParams.set("wait", "59");
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!response.ok) {
+    throw new PlatformApiError(
+      502,
+      "arcade_authorization_status_failed",
+      `Arcade authorization status failed (${response.status}): ${await response.text()}`,
+    );
+  }
+  const body = ArcadeAuthorizationStatusSchema.parse(await response.json());
+  if (body.status !== "completed") {
+    throw new PlatformApiError(
+      400,
+      "arcade_authorization_not_completed",
+      `Arcade authorization is ${body.status ?? "not completed"}.`,
+    );
+  }
+}
+
+function arcadeAuthorizedHtml(): string {
+  return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Arcade authorized</title>
+  </head>
+  <body>
+    <p>Arcade authorization complete. You can close this window.</p>
+    <script>
+      window.opener?.postMessage({ type: "hylo:external-action-complete", provider: "arcade" }, "*");
+      window.close();
+    </script>
+  </body>
+</html>`;
+}
+
+function arcadeApiBaseUrl(env: BackendAppEnv): string {
+  return (env.ARCADE_API_BASE_URL?.trim() || ARCADE_API_BASE_URL).replace(
+    /\/+$/,
+    "",
+  );
 }
 
 function arcadeCloudBaseUrl(env: BackendAppEnv): string {
