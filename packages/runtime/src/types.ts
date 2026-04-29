@@ -231,6 +231,7 @@ export type StartRunRequest = {
     payload: unknown;
     eventId?: string;
   }[];
+  startAtoms?: boolean;
 };
 
 export type SubmitManagedConnectionRequest = {

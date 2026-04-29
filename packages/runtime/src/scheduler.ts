@@ -77,6 +77,17 @@ export class LocalScheduler implements Scheduler {
         payload: input.payload,
       });
     }
+    if (request.startAtoms) {
+      await this.enqueueAndPublishMany(
+        definition.registry.allAtoms().map((step) => ({
+          kind: "step" as const,
+          eventId: `evt_${randomId()}`,
+          runId,
+          stepId: step.id,
+          reason: "start",
+        })),
+      );
+    }
 
     return this.buildSnapshot(
       runId,
@@ -286,6 +297,7 @@ export class LocalScheduler implements Scheduler {
     if (
       event.kind === "step" &&
       previous.trigger === undefined &&
+      event.reason !== "start" &&
       event.reason !== "managed_connection" &&
       !stepDef?.managedConnection
     ) {

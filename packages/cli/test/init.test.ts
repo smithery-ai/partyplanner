@@ -61,9 +61,17 @@ it("scaffolds the flamecast home structure and example worker", async () => {
       join(workspace, ".flamecast", "worker", "package.json"),
       "utf8",
     ),
-  ) as { name: string; scripts: Record<string, string> };
+  ) as {
+    name: string;
+    scripts: Record<string, string>;
+    dependencies: Record<string, string>;
+  };
   const source = await readFile(
     join(workspace, ".flamecast", "worker", "src", "index.ts"),
+    "utf8",
+  );
+  const gmailSource = await readFile(
+    join(workspace, ".flamecast", "worker", "src", "gmail.ts"),
     "utf8",
   );
   const workerGitignore = await readFile(
@@ -83,7 +91,12 @@ it("scaffolds the flamecast home structure and example worker", async () => {
   expect(rootGitignore).toBe(".logs\n.raw\n.sessions/\nflamecast.log\n");
   expect(packageJson.name).toBe("workflow-cloudflare-worker-example");
   expect(packageJson.scripts.dev).toBe("hylo dev .");
+  expect(packageJson.dependencies["@workflow/integrations-gmail"]).toContain(
+    "packages/integrations/gmail",
+  );
   expect(source).toContain("incidentAlert");
+  expect(source).toContain('export * from "./gmail"');
+  expect(gmailSource).toContain("gmailLastTenEmails");
   expect(workerGitignore).toBe(".hylo\n.wrangler\nnode_modules\n.env*\n");
   expect(stdout).toHaveBeenCalledWith(
     expect.stringContaining("Initialized Hylo example worker"),

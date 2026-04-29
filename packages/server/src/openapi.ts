@@ -230,8 +230,8 @@ const SecretBindingSchema = z.union([
 
 export const StartWorkflowRunRequestSchema = z
   .object({
-    inputId: z.string(),
-    payload: z.any(),
+    inputId: z.string().optional(),
+    payload: z.any().optional(),
     additionalInputs: z
       .array(z.object({ inputId: z.string(), payload: z.any() }))
       .optional(),
@@ -627,18 +627,23 @@ function applyWorkflowInputSchemas(
   document.components.schemas.WorkflowInputRequest = { oneOf: inputSchemas };
 
   const startRunRequest = {
-    allOf: [
+    anyOf: [
       { $ref: "#/components/schemas/StartWorkflowRunRequest" },
       {
-        type: "object",
-        properties: {
-          additionalInputs: {
-            type: "array",
-            items: { $ref: "#/components/schemas/WorkflowInputRequest" },
+        allOf: [
+          { $ref: "#/components/schemas/StartWorkflowRunRequest" },
+          {
+            type: "object",
+            properties: {
+              additionalInputs: {
+                type: "array",
+                items: { $ref: "#/components/schemas/WorkflowInputRequest" },
+              },
+            },
           },
-        },
+          { $ref: "#/components/schemas/WorkflowInputRequest" },
+        ],
       },
-      { $ref: "#/components/schemas/WorkflowInputRequest" },
     ],
   };
   const submitInputRequest = {

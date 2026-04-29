@@ -12,6 +12,7 @@ const ROOT_DIRECTORIES = [".logs", ".raw", ".sessions"];
 const WORKSPACE_DEPENDENCY_PATHS: Record<string, string> = {
   "@hylo/cli": "packages/cli",
   "@workflow/core": "packages/core",
+  "@workflow/integrations-gmail": "packages/integrations/gmail",
   "@workflow/integrations-oauth": "packages/integrations/_oauth",
   "@workflow/runtime": "packages/runtime",
   "@workflow/server": "packages/server",
