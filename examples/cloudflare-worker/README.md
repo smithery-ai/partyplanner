@@ -10,9 +10,10 @@ From this directory:
 pnpm dev
 ```
 
-Gmail workflows use Arcade for authorization. Set `ARCADE_API_KEY` in the worker
-environment. The Hylo client passes the signed-in WorkOS user email to Arcade at
-run time, so the example worker does not need a static user id.
+Arcade-backed workflows use the Hylo backend for authorization. Set
+`ARCADE_API_KEY` in the backend environment. The Hylo client passes the signed-in
+WorkOS user email to Arcade at run time, so the example worker does not need a
+static user id.
 
 In the Arcade dashboard, configure the custom user verifier URL to the Hylo
 backend route exposed by the client. With the repo-level `pnpm dev`, use:

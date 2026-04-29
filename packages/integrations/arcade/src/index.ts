@@ -6,10 +6,10 @@ import {
   atom,
   type Get,
   type Handle,
-  input as workflowInput,
   isHandle,
   type RequestIntervention,
   secret,
+  input as workflowInput,
 } from "@workflow/core";
 import { defaultAppBaseUrl } from "@workflow/integrations-oauth";
 import { Hono } from "hono";
@@ -125,8 +125,7 @@ function resolveApiKey(): string | undefined {
 }
 
 const HYLO_USER_ID = workflowInput("HYLO_USER_ID", z.string().min(1), {
-  description:
-    "Signed-in Hylo user email used for Arcade tool authorization.",
+  description: "Signed-in Hylo user email used for Arcade tool authorization.",
   internal: true,
 });
 
@@ -279,16 +278,15 @@ async function authorizeTool(args: {
   requestIntervention: RequestIntervention;
   opts?: ArcadeToolOptions;
 }): Promise<void> {
-  const raw = await arcadeRequest({
-    credentials: args.credentials,
-    path: "/v1/tools/authorize",
-    body: {
-      tool_name: args.toolName,
-      tool_version: args.toolVersion,
-      user_id: args.userId,
-      next_uri: args.nextUri,
-    },
-  });
+  let usedNextUri = args.nextUri;
+  let raw: unknown;
+  try {
+    raw = await authorizeToolRequest(args, usedNextUri);
+  } catch (e) {
+    if (!usedNextUri || !isInvalidNextUriError(e)) throw e;
+    usedNextUri = undefined;
+    raw = await authorizeToolRequest(args, usedNextUri);
+  }
   let authorization = toAuthorizationResponse(raw);
   if (authorization.status === "completed") return;
   if (!authorization.url) {
@@ -306,7 +304,9 @@ async function authorizeTool(args: {
         `Authorize ${args.toolName.replace(/^([^.]+)\./, "$1 ")}`,
       description:
         args.opts?.authorizationDescription ??
-        "Open Arcade authorization and approve access. The workflow run will resume automatically once authorization completes.",
+        (usedNextUri
+          ? "Open Arcade authorization and approve access. The workflow run will resume automatically once authorization completes."
+          : "Open Arcade authorization and approve access. If the auth page does not return to Hylo automatically, come back here and resolve this intervention to continue the workflow."),
       action: {
         type: "open_url",
         url: authorization.url,
@@ -326,6 +326,27 @@ async function authorizeTool(args: {
       `Arcade authorization for ${args.toolName} is ${authorization.status ?? "not completed"}.`,
     );
   }
+}
+
+function authorizeToolRequest(
+  args: {
+    credentials: ArcadeCredentials;
+    toolName: string;
+    toolVersion?: string;
+    userId: string;
+  },
+  nextUri: string | undefined,
+): Promise<unknown> {
+  return arcadeRequest({
+    credentials: args.credentials,
+    path: "/v1/tools/authorize",
+    body: {
+      tool_name: args.toolName,
+      tool_version: args.toolVersion,
+      user_id: args.userId,
+      next_uri: nextUri,
+    },
+  });
 }
 
 async function checkAuthorizationStatus(
@@ -396,6 +417,18 @@ export function createArcadeHandoffRoutes(
   return app;
 }
 
+class ArcadeRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body: string,
+    readonly url: string,
+  ) {
+    super(message);
+    this.name = "ArcadeRequestError";
+  }
+}
+
 async function arcadeRequest(args: {
   credentials: ArcadeCredentials;
   path: string;
@@ -411,11 +444,22 @@ async function arcadeRequest(args: {
     body: JSON.stringify(compact(args.body)),
   });
   if (!response.ok) {
-    throw new Error(
-      `Arcade ${url.toString()} failed (${response.status}): ${await response.text()}`,
+    const body = await response.text();
+    throw new ArcadeRequestError(
+      `Arcade ${url.toString()} failed (${response.status}): ${body}`,
+      response.status,
+      body,
+      url.toString(),
     );
   }
   return response.json();
+}
+
+function isInvalidNextUriError(error: unknown): boolean {
+  return (
+    error instanceof ArcadeRequestError &&
+    /invalid\s+next\s+uri/i.test(error.body)
+  );
 }
 
 function arcadeProxyBaseUrl(backendUrl: string): string {

@@ -278,7 +278,9 @@ function bearerTokenFromRequest(request: Request): string | undefined {
   return bearerTokenFromHeader(request.headers.get("authorization")?.trim());
 }
 
-function bearerTokenFromHeader(header: string | undefined | null): string | undefined {
+function bearerTokenFromHeader(
+  header: string | undefined | null,
+): string | undefined {
   const match = header?.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || undefined;
 }

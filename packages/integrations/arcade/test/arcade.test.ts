@@ -110,6 +110,89 @@ describe("Arcade authorization handoff", () => {
     expect(nextUri.searchParams.get("interventionId")).toBe(interventionId);
   });
 
+  it("falls back to manual authorization when Arcade rejects the local next_uri", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url, init) => {
+        if (String(url) !== "https://backend.test/arcade/v1/tools/authorize") {
+          return new Response("not found", { status: 404 });
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          next_uri?: string;
+        };
+        if (body.next_uri) {
+          return new Response(
+            JSON.stringify({
+              name: "unknown_error",
+              message:
+                "error starting authorization challenge: invalid next URI",
+            }),
+            {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            id: "auth_1",
+            status: "pending",
+            url: "https://arcade.test/authorize",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      });
+
+    const auth = atom(
+      () => ({
+        apiKey: "hylo-app-token",
+        baseUrl: "https://backend.test/arcade",
+      }),
+      { name: "arcadeAuth" },
+    );
+    const appBaseUrl = atom(() => "https://demo.localhost", {
+      name: "appBaseUrl",
+    });
+
+    const projects = createArcadeToolAtom({
+      toolName: "Linear.GetProjects",
+      input: {},
+      inputSchema: z.object({}),
+      outputSchema: z.unknown(),
+      opts: {
+        actionName: "linearProjects",
+        appBaseUrl,
+        auth,
+        userId: "ani@example.com",
+      },
+    });
+    atom((get) => get(projects), { name: "result" });
+
+    const run = await runToIdle({
+      kind: "step",
+      eventId: "evt-linear-projects",
+      runId: "run-arcade-local",
+      stepId: "linearProjects",
+      reason: "start",
+    });
+
+    const calls = fetchMock.mock.calls.map((call) =>
+      JSON.parse(String(call[1]?.body ?? "{}")),
+    );
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.next_uri).toContain("https://demo.localhost/");
+    expect(calls[1]).not.toHaveProperty("next_uri");
+    expect(run.trace.nodes.linearProjects?.status).toBe("waiting");
+    expect(
+      run.state.interventions[
+        "linearProjects:arcade-linear-getprojects-authorization"
+      ]?.description,
+    ).toContain("come back here and resolve this intervention");
+  });
+
   it("resolves the Arcade intervention when the handoff route is hit", async () => {
     const requests: unknown[] = [];
     const routes = createArcadeHandoffRoutes({
