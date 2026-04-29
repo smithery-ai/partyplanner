@@ -1,4 +1,7 @@
-import { createHyloApiClient } from "@hylo/api-client";
+import {
+  type CurrentUserOrganization,
+  createHyloApiClient,
+} from "@hylo/api-client";
 import { Button } from "@workflow/frontend/components/ui/button";
 import {
   Card,
@@ -7,13 +10,22 @@ import {
   CardHeader,
   CardTitle,
 } from "@workflow/frontend/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@workflow/frontend/components/ui/dropdown-menu";
 import { AuthKitProvider, type User, useAuth } from "@workos-inc/authkit-react";
-import { LogOut } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, LogOut } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
 type AppProps = {
   children: (props: {
     getAccessToken: () => Promise<string>;
+    organizationId: string | null;
     sidebarFooter: ReactNode;
   }) => ReactNode;
 };
@@ -26,6 +38,11 @@ type WorkOSConfig = {
   redirectUri?: string;
   devMode?: boolean;
 };
+
+type UserOrganizationsState =
+  | { status: "loading"; items: [] }
+  | { status: "loaded"; items: CurrentUserOrganization[] }
+  | { status: "error"; items: [] };
 
 export function App({ children }: AppProps) {
   const [workos, setWorkos] = useState<WorkOSConfig | null | undefined>();
@@ -76,7 +93,40 @@ export function App({ children }: AppProps) {
 }
 
 function AuthenticatedApp({ children }: AppProps) {
-  const { getAccessToken, isLoading, user, signIn, signOut } = useAuth();
+  const {
+    getAccessToken,
+    isLoading,
+    organizationId,
+    signIn,
+    signOut,
+    switchToOrganization,
+    user,
+  } = useAuth();
+  const [organizations, setOrganizations] = useState<UserOrganizationsState>({
+    status: "loading",
+    items: [],
+  });
+
+  useEffect(() => {
+    if (!user) return;
+
+    const abort = new AbortController();
+    setOrganizations({ status: "loading", items: [] });
+    void getAccessToken()
+      .then((accessToken) => getUserOrganizations(accessToken, abort.signal))
+      .then((items) => {
+        if (!abort.signal.aborted) {
+          setOrganizations({ status: "loaded", items });
+        }
+      })
+      .catch((error) => {
+        if (abort.signal.aborted) return;
+        console.warn("[hylo-client] failed to load organizations", error);
+        setOrganizations({ status: "error", items: [] });
+      });
+
+    return () => abort.abort();
+  }, [getAccessToken, user]);
 
   if (!user) {
     return (
@@ -89,9 +139,19 @@ function AuthenticatedApp({ children }: AppProps) {
 
   return children({
     getAccessToken,
+    organizationId,
     sidebarFooter: (
       <UserFooter
+        currentOrganizationId={organizationId}
+        organizations={organizations}
         user={user}
+        onOrganizationSelect={(nextOrganizationId) => {
+          if (nextOrganizationId === organizationId) return;
+          void switchToOrganization({
+            organizationId: nextOrganizationId,
+            signInOpts: { state: { returnTo: currentReturnTo() } },
+          });
+        }}
         onSignOut={() => signOut({ returnTo: window.location.origin })}
       />
     ),
@@ -99,42 +159,133 @@ function AuthenticatedApp({ children }: AppProps) {
 }
 
 function UserFooter({
+  currentOrganizationId,
+  organizations,
   user,
+  onOrganizationSelect,
   onSignOut,
 }: {
+  currentOrganizationId: string | null;
+  organizations: UserOrganizationsState;
   user: User;
+  onOrganizationSelect: (organizationId: string) => void;
   onSignOut: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      {user.profilePictureUrl ? (
-        <img
-          className="size-7 shrink-0 rounded-full object-cover"
-          src={user.profilePictureUrl}
-          alt=""
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex min-h-9 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-left outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-3 focus-visible:ring-sidebar-ring/50 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+        >
+          {user.profilePictureUrl ? (
+            <img
+              className="size-7 shrink-0 rounded-full object-cover"
+              src={user.profilePictureUrl}
+              alt=""
+            />
+          ) : (
+            <span
+              className="grid size-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-[0.7rem] font-semibold text-sidebar-accent-foreground"
+              aria-hidden
+            >
+              {userInitials(user)}
+            </span>
+          )}
+          <span className="min-w-0 flex-1 truncate text-xs font-medium">
+            {displayName(user)}
+          </span>
+          <ChevronsUpDown
+            className="size-3.5 shrink-0 opacity-70"
+            aria-hidden
+          />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        className="w-64"
+      >
+        <DropdownMenuLabel className="text-muted-foreground text-xs">
+          Organizations
+        </DropdownMenuLabel>
+        <OrganizationMenuItems
+          currentOrganizationId={currentOrganizationId}
+          organizations={organizations}
+          onOrganizationSelect={onOrganizationSelect}
         />
-      ) : (
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onSelect={onSignOut}
+          className="cursor-pointer"
+        >
+          <LogOut className="size-4" aria-hidden />
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function OrganizationMenuItems({
+  currentOrganizationId,
+  organizations,
+  onOrganizationSelect,
+}: {
+  currentOrganizationId: string | null;
+  organizations: UserOrganizationsState;
+  onOrganizationSelect: (organizationId: string) => void;
+}) {
+  if (organizations.status === "loading") {
+    return (
+      <DropdownMenuItem disabled>
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+        Loading organizations
+      </DropdownMenuItem>
+    );
+  }
+
+  if (organizations.status === "error") {
+    return (
+      <DropdownMenuItem disabled>
+        Organization list unavailable
+      </DropdownMenuItem>
+    );
+  }
+
+  if (organizations.items.length === 0) {
+    return <DropdownMenuItem disabled>No organizations</DropdownMenuItem>;
+  }
+
+  return organizations.items.map((organization) => {
+    const selected = organization.id === currentOrganizationId;
+    return (
+      <DropdownMenuItem
+        key={organization.id}
+        disabled={selected}
+        onSelect={() => onOrganizationSelect(organization.id)}
+        className="cursor-pointer gap-2"
+      >
         <span
-          className="grid size-7 shrink-0 place-items-center rounded-full bg-sidebar-accent text-[0.7rem] font-semibold text-sidebar-accent-foreground"
+          className="grid size-7 shrink-0 place-items-center rounded-md bg-muted text-[0.65rem] font-semibold text-muted-foreground"
           aria-hidden
         >
-          {userInitials(user)}
+          {organizationInitials(organization.name)}
         </span>
-      )}
-      <span className="min-w-0 flex-1 truncate text-xs font-medium">
-        {displayName(user)}
-      </span>
-      <button
-        type="button"
-        onClick={onSignOut}
-        aria-label="Sign out"
-        title="Sign out"
-        className="grid size-7 shrink-0 cursor-pointer place-items-center rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-      >
-        <LogOut className="size-3.5" aria-hidden />
-      </button>
-    </div>
-  );
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm">{organization.name}</span>
+          {organization.role ? (
+            <span className="block truncate text-xs text-muted-foreground">
+              {roleLabel(organization.role)}
+            </span>
+          ) : null}
+        </span>
+        {selected ? <Check className="size-4 shrink-0" aria-hidden /> : null}
+      </DropdownMenuItem>
+    );
+  });
 }
 
 function SignedOutScreen({
@@ -211,6 +362,27 @@ async function getBackendAuthConfig(
     console.warn("[hylo-client] failed to load backend auth config", error);
     return null;
   }
+}
+
+async function getUserOrganizations(
+  accessToken: string,
+  signal: AbortSignal,
+): Promise<CurrentUserOrganization[]> {
+  const response = await fetch(`${authConfigBackendUrl()}/me/organizations`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to load organizations with HTTP ${response.status}.`,
+    );
+  }
+  const body = (await response.json()) as {
+    organizations?: CurrentUserOrganization[];
+  };
+  return body.organizations ?? [];
 }
 
 function workOSApiConfig(): {
@@ -297,4 +469,22 @@ function userInitials(user: User) {
   const last = user.lastName?.[0];
   const initials = `${first ?? ""}${last ?? ""}` || user.email[0] || "H";
   return initials.toUpperCase();
+}
+
+function organizationInitials(name: string) {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("");
+  return (initials || name[0] || "O").toUpperCase();
+}
+
+function roleLabel(role: string) {
+  return role
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part[0].toUpperCase() + part.slice(1))
+    .join(" ");
 }

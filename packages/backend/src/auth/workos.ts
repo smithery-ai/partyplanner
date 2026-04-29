@@ -13,6 +13,14 @@ export type AuthContext =
       permissions: string[];
     };
 
+export type WorkOSUserAuthContext = {
+  kind: "workos";
+  tenantId?: string;
+  userId: string;
+  role?: string;
+  permissions: string[];
+};
+
 type WorkOSAccessTokenClaims = JWTPayload & {
   org_id?: string;
   permissions?: unknown;
@@ -33,6 +41,16 @@ export async function authenticateRequest(
   if (!token) return undefined;
   if (token === apiKey) return { kind: "admin" };
   return authenticateWorkOSToken(env, token);
+}
+
+export async function authenticateWorkOSUserRequest(
+  c: Context,
+  env: BackendAppEnv,
+  apiKey: string,
+): Promise<WorkOSUserAuthContext | undefined> {
+  const token = bearerToken(c);
+  if (!token || token === apiKey) return undefined;
+  return authenticateWorkOSToken(env, token, { requireOrganization: false });
 }
 
 export function resolveAuthorizedTenant(
@@ -89,7 +107,18 @@ const workOSJwksCache = new Map<
 async function authenticateWorkOSToken(
   env: BackendAppEnv,
   token: string,
-): Promise<AuthContext> {
+): Promise<Extract<AuthContext, { kind: "workos" }>>;
+async function authenticateWorkOSToken(
+  env: BackendAppEnv,
+  token: string,
+  options: { requireOrganization: false },
+): Promise<WorkOSUserAuthContext>;
+async function authenticateWorkOSToken(
+  env: BackendAppEnv,
+  token: string,
+  options: { requireOrganization?: boolean } = {},
+): Promise<WorkOSUserAuthContext> {
+  const requireOrganization = options.requireOrganization ?? true;
   const config = resolveWorkOSAuthConfig(env);
   if (!config) {
     throw new PlatformApiError(
@@ -123,17 +152,19 @@ async function authenticateWorkOSToken(
     );
   }
   if (!tenantId) {
-    throw new PlatformApiError(
-      403,
-      "missing_organization",
-      "Select a WorkOS organization before using tenant deployment APIs.",
-    );
+    if (requireOrganization) {
+      throw new PlatformApiError(
+        403,
+        "missing_organization",
+        "Select a WorkOS organization before using tenant deployment APIs.",
+      );
+    }
   }
 
   return {
     kind: "workos",
     userId,
-    tenantId,
+    ...(tenantId ? { tenantId } : {}),
     ...(typeof payload.role === "string" ? { role: payload.role } : {}),
     permissions: Array.isArray(payload.permissions)
       ? payload.permissions.filter(

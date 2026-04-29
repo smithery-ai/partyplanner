@@ -26,6 +26,7 @@ export type BackendAppEnv = {
   SLACK_SIGNING_SECRET?: string;
   SPOTIFY_CLIENT_ID?: string;
   SPOTIFY_CLIENT_SECRET?: string;
+  WORKOS_API_KEY?: string;
   WORKOS_API_HOSTNAME?: string;
   WORKOS_CLIENT_API_HOSTNAME?: string;
   WORKOS_CLIENT_ID?: string;

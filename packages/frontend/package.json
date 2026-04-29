@@ -23,6 +23,10 @@
       "import": "./src/components/ui/card.tsx",
       "types": "./src/components/ui/card.tsx"
     },
+    "./components/ui/dropdown-menu": {
+      "import": "./src/components/ui/dropdown-menu.tsx",
+      "types": "./src/components/ui/dropdown-menu.tsx"
+    },
     "./components/ui/combobox": {
       "import": "./src/components/ui/combobox.tsx",
       "types": "./src/components/ui/combobox.tsx"
@@ -40,6 +44,7 @@
     "@pierre/trees": "1.0.0-beta.3",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-context-menu": "^2.2.16",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
     "@streamdown/code": "^1.1.1",
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
