@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
 import { parseBuildArgs } from "../args.js";
 import { DEFAULT_HYLO_BACKEND_URL, resolveHyloBackendUrl } from "../config.js";
+import { cliFetch } from "../fetch.js";
 import { info } from "../log.js";
 import { defaultProjectRoot, loadProject } from "../project.js";
 import { envSecretBindings } from "../secrets.js";
@@ -37,6 +38,7 @@ export async function runDeploy(args: string[]): Promise<number> {
     const api = createHyloApiClient({
       baseUrl: backendUrl,
       bearerToken: accessToken,
+      fetch: cliFetch,
     });
 
     info(`Deploying ${project.workerName} via Hylo deployments API...`);

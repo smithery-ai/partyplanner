@@ -1,5 +1,6 @@
 import { createHyloApiClient, HyloApiError } from "@hylo/api-client";
 import { resolveHyloBackendUrl } from "../config.js";
+import { cliFetch } from "../fetch.js";
 import { getHyloAccessToken } from "./auth.js";
 
 type OrganizationsCommandOptions = {
@@ -52,6 +53,7 @@ async function listOrganizations(args: string[]): Promise<void> {
   const api = createHyloApiClient({
     baseUrl: backendUrl,
     bearerToken: accessToken,
+    fetch: cliFetch,
   });
   printJson(await api.auth.organizations());
 }
