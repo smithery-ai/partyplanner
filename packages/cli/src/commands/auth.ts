@@ -90,11 +90,26 @@ export async function getHyloAccessToken({
   if (!isJwtExpired(stored.accessToken)) return stored.accessToken;
   if (!stored.refreshToken) return stored.accessToken;
 
-  const token = await refreshAccessToken({
-    clientId: stored.clientId,
-    refreshToken: stored.refreshToken,
-    workosApiBaseUrl: stored.workosApiBaseUrl,
-  });
+  if (backendUrl) {
+    const currentClientId = await fetchCurrentWorkOSClientId(backendUrl);
+    if (currentClientId && currentClientId !== stored.clientId) {
+      throw new Error(staleWorkOSClientMessage(backendUrl));
+    }
+  }
+
+  let token: TokenResponse;
+  try {
+    token = await refreshAccessToken({
+      clientId: stored.clientId,
+      refreshToken: stored.refreshToken,
+      workosApiBaseUrl: stored.workosApiBaseUrl,
+    });
+  } catch (e) {
+    if (backendUrl && isInvalidWorkOSClientError(e)) {
+      throw new Error(staleWorkOSClientMessage(backendUrl));
+    }
+    throw e;
+  }
   await writeStoredAuth({
     accessToken: token.access_token,
     backendUrl: stored.backendUrl,
@@ -215,6 +230,16 @@ async function fetchAuthClientConfig(
   }
 }
 
+async function fetchCurrentWorkOSClientId(
+  backendUrl: string,
+): Promise<string | undefined> {
+  try {
+    return (await fetchAuthClientConfig(backendUrl)).auth?.clientId?.trim();
+  } catch {
+    return undefined;
+  }
+}
+
 async function pollDeviceToken({
   clientId,
   device,
@@ -291,6 +316,20 @@ async function parseResponse<T>(response: Response): Promise<T> {
     throw new Error(`WorkOS request failed: ${message}`);
   }
   return payload as T;
+}
+
+function isInvalidWorkOSClientError(e: unknown): boolean {
+  return e instanceof Error && /invalid[_ ]client|client id/i.test(e.message);
+}
+
+function staleWorkOSClientMessage(backendUrl: string): string {
+  return `Your stored Hylo sign-in uses an outdated WorkOS client ID for ${backendUrl}. Run \`${loginCommandForBackend(backendUrl)}\` before deploying.`;
+}
+
+function loginCommandForBackend(backendUrl: string): string {
+  return backendUrl === resolveHyloBackendUrl({ local: true })
+    ? "hylo auth login --local"
+    : "hylo auth login";
 }
 
 function parseAuthOptions(args: string[]): AuthOptions & { rest: string[] } {
