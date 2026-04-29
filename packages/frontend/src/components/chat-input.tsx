@@ -150,23 +150,6 @@ function SubmitPlugin({
   return null;
 }
 
-function InitialValuePlugin({ value }: { value: string }) {
-  const [editor] = useLexicalComposerContext();
-  const appliedRef = useRef(false);
-  useEffect(() => {
-    if (appliedRef.current || !value) return;
-    appliedRef.current = true;
-    editor.update(() => {
-      const root = $getRoot();
-      root.clear();
-      const para = $createParagraphNode();
-      para.append($createTextNode(value));
-      root.append(para);
-    });
-  }, [editor, value]);
-  return null;
-}
-
 function DisabledPlugin({ disabled }: { disabled: boolean }) {
   const [editor] = useLexicalComposerContext();
   useEffect(() => {
@@ -238,6 +221,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             editable: !disabled,
             nodes: [BeautifulMentionNode, PlaceholderNode],
             theme: { beautifulMentions: MENTION_THEME },
+            editorState: initialValue
+              ? () => {
+                  const root = $getRoot();
+                  const para = $createParagraphNode();
+                  para.append($createTextNode(initialValue));
+                  root.append(para);
+                }
+              : undefined,
             onError: (err) => {
               console.error(err);
             },
@@ -260,7 +251,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             />
             <HistoryPlugin />
             <PlaceholderPlugin />
-            <InitialValuePlugin value={initialValue} />
             <DisabledPlugin disabled={disabled} />
             <BeautifulMentionsPlugin
               autoSpace={false}
