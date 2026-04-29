@@ -5,6 +5,7 @@ import { runDeploy } from "./commands/deploy.js";
 import { runDeployments } from "./commands/deployments.js";
 import { runDev } from "./commands/dev.js";
 import { runInit } from "./commands/init.js";
+import { runRuns } from "./commands/runs.js";
 
 const HELP = `hylo — workflow CLI
 
@@ -16,6 +17,7 @@ Usage:
   hylo deploy [dir] [--backend <url>]
                                       Build and deploy via Hylo API
   hylo deployments <command>         Call the deployment API
+  hylo runs <command>                List or fetch workflow runs
   hylo --help                        Show this help
 
 Options:
@@ -43,6 +45,8 @@ async function main(argv: string[]): Promise<number> {
       return runDeploy(rest);
     case "deployments":
       return runDeployments(rest);
+    case "runs":
+      return runRuns(rest);
     default:
       process.stderr.write(`Unknown command: ${command}\n\n${HELP}`);
       return 1;

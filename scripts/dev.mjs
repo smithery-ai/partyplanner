@@ -46,6 +46,8 @@ execSync(`portless alias api-worker.hylo ${env.HYLO_BACKEND_PORT}`, {
   stdio: "ignore",
 });
 
+execSync("node scripts/ensure-cli-link.mjs", { env, stdio: "inherit" });
+
 console.log("Applying local backend database migrations...");
 execSync("pnpm --filter backend-cloudflare db:migrate:dev", {
   env,
