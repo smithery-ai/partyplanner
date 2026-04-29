@@ -14,13 +14,11 @@ type AuthStore = {
   backends: Record<string, StoredAuth>;
 };
 
-const AUTH_PATH = join(configDir(), "hylo", "auth.json");
-
 export async function readStoredAuth(
   backendUrl?: string,
 ): Promise<StoredAuth | undefined> {
   try {
-    const parsed = JSON.parse(await readFile(AUTH_PATH, "utf8")) as unknown;
+    const parsed = JSON.parse(await readFile(authPath(), "utf8")) as unknown;
     const backendKey = backendUrl ? normalizeBackendUrl(backendUrl) : undefined;
     if (isAuthStore(parsed)) {
       if (backendKey) return parsed.backends[backendKey];
@@ -39,7 +37,8 @@ export async function readStoredAuth(
 }
 
 export async function writeStoredAuth(auth: StoredAuth): Promise<void> {
-  await mkdir(dirname(AUTH_PATH), { recursive: true, mode: 0o700 });
+  const path = authPath();
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const backendKey = auth.backendUrl
     ? normalizeBackendUrl(auth.backendUrl)
     : undefined;
@@ -54,17 +53,17 @@ export async function writeStoredAuth(auth: StoredAuth): Promise<void> {
         },
       }
     : auth;
-  await writeFile(AUTH_PATH, `${JSON.stringify(value, null, 2)}\n`, {
+  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, {
     mode: 0o600,
   });
 }
 
 export async function clearStoredAuth(): Promise<void> {
-  await rm(AUTH_PATH, { force: true });
+  await rm(authPath(), { force: true });
 }
 
 export function authPath(): string {
-  return AUTH_PATH;
+  return join(configDir(), "hylo", "auth.json");
 }
 
 function configDir(): string {
@@ -73,7 +72,7 @@ function configDir(): string {
 
 async function readAuthStoreWithLegacyEntry(): Promise<AuthStore> {
   try {
-    const parsed = JSON.parse(await readFile(AUTH_PATH, "utf8")) as unknown;
+    const parsed = JSON.parse(await readFile(authPath(), "utf8")) as unknown;
     if (isAuthStore(parsed)) return parsed;
     if (isStoredAuth(parsed) && parsed.backendUrl) {
       const backendKey = normalizeBackendUrl(parsed.backendUrl);

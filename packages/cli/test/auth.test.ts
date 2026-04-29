@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { writeStoredAuth } from "../src/auth-store.js";
 import { runAuth } from "../src/commands/auth.js";
 
 let previousConfigHome: string | undefined;
@@ -149,4 +150,44 @@ it("reports an unreachable backend with a local-dev hint", async () => {
   expect(stderr).toHaveBeenCalledWith(
     `Could not reach Hylo backend at ${backendUrl}. Start the local backend with \`pnpm dev\` when using --local.\n`,
   );
+});
+
+it("asks for a new login when stored auth uses an old WorkOS client ID", async () => {
+  const backendUrl = "https://backend.flamecast.dev";
+  await writeStoredAuth({
+    accessToken: "expired-token",
+    backendUrl,
+    clientId: "client_old",
+    refreshToken: "refresh-token",
+    workosApiBaseUrl: "https://api.workos.com",
+  });
+  const fetchMock = vi.fn(async (input: string | URL | Request) => {
+    const url =
+      typeof input === "string" || input instanceof URL
+        ? input.toString()
+        : input.url;
+    if (url === `${backendUrl}/auth/client-config`) {
+      return Response.json({
+        auth: {
+          provider: "workos",
+          clientId: "client_new",
+          apiHostname: "auth.example.com",
+          cliApiHostname: "api.workos.com",
+        },
+        api: { baseUrl: backendUrl },
+        features: { cliAuth: true, deployments: true },
+      });
+    }
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const stderr = vi
+    .spyOn(process.stderr, "write")
+    .mockImplementation(() => true);
+
+  await expect(runAuth(["token"])).resolves.toBe(1);
+  expect(stderr).toHaveBeenCalledWith(
+    `Your stored Hylo sign-in uses an outdated WorkOS client ID for ${backendUrl}. Run \`hylo auth login\` before deploying.\n`,
+  );
+  expect(fetchMock).toHaveBeenCalledTimes(1);
 });
