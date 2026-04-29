@@ -8,7 +8,9 @@ import { cors } from "hono/cors";
 import { createMcpHandler } from "./mcp.js";
 import { claudeSessionRoutes } from "./routes/claude-sessions.js";
 import { fileRoutes } from "./routes/files.js";
+import { runRoutes } from "./routes/runs.js";
 import { sessionRoutes } from "./routes/sessions.js";
+import { RunAdvancer } from "./run-advancer.js";
 import { SessionLogger } from "./session-logger.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { StreamManager } from "./stream-manager.js";
@@ -20,7 +22,11 @@ const pkgPath = resolve(
 );
 const pkg: { version: string } = JSON.parse(readFileSync(pkgPath, "utf-8"));
 
-function createApp(sessions: SessionManager, logger: SessionLogger) {
+function createApp(
+  sessions: SessionManager,
+  logger: SessionLogger,
+  advancer: RunAdvancer,
+) {
   const app = new OpenAPIHono();
   app.onError((err, c) => {
     return c.json({ error: err.message }, 500);
@@ -48,7 +54,8 @@ function createApp(sessions: SessionManager, logger: SessionLogger) {
     .get("/", (c) => c.json({ name: "flamecast", status: "ok" }))
     .route("/api", sessionRoutes(sessions, logger))
     .route("/api", claudeSessionRoutes(logger))
-    .route("/api", fileRoutes());
+    .route("/api", fileRoutes())
+    .route("/api", runRoutes(advancer));
 
   app.doc("/openapi.json", {
     openapi: "3.1.0",
@@ -67,13 +74,15 @@ export class Flamecast {
   readonly sessions: SessionManager;
   readonly streams: StreamManager;
   readonly logger: SessionLogger;
+  readonly advancer: RunAdvancer;
 
   constructor() {
     this.logger = new SessionLogger();
     this.sessions = new SessionManager();
     this.sessions.setLogger(this.logger);
-    this.streams = new StreamManager(this.logger);
-    this.app = createApp(this.sessions, this.logger);
+    this.advancer = new RunAdvancer();
+    this.streams = new StreamManager(this.logger, this.advancer);
+    this.app = createApp(this.sessions, this.logger, this.advancer);
   }
 
   attachWebSockets(httpServer: Server, options?: WebSocketServerOptions): void {

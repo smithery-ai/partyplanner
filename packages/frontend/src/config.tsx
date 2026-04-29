@@ -8,19 +8,23 @@ import {
   useMemo,
   useState,
 } from "react";
+import { LocalApiStreamProvider } from "./local-api-stream";
 
 export type WorkflowFrontendConfig = {
   apiBaseUrl?: string;
+  localApiBaseUrl?: string;
   managedConnectionInitializingUrl?: string;
 };
 
 export type ResolvedWorkflowFrontendConfig = {
   apiBaseUrl: string;
+  localApiBaseUrl: string;
   managedConnectionInitializingUrl: string;
 };
 
 const defaultConfig: ResolvedWorkflowFrontendConfig = {
   apiBaseUrl: "/api",
+  localApiBaseUrl: "https://local-api.localhost",
   managedConnectionInitializingUrl: "/connection/initializing",
 };
 
@@ -39,6 +43,8 @@ export function WorkflowFrontendProvider({
       ...defaultConfig,
       ...config,
       apiBaseUrl: normalizeApiBaseUrl(config?.apiBaseUrl ?? "/api"),
+      localApiBaseUrl:
+        config?.localApiBaseUrl ?? defaultConfig.localApiBaseUrl,
       managedConnectionInitializingUrl:
         config?.managedConnectionInitializingUrl ??
         defaultConfig.managedConnectionInitializingUrl,
@@ -64,7 +70,7 @@ export function WorkflowFrontendRoot({
   return (
     <QueryClientProvider client={queryClient}>
       <WorkflowFrontendProvider config={config}>
-        {children}
+        <LocalApiStreamProvider>{children}</LocalApiStreamProvider>
       </WorkflowFrontendProvider>
     </QueryClientProvider>
   );
