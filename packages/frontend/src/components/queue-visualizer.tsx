@@ -222,6 +222,8 @@ const nodeTypes = {
 };
 
 const DEFAULT_EDGE_COLOR = "var(--color-off-black)";
+const EDGE_OPACITY = 0.5;
+const EDGE_STROKE_WIDTH = 1;
 
 const EDGE_MARKER = {
   type: MarkerType.ArrowClosed,
@@ -233,7 +235,8 @@ const EDGE_MARKER = {
 /** Edges touching a pending deferred input node (matches node yellow accent). */
 const PENDING_DEFERRED_EDGE_STYLE = {
   stroke: "#eab308",
-  strokeWidth: 2,
+  strokeWidth: EDGE_STROKE_WIDTH,
+  opacity: EDGE_OPACITY,
 } as const;
 
 const PENDING_DEFERRED_EDGE_MARKER = {
@@ -1168,7 +1171,11 @@ function FlowInner({
       connectionLineComponent={ConnectionLine}
       defaultEdgeOptions={{
         markerEnd: EDGE_MARKER,
-        style: { stroke: DEFAULT_EDGE_COLOR, strokeWidth: 1.5 },
+        style: {
+          stroke: DEFAULT_EDGE_COLOR,
+          strokeWidth: EDGE_STROKE_WIDTH,
+          opacity: EDGE_OPACITY,
+        },
       }}
       fitView
       fitViewOptions={{ padding: 0.2 }}
