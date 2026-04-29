@@ -15,6 +15,7 @@ const portSpecs = [
   ["HYLO_BACKEND_PORT", 8787],
   ["HYLO_BACKEND_INSPECTOR_PORT", 9230],
   ["HYLO_CLOUDFLARE_WORKER_INSPECTOR_PORT", 9231],
+  ["HYLO_EMPTY_STATE_APP_PORT", 3457],
 ];
 
 const reserved = new Set();
@@ -45,6 +46,10 @@ execSync(`portless alias api-worker.hylo ${env.HYLO_BACKEND_PORT}`, {
   env,
   stdio: "ignore",
 });
+execSync(`portless alias empty-state-app ${env.HYLO_EMPTY_STATE_APP_PORT}`, {
+  env,
+  stdio: "ignore",
+});
 
 execSync("node scripts/ensure-cli-link.mjs", { env, stdio: "inherit" });
 
@@ -64,6 +69,9 @@ console.log(
 );
 console.log(
   "  ~/.flamecast/worker: https://workflow-cloudflare-worker-example.localhost",
+);
+console.log(
+  `  ~/.flamecast/empty-state-app: https://empty-state-app.localhost (port ${env.HYLO_EMPTY_STATE_APP_PORT})`,
 );
 console.log(`  backend inspector: ${env.HYLO_BACKEND_INSPECTOR_PORT}`);
 console.log(
