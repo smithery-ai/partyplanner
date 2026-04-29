@@ -14,14 +14,15 @@ pnpm install
 pnpm dev:desktop
 ```
 
-That starts the local backend and example workflow, sets
-`VITE_HYLO_BACKEND_URL=https://api-worker.hylo.localhost`, and launches the
-desktop shell.
+That starts the desktop shell against the production Hylo backend by default
+(`https://backend.flamecast.dev`), using the WorkOS config discovered from that
+backend. It also starts the local API and example workflow for desktop-local
+workflow development.
 
-If you want to run the app directly:
+If you want to point the desktop app at a different backend:
 
 ```sh
-VITE_HYLO_BACKEND_URL=https://backend.flamecast.dev pnpm --filter desktop dev
+VITE_HYLO_BACKEND_URL=https://api-worker.hylo.localhost pnpm dev:desktop
 ```
 
 ## WorkOS setup
