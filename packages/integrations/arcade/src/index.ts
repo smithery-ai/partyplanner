@@ -7,8 +7,11 @@ import {
   type Handle,
   isHandle,
   type RequestIntervention,
+  type AtomRuntimeContext,
   secret,
 } from "@workflow/core";
+import { defaultAppBaseUrl } from "@workflow/integrations-oauth";
+import { Hono } from "hono";
 import { type ZodSchema, z } from "zod";
 
 export type ArcadeCredentials = {
@@ -57,6 +60,8 @@ export type ArcadeToolOptions = {
   userId?: MaybeHandle<string>;
   toolVersion?: MaybeHandle<string | undefined>;
   nextUri?: MaybeHandle<string | undefined>;
+  appBaseUrl?: Handle<string>;
+  handoffPath?: MaybeHandle<string | undefined>;
   includeErrorStacktrace?: MaybeHandle<boolean | undefined>;
   authorize?: MaybeHandle<boolean | undefined>;
   actionName?: string;
@@ -77,6 +82,20 @@ type CreateArcadeToolArgs<Input extends Record<string, unknown>, Value> = {
   outputSchema: ZodSchema<Value>;
   opts?: ArcadeToolOptions;
 };
+
+type HonoAppLike = {
+  fetch(request: Request): Response | Promise<Response>;
+};
+
+export type ArcadeHandoffRoutesOptions = {
+  workflowApp: HonoAppLike;
+  workflowBasePath?: string;
+  successTitle?: string;
+  errorTitle?: string;
+};
+
+const DEFAULT_ARCADE_HANDOFF_PATH =
+  "/api/workflow/integrations/arcade/handoff";
 
 const HYLO_BACKEND_URL = secret(
   "HYLO_BACKEND_URL",
@@ -162,7 +181,8 @@ export function createArcadeToolAction<
   Value,
 >(args: CreateArcadeToolArgs<Input, Value>): Action<ArcadeToolResult<Value>> {
   return action(
-    (get, requestIntervention) => runArcadeTool(args, get, requestIntervention),
+    (get, requestIntervention, context) =>
+      runArcadeTool(args, get, requestIntervention, context),
     {
       name: args.opts?.actionName ?? defaultActionName(args.toolName),
     },
@@ -174,7 +194,8 @@ export function createArcadeToolAtom<
   Value,
 >(args: CreateArcadeToolArgs<Input, Value>): Atom<ArcadeToolResult<Value>> {
   return atom(
-    (get, requestIntervention) => runArcadeTool(args, get, requestIntervention),
+    (get, requestIntervention, context) =>
+      runArcadeTool(args, get, requestIntervention, context),
     {
       name: args.opts?.actionName ?? defaultActionName(args.toolName),
     },
@@ -185,6 +206,7 @@ async function runArcadeTool<Input extends Record<string, unknown>, Value>(
   args: CreateArcadeToolArgs<Input, Value>,
   get: Get,
   requestIntervention: RequestIntervention,
+  context: AtomRuntimeContext,
 ): Promise<ArcadeToolResult<Value>> {
   const credentials = get(args.opts?.auth ?? arcade);
   const userId = resolveUserId(get, args.opts?.userId);
@@ -192,7 +214,9 @@ async function runArcadeTool<Input extends Record<string, unknown>, Value>(
     resolveOptional(get, args.opts?.toolVersion) ?? args.defaultToolVersion;
   const input = args.inputSchema.parse(resolveInput(get, args.input));
   const authorize = resolveOptional(get, args.opts?.authorize) ?? true;
-  const nextUri = resolveOptional(get, args.opts?.nextUri);
+  const interventionKey = `arcade-${sanitizeInterventionKey(args.toolName)}-authorization`;
+  const interventionId = context.interventionId(interventionKey);
+  const nextUri = resolveArcadeNextUri(get, args.opts, context, interventionId);
 
   if (authorize) {
     await authorizeTool({
@@ -201,6 +225,7 @@ async function runArcadeTool<Input extends Record<string, unknown>, Value>(
       toolVersion,
       userId,
       nextUri,
+      interventionKey,
       requestIntervention,
       opts: args.opts,
     });
@@ -251,6 +276,7 @@ async function authorizeTool(args: {
   toolVersion?: string;
   userId: string;
   nextUri?: string;
+  interventionKey: string;
   requestIntervention: RequestIntervention;
   opts?: ArcadeToolOptions;
 }): Promise<void> {
@@ -273,7 +299,7 @@ async function authorizeTool(args: {
   }
 
   args.requestIntervention(
-    `arcade-${sanitizeInterventionKey(args.toolName)}-authorization`,
+    args.interventionKey,
     z.object({ ok: z.boolean().optional() }).passthrough(),
     {
       title:
@@ -281,7 +307,7 @@ async function authorizeTool(args: {
         `Authorize ${args.toolName.replace(/^([^.]+)\./, "$1 ")}`,
       description:
         args.opts?.authorizationDescription ??
-        "Open Arcade authorization, approve access, then resolve this intervention to continue the workflow.",
+        "Open Arcade authorization and approve access. The workflow run will resume automatically once authorization completes.",
       action: {
         type: "open_url",
         url: authorization.url,
@@ -319,6 +345,56 @@ async function checkAuthorizationStatus(
     );
   }
   return toAuthorizationResponse(await response.json());
+}
+
+export function createArcadeHandoffRoutes(
+  opts: ArcadeHandoffRoutesOptions,
+): Hono {
+  const app = new Hono();
+  const successTitle = opts.successTitle ?? "Arcade authorization complete";
+  const errorTitle = opts.errorTitle ?? "Arcade authorization failed";
+
+  app.get("/handoff", async (c) => {
+    const url = new URL(c.req.url);
+    const runId = url.searchParams.get("runId");
+    const interventionId = url.searchParams.get("interventionId");
+    const error = url.searchParams.get("error");
+
+    if (!runId || !interventionId) {
+      return htmlResponse(
+        errorTitle,
+        "Missing runId or interventionId in Arcade handoff URL.",
+        400,
+      );
+    }
+
+    const interventionUrl = buildInterventionUrl(
+      url,
+      opts.workflowBasePath,
+      runId,
+      interventionId,
+    );
+    const response = await opts.workflowApp.fetch(
+      new Request(interventionUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: error ? { error } : { ok: true } }),
+      }),
+    );
+
+    if (!response.ok) {
+      return htmlResponse(errorTitle, await response.text(), response.status);
+    }
+
+    return htmlResponse(
+      error ? errorTitle : successTitle,
+      error ??
+        "The workflow run has been resumed. You can return to the workflow tab.",
+      error ? 400 : 200,
+    );
+  });
+
+  return app;
 }
 
 async function arcadeRequest(args: {
@@ -400,6 +476,72 @@ function resolveOptional<T>(
   value: MaybeHandle<T> | undefined,
 ): T | undefined {
   return value === undefined ? undefined : resolve(get, value);
+}
+
+function resolveArcadeNextUri(
+  get: Get,
+  opts: ArcadeToolOptions | undefined,
+  context: AtomRuntimeContext,
+  interventionId: string,
+): string | undefined {
+  const explicit = resolveOptional(get, opts?.nextUri);
+  if (explicit) return explicit;
+
+  const appBaseUrl = get(opts?.appBaseUrl ?? defaultAppBaseUrl);
+  const handoffPath: string =
+    resolveOptional(get, opts?.handoffPath) ?? DEFAULT_ARCADE_HANDOFF_PATH;
+  const url = new URL(resolveUrl(appBaseUrl, handoffPath));
+  url.searchParams.set("runId", context.runId);
+  url.searchParams.set("interventionId", interventionId);
+  return url.toString();
+}
+
+function resolveUrl(baseUrl: string, pathOrUrl: string): string {
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  return `${baseUrl.replace(/\/+$/, "")}/${pathOrUrl.replace(/^\/+/, "")}`;
+}
+
+function buildInterventionUrl(
+  currentUrl: URL,
+  workflowBasePath: string | undefined,
+  runId: string,
+  interventionId: string,
+): string {
+  const basePath = workflowBasePath ?? "/api/workflow";
+  const path = `${basePath.replace(/\/+$/, "")}/runs/${encodeURIComponent(
+    runId,
+  )}/interventions/${encodeURIComponent(interventionId)}`;
+  return `${currentUrl.origin}${path}`;
+}
+
+function htmlResponse(title: string, message: string, status = 200): Response {
+  return new Response(
+    `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(
+      title,
+    )}</title></head><body><h1>${escapeHtml(title)}</h1><p>${escapeHtml(
+      message,
+    )}</p></body></html>`,
+    {
+      status,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    },
+  );
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (char) =>
+      (
+        {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        } as Record<string, string>
+      )[char] ?? char,
+  );
 }
 
 function compact<T extends Record<string, unknown>>(value: T): Partial<T> {

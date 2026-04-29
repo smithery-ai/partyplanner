@@ -27,6 +27,9 @@ export default {
     const backendApi = backendApiUrl(request, env);
     const app =
       workflowAppCache.get(backendApi) ?? createCachedApp(env, backendApi);
+    if (isArcadeHandoffRequest(request)) {
+      return handleArcadeHandoff(request, app, "/api/workflow");
+    }
     return app.fetch(request);
   },
 } satisfies ExportedHandler<Env>;
@@ -112,4 +115,86 @@ function requireEnv(env: Env, key: string): string {
   const v = typeof value === "string" ? value.trim() : undefined;
   if (!v) throw new Error(`${String(key)} is required`);
   return v;
+}
+
+function isArcadeHandoffRequest(request: Request): boolean {
+  return (
+    new URL(request.url).pathname ===
+    "/api/workflow/integrations/arcade/handoff"
+  );
+}
+
+async function handleArcadeHandoff(
+  request: Request,
+  workflowApp: WorkflowApp,
+  workflowBasePath: string,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const runId = url.searchParams.get("runId");
+  const interventionId = url.searchParams.get("interventionId");
+  const error = url.searchParams.get("error");
+  if (!runId || !interventionId) {
+    return htmlResponse(
+      "Arcade authorization failed",
+      "Missing runId or interventionId in Arcade handoff URL.",
+      400,
+    );
+  }
+
+  const interventionUrl = `${url.origin}${workflowBasePath.replace(
+    /\/+$/,
+    "",
+  )}/runs/${encodeURIComponent(runId)}/interventions/${encodeURIComponent(
+    interventionId,
+  )}`;
+  const response = await workflowApp.fetch(
+    new Request(interventionUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: error ? { error } : { ok: true } }),
+    }),
+  );
+  if (!response.ok) {
+    return htmlResponse(
+      "Arcade authorization failed",
+      await response.text(),
+      response.status,
+    );
+  }
+  return htmlResponse(
+    error ? "Arcade authorization failed" : "Arcade authorization complete",
+    error ??
+      "The workflow run has been resumed. You can return to the workflow tab.",
+    error ? 400 : 200,
+  );
+}
+
+function htmlResponse(title: string, message: string, status = 200): Response {
+  return new Response(
+    `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(
+      title,
+    )}</title></head><body><h1>${escapeHtml(title)}</h1><p>${escapeHtml(
+      message,
+    )}</p></body></html>`,
+    {
+      status,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    },
+  );
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (char) =>
+      (
+        {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        } as Record<string, string>
+      )[char] ?? char,
+  );
 }
