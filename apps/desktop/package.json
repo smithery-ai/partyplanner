@@ -6,7 +6,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "node ../../scripts/ensure-electron.mjs && electron-vite dev",
-    "build": "tsc -b && electron-vite build",
+    "build": "pnpm --filter @hylo/api-client generate && tsc -b && electron-vite build",
     "lint": "eslint .",
     "preview": "node ../../scripts/ensure-electron.mjs && electron-vite preview"
   },
