@@ -1,23 +1,19 @@
-import {
-  atom,
-  createRuntime,
-  globalRegistry,
-  input,
-  secret,
-} from "@workflow/core";
+import { atom, createRuntime, globalRegistry, input } from "@workflow/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { GMAIL_TOOL_VERSION, sendEmail } from "../src";
 
 async function runToIdle(
-  seed: Parameters<ReturnType<typeof createRuntime>["process"]>[0],
+  seed:
+    | Parameters<ReturnType<typeof createRuntime>["process"]>[0]
+    | Parameters<ReturnType<typeof createRuntime>["process"]>[0][],
   state?: Awaited<
     ReturnType<ReturnType<typeof createRuntime>["process"]>
   >["state"],
   secretValues?: Record<string, string>,
 ) {
   const runtime = createRuntime({ secretValues });
-  const queue = [seed];
+  const queue = Array.isArray(seed) ? [...seed] : [seed];
   let currentState:
     | Awaited<ReturnType<ReturnType<typeof createRuntime>["process"]>>["state"]
     | undefined = state;
@@ -151,7 +147,7 @@ describe("Arcade Gmail tools", () => {
     });
   });
 
-  it("uses ARCADE_USER_ID as the default Arcade authorization identity", async () => {
+  it("uses the injected Hylo user email as the default Arcade authorization identity", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockImplementation(async (url) => {
@@ -191,8 +187,7 @@ describe("Arcade Gmail tools", () => {
       }),
       { name: "arcadeAuth" },
     );
-    secret("ARCADE_USER_ID", undefined);
-
+    input("HYLO_USER_ID", z.string(), { internal: true });
     atom((get) => get(seed), { name: "seedPassThrough" });
     const sent = sendEmail({
       auth,
@@ -204,15 +199,23 @@ describe("Arcade Gmail tools", () => {
     atom((get) => get(sent), { name: "sendGmailEmailResult" });
 
     await runToIdle(
-      {
-        kind: "input",
-        eventId: "evt-seed",
-        runId: "run-gmail",
-        inputId: "seed",
-        payload: { ok: true },
-      },
+      [
+        {
+          kind: "input",
+          eventId: "evt-hylo-user",
+          runId: "run-gmail",
+          inputId: "HYLO_USER_ID",
+          payload: "ani@smithery.ai",
+        },
+        {
+          kind: "input",
+          eventId: "evt-seed",
+          runId: "run-gmail",
+          inputId: "seed",
+          payload: { ok: true },
+        },
+      ],
       undefined,
-      { ARCADE_USER_ID: "ani@smithery.ai" },
     );
 
     const authorizeBody = JSON.parse(

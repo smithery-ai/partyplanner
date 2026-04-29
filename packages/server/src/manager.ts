@@ -477,6 +477,7 @@ export class WorkflowManager {
       workflow: this.definition.ref,
       runId,
     });
+    await scheduler.recoverReadyWaiters(runId, this.definition.ref);
     await scheduler.processNext();
     return this.publishSnapshot(await scheduler.snapshot(runId));
   }
@@ -611,6 +612,13 @@ export class WorkflowManager {
     // it to know which workflow it's pumping. (createScheduler only allocates
     // the scheduler — it doesn't load run state on its own.)
     await scheduler.startRun({ workflow: this.definition.ref, runId });
+    const recovered = await scheduler.recoverReadyWaiters(
+      runId,
+      this.definition.ref,
+    );
+    if (recovered) {
+      document = await this.publishSnapshot(recovered);
+    }
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       if (document.status !== "running") return document;
       if (document.queue.pending.length + document.queue.running.length === 0) {

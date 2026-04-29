@@ -45,6 +45,7 @@ export function PendingInputSheet({
   inputValues,
   onInputValuesChange,
   onSubmit,
+  onOpenActionUrl,
   error,
 }: {
   open: boolean;
@@ -53,6 +54,7 @@ export function PendingInputSheet({
   inputValues: Record<string, unknown>;
   onInputValuesChange: (id: string, value: unknown) => void;
   onSubmit: () => void;
+  onOpenActionUrl?: (url: string) => void;
   error?: string;
 }) {
   const disabled = useIsRunning();
@@ -175,6 +177,14 @@ export function PendingInputSheet({
                       href={actionUrl}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={
+                        onOpenActionUrl
+                          ? (event) => {
+                              event.preventDefault();
+                              onOpenActionUrl(actionUrl);
+                            }
+                          : undefined
+                      }
                       className={cn(
                         buttonVariants({ size: "sm", variant: "default" }),
                         "w-full justify-center",

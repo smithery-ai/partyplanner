@@ -600,6 +600,104 @@ describe("LocalScheduler", () => {
     );
   });
 
+  it("recovers blocked downstream steps when their dependency already resolved", async () => {
+    const seed = input("seed", z.object({ name: z.string() }));
+
+    const review = atom(
+      (get, requestIntervention) => {
+        const s = get(seed);
+        const approval = requestIntervention(
+          "approval",
+          z.object({ approved: z.boolean() }),
+        );
+        if (!approval.approved) return get.skip("review denied");
+        return `reviewed:${s.name}`;
+      },
+      { name: "review" },
+    );
+
+    atom(
+      (get) => {
+        const result = get(review);
+        return `wrap:${result}`;
+      },
+      { name: "wrap" },
+    );
+
+    const { scheduler, stateStore } = makeScheduler();
+    await scheduler.startRun({
+      workflow,
+      runId: "run-recover-blocked",
+      input: {
+        inputId: "seed",
+        payload: { name: "Ada" },
+        eventId: "evt-seed",
+      },
+    });
+
+    await scheduler.drain();
+    let snapshot = await scheduler.snapshot("run-recover-blocked");
+    const interventionId = "review:approval";
+
+    expect(snapshot.status).toBe("waiting");
+    expect(snapshot.nodes.find((node) => node.id === "review")?.status).toBe(
+      "waiting",
+    );
+    expect(snapshot.nodes.find((node) => node.id === "wrap")?.status).toBe(
+      "blocked",
+    );
+
+    const stored = await stateStore.load("run-recover-blocked");
+    if (!stored) throw new Error("missing test run");
+    const state = structuredClone(stored.state);
+    const intervention = state.interventions[interventionId];
+    if (!intervention) throw new Error("missing test intervention");
+    const previousReview = state.nodes.review;
+
+    state.inputs[interventionId] = { approved: true };
+    state.interventions[interventionId] = {
+      ...intervention,
+      status: "resolved",
+      resolvedAt: Date.now(),
+    };
+    state.nodes.review = {
+      status: "resolved",
+      kind: previousReview?.kind,
+      value: "reviewed:Ada",
+      deps: previousReview?.deps ?? [],
+      duration_ms: previousReview?.duration_ms ?? 0,
+      attempts: (previousReview?.attempts ?? 0) + 1,
+    };
+    delete state.waiters.review;
+    delete state.waiters[interventionId];
+
+    const saved = await stateStore.save(
+      "run-recover-blocked",
+      state,
+      stored.version,
+    );
+    expect(saved.ok).toBe(true);
+
+    snapshot =
+      (await scheduler.recoverReadyWaiters("run-recover-blocked", workflow)) ??
+      (await scheduler.snapshot("run-recover-blocked"));
+
+    expect(snapshot.status).toBe("running");
+    expect(snapshot.queue.pending).toHaveLength(1);
+    expect(snapshot.queue.pending[0]?.event).toMatchObject({
+      kind: "step",
+      stepId: "wrap",
+    });
+
+    await scheduler.drain();
+    snapshot = await scheduler.snapshot("run-recover-blocked");
+
+    expect(snapshot.status).toBe("completed");
+    expect(snapshot.nodes.find((node) => node.id === "wrap")?.value).toBe(
+      "wrap:reviewed:Ada",
+    );
+  });
+
   it("includes skip reasons in graph snapshots and events", async () => {
     const request = input("request", z.object({ approved: z.boolean() }));
 

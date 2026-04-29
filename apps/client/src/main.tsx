@@ -19,9 +19,10 @@ if (!root) {
 
 createRoot(root).render(
   <App>
-    {({ getAccessToken, organizationId, sidebarFooter }) => (
+    {({ arcadeUserId, getAccessToken, organizationId, sidebarFooter }) => (
       <HyloClientShell
-        key={organizationId ?? "no-organization"}
+        arcadeUserId={arcadeUserId}
+        key={`${organizationId ?? "no-organization"}:${arcadeUserId}`}
         getAccessToken={getAccessToken}
         getLocalWorkflowRegistry={localWorkflowRegistry}
         getRequestedWorker={requestedWorker}

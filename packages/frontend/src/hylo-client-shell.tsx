@@ -80,6 +80,7 @@ export type HyloClientShellProps = {
   getWorkflowRegistryConfig: (
     search: HyloClientShellSearch,
   ) => HyloWorkflowRegistryConfig;
+  arcadeUserId?: string;
   logPrefix?: string;
   queryKeyPrefix?: string;
   sidebarFooter: ReactNode;
@@ -225,6 +226,7 @@ function SlackSettingsRouteComponent() {
     queryKey: [
       env.queryKeyPrefix ?? DEFAULT_QUERY_KEY_PREFIX,
       "workflow-registry",
+      env.arcadeUserId ?? "",
       registryConfig.url,
     ],
     enabled: Boolean(registryConfig.url),
@@ -311,6 +313,7 @@ function RoutedChatPage({
     queryKey: [
       env.queryKeyPrefix ?? DEFAULT_QUERY_KEY_PREFIX,
       "workflow-registry",
+      env.arcadeUserId ?? "",
       registryConfig.url,
     ],
     enabled: Boolean(registryConfig.url),
@@ -425,6 +428,7 @@ function ClientApp({
     queryKey: [
       env.queryKeyPrefix ?? DEFAULT_QUERY_KEY_PREFIX,
       "workflow-registry",
+      env.arcadeUserId ?? "",
       registryConfig.url,
     ],
     enabled: Boolean(registryConfig.url),
@@ -475,6 +479,27 @@ function ClientApp({
       parseWorkflowChoice(env.getRequestedWorker?.(search), registry) ??
       registry.defaultWorkflow ??
       workflows[0]?.[0]);
+
+  useEffect(() => {
+    const arcadeUserId = env.arcadeUserId?.trim();
+    if (!arcadeUserId || !selectedWorker) return;
+    const key = `${env.queryKeyPrefix ?? DEFAULT_QUERY_KEY_PREFIX}:arcade-user-id`;
+    const previous = window.sessionStorage.getItem(key);
+    window.sessionStorage.setItem(key, arcadeUserId);
+    if (!previous || previous === arcadeUserId || !routeRunId) return;
+    void navigate({
+      to: "/worker/$workerId",
+      params: { workerId: selectedWorker },
+      search: withoutWorker,
+      replace: true,
+    });
+  }, [
+    env.arcadeUserId,
+    env.queryKeyPrefix,
+    navigate,
+    routeRunId,
+    selectedWorker,
+  ]);
 
   useEffect(() => {
     if (!registry || !selectedWorker) return;
@@ -592,6 +617,10 @@ function ClientApp({
       <WorkflowSinglePage
         apiBaseUrl={env.workflowApiUrl(workflow.url, registryConfig.backendUrl)}
         managedConnectionInitializingUrl="/connection/initializing"
+        additionalInputs={
+          env.arcadeUserId ? { HYLO_USER_ID: env.arcadeUserId } : undefined
+        }
+        prepareExternalActionUrl={prepareExternalActionUrl(env, registryConfig)}
         runId={routeRunId}
         navigation={navigation}
         sidebarFooter={env.sidebarFooter}
@@ -887,6 +916,38 @@ function workflowRegistryHeaders(
     headers.Authorization = `Bearer ${accessToken}`;
   }
   return headers;
+}
+
+function prepareExternalActionUrl(
+  env: ClientEnvironment,
+  registryConfig: HyloWorkflowRegistryConfig,
+): (url: string) => Promise<void> {
+  return async (url) => {
+    if (!isArcadeUrl(url)) return;
+    const accessToken = await env.getAccessToken();
+    const sessionUrl = `${(registryConfig.backendUrl ?? "/api").replace(/\/+$/, "")}/arcade/user-session`;
+    const response = await fetch(sessionUrl, {
+      method: "POST",
+      credentials: "include",
+      headers: workflowRegistryHeaders(
+        sessionUrl,
+        accessToken,
+        registryConfig.backendUrl,
+      ),
+    });
+    if (!response.ok) {
+      throw new Error(await responseErrorMessage(response));
+    }
+  };
+}
+
+function isArcadeUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname === "arcade.dev" || hostname.endsWith(".arcade.dev");
+  } catch {
+    return false;
+  }
 }
 
 function isSameOriginUrl(value: string): boolean {

@@ -21,6 +21,7 @@ import {
 } from "@workflow/remote";
 import type { Context } from "hono";
 import { cors } from "hono/cors";
+import { mountArcadeAuthApi } from "./arcade/routes";
 import { mountAuthApi, registerAuthOpenApiRoutes } from "./auth/routes";
 import type { DeploymentBackend } from "./deployments/backend";
 import { createDefaultCloudflareDeploymentBackend } from "./deployments/cloudflare-backend";
@@ -93,9 +94,10 @@ export function createApp(
   app.use(
     "/*",
     cors({
-      origin: "*",
+      origin: (origin) => origin || "*",
       allowHeaders: ["Content-Type", "Authorization"],
       allowMethods: ["GET", "PUT", "POST", "DELETE", "OPTIONS"],
+      credentials: true,
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
@@ -117,6 +119,7 @@ export function createApp(
   ];
   const apiKey = resolveApiKey(env);
   mountAuthApi(app, env, apiKey, deploymentBackend);
+  mountArcadeAuthApi(app, env);
   app.route(
     "/oauth",
     createOAuthBrokerServer({

@@ -8,6 +8,7 @@ import {
   isHandle,
   type RequestIntervention,
   secret,
+  input as workflowInput,
 } from "@workflow/core";
 import { type ZodSchema, z } from "zod";
 
@@ -79,11 +80,9 @@ const ARCADE_API_KEY = secret("ARCADE_API_KEY", envVar("ARCADE_API_KEY"), {
   internal: true,
 });
 
-const ARCADE_USER_ID = secret("ARCADE_USER_ID", envVar("ARCADE_USER_ID"), {
-  description:
-    "Arcade user ID used for tool authorization. For the Arcade user verifier, use the email address of the signed-in Arcade account.",
-  errorMessage:
-    "Set ARCADE_USER_ID in the worker environment or pass userId to the Gmail tool.",
+const HYLO_USER_ID = workflowInput("HYLO_USER_ID", z.string().min(1), {
+  description: "Signed-in Hylo user email used for Arcade tool authorization.",
+  internal: true,
 });
 
 const ARCADE_BASE_URL = "https://api.arcade.dev";
@@ -348,7 +347,7 @@ function resolveUserId(
   get: Get,
   userId: MaybeHandle<string> | undefined,
 ): string {
-  return userId === undefined ? get(ARCADE_USER_ID) : resolve(get, userId);
+  return userId === undefined ? get(HYLO_USER_ID) : resolve(get, userId);
 }
 
 function resolve<T>(get: Get, value: MaybeHandle<T>): T {

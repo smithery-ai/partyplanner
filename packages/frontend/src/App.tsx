@@ -138,6 +138,51 @@ function pendingInputNeedsForm(
   return workflowInputRequested(globalRegistry, manifest, runState, nodeId);
 }
 
+function legacyArcadeUserInputId(): string {
+  return ["ARCADE", "USER", "ID"].join("_");
+}
+
+function hyloArcadeUserInputId(): string {
+  return "HYLO_USER_ID";
+}
+
+function configuredHyloArcadeUserId(
+  additionalInputs: Record<string, unknown>,
+): string | undefined {
+  const value = additionalInputs[hyloArcadeUserInputId()];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function runStateHyloArcadeUserId(
+  runState: RunState | undefined,
+): string | undefined {
+  const value = runState?.inputs[hyloArcadeUserInputId()];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function runStateWaitsOnInput(
+  runState: RunState | undefined,
+  inputId: string,
+): boolean {
+  return Object.values(runState?.nodes ?? {}).some(
+    (node) => node.status === "waiting" && node.waitingOn === inputId,
+  );
+}
+
+function hidesLegacyArcadeUserInput(inputId: string): boolean {
+  return inputId === legacyArcadeUserInputId();
+}
+
+function isExternalActionCompleteMessage(
+  value: unknown,
+): value is { type: "hylo:external-action-complete" } {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    (value as { type?: unknown }).type === "hylo:external-action-complete"
+  );
+}
+
 function displayNodeRecord(
   registry: Registry,
   nodeId: string | null,
@@ -524,6 +569,9 @@ function WorkflowRunnerBody({
   const [awaitingManagedConnectionId, setAwaitingManagedConnectionId] =
     useState<string | undefined>();
   const managedConnectionPopups = useRef<Record<string, Window | null>>({});
+  const redirectedLegacyArcadeRunIds = useRef<Set<string>>(new Set());
+  const redirectedMismatchedArcadeRunIds = useRef<Set<string>>(new Set());
+  const autoSubmittedAdditionalInputs = useRef<Set<string>>(new Set());
   const frontendConfig = useWorkflowFrontendConfig();
 
   const {
@@ -602,6 +650,61 @@ function WorkflowRunnerBody({
       };
     });
   }, [pendingIntervention]);
+
+  useEffect(() => {
+    if (!runState?.runId) return;
+    if (!runStateWaitsOnInput(runState, legacyArcadeUserInputId())) return;
+    if (redirectedLegacyArcadeRunIds.current.has(runState.runId)) return;
+
+    redirectedLegacyArcadeRunIds.current.add(runState.runId);
+    setPayloadError(
+      "This run was created before Arcade user injection changed. Start a new run to use the signed-in WorkOS email.",
+    );
+    navigation.workflow(workflowId, { replace: true });
+  }, [navigation, runState, workflowId]);
+
+  useEffect(() => {
+    if (!runState?.runId) return;
+
+    const configuredUserId = configuredHyloArcadeUserId(
+      frontendConfig.additionalInputs,
+    );
+    const runUserId = runStateHyloArcadeUserId(runState);
+    if (!configuredUserId || !runUserId || configuredUserId === runUserId) {
+      return;
+    }
+    if (redirectedMismatchedArcadeRunIds.current.has(runState.runId)) return;
+
+    redirectedMismatchedArcadeRunIds.current.add(runState.runId);
+    setPayloadError(
+      `This run was created for ${runUserId}. You are signed in as ${configuredUserId}. Start a new run to reauthorize Arcade for the signed-in WorkOS email.`,
+    );
+    navigation.workflow(workflowId, { replace: true });
+  }, [frontendConfig.additionalInputs, navigation, runState, workflowId]);
+
+  useEffect(() => {
+    if (!runState) return;
+
+    for (const [inputId, payload] of Object.entries(
+      frontendConfig.additionalInputs,
+    )) {
+      if (!runStateWaitsOnInput(runState, inputId)) continue;
+
+      const key = `${runState.runId}:${inputId}`;
+      if (autoSubmittedAdditionalInputs.current.has(key)) continue;
+      autoSubmittedAdditionalInputs.current.add(key);
+
+      void workflowRun
+        .submitInput({
+          state: runState,
+          inputId,
+          payload,
+        })
+        .catch((e) => {
+          setPayloadError(errorMessage(e, `Failed to resolve "${inputId}".`));
+        });
+    }
+  }, [frontendConfig.additionalInputs, runState, workflowRun]);
 
   useEffect(() => {
     if (!awaitingManagedConnectionId) return;
@@ -874,9 +977,12 @@ function WorkflowRunnerBody({
     }
   }
 
-  async function submitPendingIntervention() {
-    if (!pendingInterventionId) return;
-    const request = pendingFormForIntervention(pendingIntervention);
+  async function submitPendingIntervention(explicitInterventionId?: string) {
+    const interventionId = explicitInterventionId ?? pendingInterventionId;
+    if (!interventionId) return;
+    const request = pendingFormForIntervention(
+      runState?.interventions?.[interventionId],
+    );
     if (!request) return;
 
     setPayloadError("");
@@ -884,11 +990,11 @@ function WorkflowRunnerBody({
     try {
       payload = sanitizeJsonSchemaValue(
         request.schema,
-        inputValues[pendingInterventionId],
+        inputValues[interventionId],
       );
     } catch (e) {
       setPayloadError(
-        errorMessage(e, `Validation failed for "${pendingInterventionId}".`),
+        errorMessage(e, `Validation failed for "${interventionId}".`),
       );
       return;
     }
@@ -897,7 +1003,7 @@ function WorkflowRunnerBody({
     try {
       await workflowRun.submitIntervention({
         state: runState,
-        interventionId: pendingInterventionId,
+        interventionId,
         payload,
       });
       setPane(null);
@@ -912,6 +1018,66 @@ function WorkflowRunnerBody({
   function toggleRunning() {
     setPayloadError("");
     setRunning(!isRunning);
+  }
+
+  async function openExternalActionUrl(url: string) {
+    let popup = window.open(
+      frontendConfig.managedConnectionInitializingUrl,
+      "_blank",
+    );
+    const interventionId = pendingInterventionId;
+    let cleanupExternalActionListener = () => {};
+    if (interventionId) {
+      let timeout: number | undefined;
+      let popupClosedInterval: number | undefined;
+      let submitted = false;
+      const openedAt = Date.now();
+      const submitOnce = () => {
+        if (submitted) return;
+        submitted = true;
+        cleanupExternalActionListener();
+        void submitPendingIntervention(interventionId);
+      };
+      const submitAfterReturn = () => {
+        if (Date.now() - openedAt < 2_000) return;
+        if (document.visibilityState !== "visible") return;
+        submitOnce();
+      };
+      const onMessage = (event: MessageEvent) => {
+        if (popup && event.source !== popup) return;
+        if (!isExternalActionCompleteMessage(event.data)) return;
+        submitOnce();
+      };
+      cleanupExternalActionListener = () => {
+        if (timeout !== undefined) window.clearTimeout(timeout);
+        if (popupClosedInterval !== undefined) {
+          window.clearInterval(popupClosedInterval);
+        }
+        window.removeEventListener("message", onMessage);
+        window.removeEventListener("focus", submitAfterReturn);
+        document.removeEventListener("visibilitychange", submitAfterReturn);
+      };
+      timeout = window.setTimeout(cleanupExternalActionListener, 600_000);
+      popupClosedInterval = window.setInterval(() => {
+        if (popup?.closed) submitOnce();
+      }, 1_000);
+      window.addEventListener("message", onMessage);
+      window.addEventListener("focus", submitAfterReturn);
+      document.addEventListener("visibilitychange", submitAfterReturn);
+    }
+    try {
+      await frontendConfig.prepareExternalActionUrl?.(url);
+      if (popup && !popup.closed) {
+        popup.location.href = url;
+        popup.focus();
+      } else {
+        popup = window.open(url, "_blank", "noopener,noreferrer");
+      }
+    } catch (e) {
+      cleanupExternalActionListener();
+      if (popup && !popup.closed) popup.close();
+      setPayloadError(errorMessage(e, "Unable to open authorization URL."));
+    }
   }
 
   const selectedRecord = displayNodeRecord(
@@ -1007,6 +1173,12 @@ function WorkflowRunnerBody({
                   findManifestInput(workflow.manifest, run.triggerInputId),
                   run.triggerInputId,
                 );
+                const visibleWaitingOn = run.waitingOn.filter(
+                  (inputId) => !hidesLegacyArcadeUserInput(inputId),
+                );
+                const legacyArcadeWaiting = run.waitingOn.some((inputId) =>
+                  hidesLegacyArcadeUserInput(inputId),
+                );
                 return (
                   <button
                     key={run.runId}
@@ -1043,10 +1215,10 @@ function WorkflowRunnerBody({
                           {runStatusLabel(run.status)}
                         </span>
                       </span>
-                      {run.waitingOn.length > 0 && (
+                      {visibleWaitingOn.length > 0 ? (
                         <span className="mt-1 block truncate text-xs text-muted-foreground">
                           Waiting on{" "}
-                          {run.waitingOn
+                          {visibleWaitingOn
                             .map((inputId) =>
                               workflowInputLabel(
                                 findManifestInput(workflow.manifest, inputId),
@@ -1055,7 +1227,11 @@ function WorkflowRunnerBody({
                             )
                             .join(", ")}
                         </span>
-                      )}
+                      ) : legacyArcadeWaiting ? (
+                        <span className="mt-1 block truncate text-xs text-muted-foreground">
+                          Stale Arcade auth run
+                        </span>
+                      ) : null}
                     </span>
                   </button>
                 );
@@ -1219,6 +1395,7 @@ function WorkflowRunnerBody({
                 ? void submitPendingIntervention()
                 : void submitPendingInput()
             }
+            onOpenActionUrl={(url) => void openExternalActionUrl(url)}
             error={pane === "pending" ? payloadError || undefined : undefined}
           />
 
@@ -1328,9 +1505,15 @@ export function WorkflowSinglePage({
   navigation,
   sidebarHeader,
   sidebarTopInset,
+  additionalInputs,
+  prepareExternalActionUrl,
+  secretValues,
 }: {
   apiBaseUrl?: string;
   managedConnectionInitializingUrl?: string;
+  additionalInputs?: Record<string, unknown>;
+  prepareExternalActionUrl?: (url: string) => Promise<void>;
+  secretValues?: Record<string, string>;
   sidebarFooter?: ReactNode;
   runId?: string;
   navigation?: WorkflowNavigation;
@@ -1339,7 +1522,13 @@ export function WorkflowSinglePage({
 }) {
   return (
     <WorkflowFrontendRoot
-      config={{ apiBaseUrl, managedConnectionInitializingUrl }}
+      config={{
+        apiBaseUrl,
+        managedConnectionInitializingUrl,
+        additionalInputs,
+        prepareExternalActionUrl,
+        secretValues,
+      }}
     >
       <WorkflowSingleApp
         sidebarFooter={sidebarFooter}

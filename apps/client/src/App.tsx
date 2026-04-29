@@ -24,6 +24,7 @@ import { type ReactNode, useEffect, useState } from "react";
 
 type AppProps = {
   children: (props: {
+    arcadeUserId: string;
     getAccessToken: () => Promise<string>;
     organizationId: string | null;
     sidebarFooter: ReactNode;
@@ -138,6 +139,7 @@ function AuthenticatedApp({ children }: AppProps) {
   }
 
   return children({
+    arcadeUserId: user.email,
     getAccessToken,
     organizationId,
     sidebarFooter: (
