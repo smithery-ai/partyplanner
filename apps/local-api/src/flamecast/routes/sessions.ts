@@ -28,7 +28,6 @@ const CreateBody = z
 const CreateResponse = z
   .object({
     sessionId: z.string(),
-    streamUrl: z.string(),
     cwd: z.string(),
     shell: z.string(),
     timeout: z.number().nullable(),
@@ -93,7 +92,6 @@ const GetResponse = z
     status: SessionStatusSchema,
     exitCode: z.number().nullable(),
     cwd: z.string(),
-    streamUrl: z.string(),
   })
   .openapi("GetSessionResponse");
 
@@ -105,7 +103,6 @@ const SessionSummary = z.object({
   created: z.string(),
   lastActivity: z.string(),
   timeout: z.number().nullable(),
-  streamUrl: z.string(),
 });
 
 const ListResponse = z

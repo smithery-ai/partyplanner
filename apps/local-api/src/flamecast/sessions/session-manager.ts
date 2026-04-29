@@ -78,10 +78,6 @@ function generateId(): string {
   return `fc_${randomBytes(4).toString("hex")}`;
 }
 
-function streamUrl(sessionId: string): string {
-  return `/terminals/${sessionId}/stream`;
-}
-
 const KEY_MAP: Record<string, string> = {
   enter: "Enter",
   tab: "Tab",
@@ -158,7 +154,6 @@ export class SessionManager {
 
     return {
       sessionId,
-      streamUrl: streamUrl(sessionId),
       cwd,
       shell,
       timeout: session.timeout,
@@ -291,7 +286,6 @@ export class SessionManager {
       status: session.status,
       exitCode: null,
       cwd: currentCwd,
-      streamUrl: streamUrl(params.sessionId),
     };
   }
 
@@ -307,7 +301,6 @@ export class SessionManager {
         created: s.created.toISOString(),
         lastActivity: s.lastActivity.toISOString(),
         timeout: s.timeout,
-        streamUrl: streamUrl(s.sessionId),
       })),
     };
   }

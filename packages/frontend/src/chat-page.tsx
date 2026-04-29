@@ -46,6 +46,7 @@ import {
 } from "./components/ui/context-menu";
 import { DotmSquare1 } from "./components/ui/dotm-square-1";
 import { Input } from "./components/ui/input";
+import { useLocalApiStream } from "./local-api-stream";
 
 const STREAMDOWN_PLUGINS = {
   code: codePlugin,
@@ -540,7 +541,6 @@ function ChatShell({
   const [drafts, setDrafts] = useState<Map<string, string>>(() => new Map());
   const [renamingChatId, setRenamingChatId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
-  const chatLogWsRef = useRef<WebSocket | null>(null);
   const activeTerminalIdsRef = useRef<Map<string, string>>(new Map());
   const seenUuidsRef = useRef<Map<string, Set<string>>>(new Map());
   const selectedIdRef = useRef<string | null>(null);
@@ -741,103 +741,50 @@ function ChatShell({
     }
   }, [ackChat, chats, selectedId]);
 
-  useEffect(() => {
-    let closed = false;
-    let reconnectTimer: number | null = null;
-
-    const connect = () => {
-      const wsUrl = `${localApiBase.replace(/^http/, "ws")}/api/chats/stream`;
-      const ws = new WebSocket(wsUrl);
-      chatLogWsRef.current = ws;
-
-      ws.addEventListener("open", () => {
-        void refresh();
-        if (selectedIdRef.current) {
-          void hydrateSession(selectedIdRef.current);
-        }
-      });
-      ws.addEventListener("message", (event) => {
-        const raw: unknown = event.data;
-        if (raw instanceof Blob) {
-          void raw.text().then((blobText: string) => {
-            handleChatLogMessage(blobText);
-          });
-          return;
-        }
-        const text: string = typeof raw === "string" ? raw : String(raw);
-        handleChatLogMessage(text);
-      });
-      ws.addEventListener("close", () => {
-        if (chatLogWsRef.current === ws) chatLogWsRef.current = null;
-        if (closed) return;
-        reconnectTimer = window.setTimeout(connect, 1000);
-      });
-      ws.addEventListener("error", () => {
-        ws.close();
-      });
-    };
-
-    const handleChatLogMessage = (text: string) => {
-      let message: ChatLogStreamMessage;
-      try {
-        message = JSON.parse(text) as ChatLogStreamMessage;
-      } catch {
-        return;
+  useLocalApiStream((message) => {
+    if (message.type === "ready") {
+      void refresh();
+      if (selectedIdRef.current) {
+        void hydrateSession(selectedIdRef.current);
       }
-      if (
-        message.type !== "chat_event" ||
-        !message.chatId ||
-        message.event === undefined
-      ) {
-        return;
-      }
-      if (message.terminalSessionId) {
-        activeTerminalIdsRef.current.set(
-          message.chatId,
-          message.terminalSessionId,
-        );
-      }
-      applyEvents(message.chatId, [message.event]);
-      const selected = selectedIdRef.current === message.chatId;
-      setChats((prev) =>
-        sortChats(
-          prev.map((chat) => {
-            if (chat.chatId !== message.chatId) return chat;
-            const lastEndTurnEventId =
-              message.isEndTurn && message.eventId
-                ? message.eventId
-                : chat.lastEndTurnEventId;
-            return {
-              ...chat,
-              lastActivity: new Date().toISOString(),
-              lastEndTurnEventId,
-              acknowledgedEndTurnEventId:
-                selected && message.isEndTurn
-                  ? lastEndTurnEventId
-                  : chat.acknowledgedEndTurnEventId,
-              hasUnacknowledgedEndTurn:
-                Boolean(message.isEndTurn && message.eventId) && !selected
-                  ? true
-                  : selected
-                    ? false
-                    : chat.hasUnacknowledgedEndTurn,
-            };
-          }),
-        ),
-      );
-      if (selected && message.isEndTurn) {
-        void ackChat(message.chatId);
-      }
-    };
-
-    connect();
-    return () => {
-      closed = true;
-      if (reconnectTimer != null) window.clearTimeout(reconnectTimer);
-      chatLogWsRef.current?.close();
-      chatLogWsRef.current = null;
-    };
-  }, [ackChat, applyEvents, hydrateSession, localApiBase, refresh]);
+      return;
+    }
+    if (message.type !== "chat_event") return;
+    const m = message as unknown as ChatLogStreamMessage;
+    if (!m.chatId || m.event === undefined) return;
+    if (m.terminalSessionId) {
+      activeTerminalIdsRef.current.set(m.chatId, m.terminalSessionId);
+    }
+    applyEvents(m.chatId, [m.event]);
+    const selected = selectedIdRef.current === m.chatId;
+    setChats((prev) =>
+      sortChats(
+        prev.map((chat) => {
+          if (chat.chatId !== m.chatId) return chat;
+          const lastEndTurnEventId =
+            m.isEndTurn && m.eventId ? m.eventId : chat.lastEndTurnEventId;
+          return {
+            ...chat,
+            lastActivity: new Date().toISOString(),
+            lastEndTurnEventId,
+            acknowledgedEndTurnEventId:
+              selected && m.isEndTurn
+                ? lastEndTurnEventId
+                : chat.acknowledgedEndTurnEventId,
+            hasUnacknowledgedEndTurn:
+              Boolean(m.isEndTurn && m.eventId) && !selected
+                ? true
+                : selected
+                  ? false
+                  : chat.hasUnacknowledgedEndTurn,
+          };
+        }),
+      ),
+    );
+    if (selected && m.isEndTurn) {
+      void ackChat(m.chatId);
+    }
+  });
 
   useEffect(() => {
     void refresh();
@@ -881,8 +828,6 @@ function ChatShell({
 
   useEffect(() => {
     return () => {
-      chatLogWsRef.current?.close();
-      chatLogWsRef.current = null;
       activeTerminalIdsRef.current.clear();
     };
   }, []);

@@ -84,6 +84,7 @@ export type WorkflowRunState = {
   }): Promise<WorkflowRuntimeResult>;
   advance(args: AdvanceWorkflowArgs): Promise<WorkflowRuntimeResult>;
   bindSecret(args: BindRunSecretArgs): Promise<WorkflowRuntimeResult>;
+  applyDocument(document: RunStateDocument): void;
   clear(): void;
 };
 
@@ -712,6 +713,18 @@ export function useWorkflowRunQuery(
     }
   }, [runId, stateQuery]);
 
+  const applyDocument = useCallback(
+    (document: RunStateDocument) => {
+      cacheResult({
+        state: document.state,
+        snapshot: document,
+        queue: document.queue,
+        events: document.events,
+      });
+    },
+    [cacheResult],
+  );
+
   const clear = useCallback(() => {
     setError(undefined);
   }, []);
@@ -757,6 +770,7 @@ export function useWorkflowRunQuery(
     submitWebhook,
     advance,
     bindSecret,
+    applyDocument,
     clear,
   };
 }
