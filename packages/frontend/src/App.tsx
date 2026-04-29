@@ -856,7 +856,7 @@ function WorkflowRunnerBody({
     }
 
     setRunning(true);
-    if (def.kind === "deferred_input") setExecutingNodeId(inputId);
+    setExecutingNodeId(inputId);
     try {
       await workflowRun.submitInput({
         state: runState,
@@ -865,7 +865,7 @@ function WorkflowRunnerBody({
       });
       setPane(null);
     } catch (e) {
-      if (def.kind === "deferred_input") setExecutingNodeId(null);
+      setExecutingNodeId(null);
       setRunning(false);
       setPayloadError(
         errorMessage(e, "Processing failed — check input values."),
