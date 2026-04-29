@@ -18,16 +18,17 @@ export async function runDev(args: string[]): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(
       [
-        "Usage: hylo dev [dir] [--local]",
+        "Usage: hylo dev [dir]",
         "",
-        "Builds and runs a Hylo Worker locally. Defaults to the current worker project or ~/.flamecast/worker.",
+        "Builds and runs a Hylo Worker locally against the local Hylo backend.",
+        "Defaults to the current worker project or ~/.flamecast/worker.",
         "",
       ].join("\n"),
     );
     return 0;
   }
 
-  const { options, rest } = parseBuildArgs(args);
+  const { rest } = parseBuildArgs(args);
   if (rest.length > 1) {
     throw new Error(`Unexpected argument for dev: ${rest[1]}`);
   }
@@ -35,11 +36,11 @@ export async function runDev(args: string[]): Promise<number> {
   const projectRoot = rest[0]
     ? resolve(process.cwd(), rest[0])
     : await defaultProjectRoot(process.cwd());
-  const backendUrl = resolveHyloBackendUrl({ local: options.local });
+  const backendUrl = resolveHyloBackendUrl({ local: true });
   const project = await loadProject(projectRoot);
 
   await ensureDependencies(project.root);
-  await buildWorkerBundle(project, { ...options, backendUrl });
+  await buildWorkerBundle(project, { backendUrl });
 
   const appUrl = `https://${project.workerName}.localhost`;
   const workerPort = await resolvePort("PORT", DEFAULT_WORKER_PORT);

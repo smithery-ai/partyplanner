@@ -17,7 +17,7 @@ if (!existsSync(resolve(localWorkerDir, "package.json"))) {
   process.exit(1);
 }
 
-const child = spawn("pnpm", ["hylo", "dev", localWorkerDir], {
+const child = spawn("pnpm", ["hylo", "dev", "--local", localWorkerDir], {
   env,
   stdio: "inherit",
 });
