@@ -74,6 +74,10 @@ it("scaffolds the flamecast home structure and example worker", async () => {
     join(workspace, ".flamecast", "worker", "src", "gmail.ts"),
     "utf8",
   );
+  const linearSource = await readFile(
+    join(workspace, ".flamecast", "worker", "src", "linear.ts"),
+    "utf8",
+  );
   const workerGitignore = await readFile(
     join(workspace, ".flamecast", "worker", ".gitignore"),
     "utf8",
@@ -94,9 +98,14 @@ it("scaffolds the flamecast home structure and example worker", async () => {
   expect(packageJson.dependencies["@workflow/integrations-gmail"]).toContain(
     "packages/integrations/gmail",
   );
+  expect(packageJson.dependencies["@workflow/integrations-linear"]).toContain(
+    "packages/integrations/linear",
+  );
   expect(source).toContain("incidentAlert");
   expect(source).toContain('export * from "./gmail"');
+  expect(source).toContain('export * from "./linear"');
   expect(gmailSource).toContain("gmailLastTenEmails");
+  expect(linearSource).toContain("linearProjectsAndMyTickets");
   expect(workerGitignore).toBe(".hylo\n.wrangler\nnode_modules\n.env*\n");
   expect(stdout).toHaveBeenCalledWith(
     expect.stringContaining("Initialized Hylo example worker"),
@@ -117,20 +126,18 @@ it("leaves an existing ~/.flamecast/worker alone without --force", async () => {
   );
 });
 
-it("skips an existing ~/.flamecast/worker directory without --force", async () => {
+it("replaces an incomplete ~/.flamecast/worker directory without --force", async () => {
   const worker = join(workspace, ".flamecast", "worker");
-  const stdout = vi
-    .spyOn(process.stdout, "write")
-    .mockImplementation(() => true);
+  vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
   await mkdir(worker, { recursive: true });
 
   await expect(runInit(["--no-empty-state-app"])).resolves.toBe(0);
 
-  expect(stdout).toHaveBeenCalledWith(
-    expect.stringContaining("leaving it alone"),
-  );
+  await expect(
+    readFile(join(worker, "package.json"), "utf8"),
+  ).resolves.toContain("workflow-cloudflare-worker-example");
 });
 
 it("replaces an existing ~/.flamecast/worker with --force", async () => {
