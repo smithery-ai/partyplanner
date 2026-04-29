@@ -188,13 +188,13 @@ function escapeHtml(value: string): string {
     /[&<>"']/g,
     (char) =>
       (
-        {
+        ({
           "&": "&amp;",
           "<": "&lt;",
           ">": "&gt;",
           '"': "&quot;",
           "'": "&#39;",
-        } as Record<string, string>
+        }) as Record<string, string>
       )[char] ?? char,
   );
 }

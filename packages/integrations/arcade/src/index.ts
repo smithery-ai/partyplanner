@@ -1,13 +1,13 @@
 import {
   type Action,
   type Atom,
+  type AtomRuntimeContext,
   action,
   atom,
   type Get,
   type Handle,
   isHandle,
   type RequestIntervention,
-  type AtomRuntimeContext,
   secret,
 } from "@workflow/core";
 import { defaultAppBaseUrl } from "@workflow/integrations-oauth";
@@ -94,8 +94,7 @@ export type ArcadeHandoffRoutesOptions = {
   errorTitle?: string;
 };
 
-const DEFAULT_ARCADE_HANDOFF_PATH =
-  "/api/workflow/integrations/arcade/handoff";
+const DEFAULT_ARCADE_HANDOFF_PATH = "/api/workflow/integrations/arcade/handoff";
 
 const HYLO_BACKEND_URL = secret(
   "HYLO_BACKEND_URL",
@@ -533,13 +532,13 @@ function escapeHtml(value: string): string {
     /[&<>"']/g,
     (char) =>
       (
-        {
+        ({
           "&": "&amp;",
           "<": "&lt;",
           ">": "&gt;",
           '"': "&quot;",
           "'": "&#39;",
-        } as Record<string, string>
+        }) as Record<string, string>
       )[char] ?? char,
   );
 }
