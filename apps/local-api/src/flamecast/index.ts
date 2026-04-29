@@ -77,6 +77,6 @@ export class Flamecast {
   }
 
   attachWebSockets(httpServer: Server, options?: WebSocketServerOptions): void {
-    attachWebSocketServer(httpServer, this.streams, this.sessions, options);
+    attachWebSocketServer(httpServer, this.streams, options);
   }
 }

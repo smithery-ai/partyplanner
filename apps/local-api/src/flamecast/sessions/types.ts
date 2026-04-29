@@ -24,7 +24,6 @@ export interface CreateParams {
 
 export interface CreateResult {
   sessionId: string;
-  streamUrl: string;
   cwd: string;
   shell: string;
   timeout: number | null;
@@ -78,7 +77,6 @@ export interface GetResult {
   status: SessionStatus;
   exitCode: number | null;
   cwd: string;
-  streamUrl: string;
 }
 
 export interface ListResult {
@@ -90,7 +88,6 @@ export interface ListResult {
     created: string;
     lastActivity: string;
     timeout: number | null;
-    streamUrl: string;
   }>;
 }
 

@@ -746,7 +746,7 @@ function ChatShell({
     let reconnectTimer: number | null = null;
 
     const connect = () => {
-      const wsUrl = `${localApiBase.replace(/^http/, "ws")}/api/chats/stream`;
+      const wsUrl = `${localApiBase.replace(/^http/, "ws")}/api/stream`;
       const ws = new WebSocket(wsUrl);
       chatLogWsRef.current = ws;
 
