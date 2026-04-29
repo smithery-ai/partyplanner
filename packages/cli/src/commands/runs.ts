@@ -8,8 +8,8 @@ import { getHyloAccessToken } from "./auth.js";
 
 type RunsCommandOptions = {
   apiKey?: string;
-  backendUrl?: string;
   deploymentId?: string;
+  local?: boolean;
   tenantId?: string;
   url?: string;
 };
@@ -17,15 +17,17 @@ type RunsCommandOptions = {
 const HELP = `hylo runs
 
 Usage:
-  hylo runs list [--deployment <id>] [--url <url>] [--tenant <id>]
-  hylo runs get <runId> [--deployment <id>] [--url <url>] [--tenant <id>]
+  hylo runs list [--worker <id>] [--organization <id>] [--url <url>]
+  hylo runs get <runId> [--worker <id>] [--organization <id>] [--url <url>]
 
 Options:
   --api-key <key>          API key for admin APIs
-  --backend <url>          Hylo backend API URL
-  --deployment <id>        Deployment to query (defaults to the tenant's only deployment)
-  --tenant <id>            Tenant ID (defaults to "me")
+  --deployment <id>        Alias for --worker
+  --local                  Use the portless local Hylo backend
+  --organization <id>      Organization ID (defaults to "me")
+  --tenant <id>            Alias for --organization
   --url <url>              Direct workflow API URL (overrides --deployment)
+  --worker <id>            Worker to query (defaults to the organization's only worker)
 `;
 
 export async function runRuns(args: string[]): Promise<number> {
@@ -78,7 +80,7 @@ async function resolveWorkflowApi(options: RunsCommandOptions): Promise<{
   workflowApiUrl: string;
   accessToken?: string;
 }> {
-  const backendUrl = resolveHyloBackendUrl(options.backendUrl);
+  const backendUrl = resolveHyloBackendUrl({ local: options.local });
   const adminApiKey = options.apiKey ?? process.env.HYLO_API_KEY?.trim();
   const accessToken = adminApiKey
     ? undefined
@@ -93,7 +95,7 @@ async function resolveWorkflowApi(options: RunsCommandOptions): Promise<{
 
   if (!adminApiKey && !accessToken) {
     throw new Error(
-      `Sign in with \`hylo auth login --backend-url ${backendUrl}\` or provide HYLO_API_KEY/--api-key.`,
+      `Sign in with \`hylo auth login${options.local ? " --local" : ""}\` or provide HYLO_API_KEY/--api-key.`,
     );
   }
 
@@ -113,7 +115,7 @@ async function resolveWorkflowApi(options: RunsCommandOptions): Promise<{
   }
 
   return {
-    workflowApiUrl: stripTrailingSlash(target.workflowApiUrl),
+    workflowApiUrl: resolveWorkflowApiUrl(target.workflowApiUrl, backendUrl),
     accessToken: adminApiKey ?? accessToken,
   };
 }
@@ -174,6 +176,13 @@ function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
+function resolveWorkflowApiUrl(workflowApiUrl: string, backendUrl: string) {
+  const stripped = stripTrailingSlash(workflowApiUrl);
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(stripped)) return stripped;
+  const path = stripped.startsWith("/") ? stripped : `/${stripped}`;
+  return stripTrailingSlash(new URL(path, `${backendUrl}/`).toString());
+}
+
 function parseRunsArgs(args: string[]): {
   options: RunsCommandOptions;
   rest: string[];
@@ -186,24 +195,38 @@ function parseRunsArgs(args: string[]): {
       options.apiKey = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--api-key=")) {
       options.apiKey = arg.slice("--api-key=".length);
-    } else if (arg === "--backend" || arg === "--backend-url") {
-      options.backendUrl = requireArgValue(args, ++index, arg);
-    } else if (arg.startsWith("--backend=")) {
-      options.backendUrl = arg.slice("--backend=".length);
-    } else if (arg.startsWith("--backend-url=")) {
-      options.backendUrl = arg.slice("--backend-url=".length);
-    } else if (arg === "--deployment" || arg === "--deployment-id") {
+    } else if (arg === "--local") {
+      options.local = true;
+    } else if (
+      arg === "--deployment" ||
+      arg === "--deployment-id" ||
+      arg === "--worker" ||
+      arg === "--worker-id"
+    ) {
       options.deploymentId = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--deployment=")) {
       options.deploymentId = arg.slice("--deployment=".length);
     } else if (arg.startsWith("--deployment-id=")) {
       options.deploymentId = arg.slice("--deployment-id=".length);
-    } else if (arg === "--tenant" || arg === "--tenant-id") {
+    } else if (arg.startsWith("--worker=")) {
+      options.deploymentId = arg.slice("--worker=".length);
+    } else if (arg.startsWith("--worker-id=")) {
+      options.deploymentId = arg.slice("--worker-id=".length);
+    } else if (
+      arg === "--tenant" ||
+      arg === "--tenant-id" ||
+      arg === "--organization" ||
+      arg === "--organization-id"
+    ) {
       options.tenantId = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--tenant=")) {
       options.tenantId = arg.slice("--tenant=".length);
     } else if (arg.startsWith("--tenant-id=")) {
       options.tenantId = arg.slice("--tenant-id=".length);
+    } else if (arg.startsWith("--organization=")) {
+      options.tenantId = arg.slice("--organization=".length);
+    } else if (arg.startsWith("--organization-id=")) {
+      options.tenantId = arg.slice("--organization-id=".length);
     } else if (arg === "--url") {
       options.url = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--url=")) {

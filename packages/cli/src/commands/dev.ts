@@ -3,12 +3,12 @@ import { access } from "node:fs/promises";
 import net from "node:net";
 import { resolve } from "node:path";
 import { parseBuildArgs } from "../args.js";
+import { resolveHyloBackendUrl } from "../config.js";
 import { info } from "../log.js";
 import { defaultProjectRoot, loadProject } from "../project.js";
 import { wranglerBin } from "../wrangler.js";
 import { buildWorkerBundle } from "./build.js";
 
-const DEFAULT_BACKEND_PORT = "8787";
 const DEFAULT_WORKER_PORT = "8788";
 const DEFAULT_INSPECTOR_PORT = "9231";
 const LOCAL_SECRET_VALUE = "local-dev-incident-publisher-token";
@@ -17,7 +17,7 @@ export async function runDev(args: string[]): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
     process.stdout.write(
       [
-        "Usage: hylo dev [dir] [--backend <url>]",
+        "Usage: hylo dev [dir] [--local]",
         "",
         "Builds and runs a Hylo Worker locally. Defaults to the current worker project or ~/.flamecast/worker.",
         "",
@@ -34,7 +34,7 @@ export async function runDev(args: string[]): Promise<number> {
   const projectRoot = rest[0]
     ? resolve(process.cwd(), rest[0])
     : await defaultProjectRoot(process.cwd());
-  const backendUrl = options.backendUrl ?? defaultLocalBackendUrl();
+  const backendUrl = resolveHyloBackendUrl({ local: options.local });
   const project = await loadProject(projectRoot);
 
   await ensureDependencies(project.root);
@@ -76,10 +76,6 @@ export async function runDev(args: string[]): Promise<number> {
     wranglerArgs.map((arg) => (arg.startsWith("${PORT:-") ? workerPort : arg)),
     project.root,
   );
-}
-
-function defaultLocalBackendUrl(): string {
-  return `http://127.0.0.1:${process.env.HYLO_BACKEND_PORT ?? DEFAULT_BACKEND_PORT}`;
 }
 
 async function pathExists(path: string): Promise<boolean> {

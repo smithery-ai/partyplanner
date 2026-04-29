@@ -5,23 +5,27 @@ import { runDeploy } from "./commands/deploy.js";
 import { runDeployments } from "./commands/deployments.js";
 import { runDev } from "./commands/dev.js";
 import { runInit } from "./commands/init.js";
+import { runOrganizations } from "./commands/organizations.js";
 import { runRuns } from "./commands/runs.js";
+import { runWorkers } from "./commands/workers.js";
 
 const HELP = `hylo — workflow CLI
 
 Usage:
   hylo auth <command>                Sign in with WorkOS AuthKit
   hylo init [--force]                Create ~/.flamecast/worker example Worker
-  hylo dev [dir] [--backend <url>]   Run a Hylo Worker locally
-  hylo build [dir] [--backend <url>] Bundle into a Cloudflare Worker
-  hylo deploy [dir] [--backend <url>]
+  hylo dev [dir] [--local]           Run a Hylo Worker locally
+  hylo build [dir] [--local]         Bundle into a Cloudflare Worker
+  hylo deploy [dir] [--local]
                                       Build and deploy via Hylo API
   hylo deployments <command>         Call the deployment API
+  hylo organizations <command>       List authenticated organizations
+  hylo workers <command>             List workflow workers
   hylo runs <command>                List or fetch workflow runs
   hylo --help                        Show this help
 
 Options:
-  --backend <url>          Hylo backend API URL
+  --local                  Use the portless local Hylo backend
 `;
 
 async function main(argv: string[]): Promise<number> {
@@ -45,6 +49,10 @@ async function main(argv: string[]): Promise<number> {
       return runDeploy(rest);
     case "deployments":
       return runDeployments(rest);
+    case "organizations":
+      return runOrganizations(rest);
+    case "workers":
+      return runWorkers(rest);
     case "runs":
       return runRuns(rest);
     default:

@@ -11,7 +11,7 @@ import {
 import { resolveHyloBackendUrl } from "../config.js";
 
 type AuthOptions = {
-  backendUrl?: string;
+  local?: boolean;
   clientId?: string;
   workosApiHostname?: string;
   workosApiBaseUrl?: string;
@@ -46,7 +46,7 @@ Usage:
   hylo auth logout
 
 Options:
-  --backend <url>         Hylo backend API URL
+  --local                 Use the portless local Hylo backend
   --client-id <id>        WorkOS AuthKit client ID
   --workos-api-hostname <host>
                           WorkOS Authentication API hostname
@@ -110,7 +110,7 @@ async function login(args: string[]): Promise<void> {
   if (options.rest.length > 0) {
     throw new Error(`Unexpected argument: ${options.rest[0]}`);
   }
-  const backendUrl = resolveHyloBackendUrl(options.backendUrl);
+  const backendUrl = resolveHyloBackendUrl({ local: options.local });
   const configuredClientId =
     options.clientId ??
     process.env.WORKOS_CLIENT_ID ??
@@ -165,13 +165,11 @@ async function printToken(args: string[]): Promise<void> {
   const options = parseAuthOptions(args);
   const rest = options.rest;
   if (rest.length > 0) throw new Error(`Unexpected argument: ${rest[0]}`);
-  const backendUrl = options.backendUrl
-    ? resolveHyloBackendUrl(options.backendUrl)
-    : undefined;
+  const backendUrl = resolveHyloBackendUrl({ local: options.local });
   const token = await getHyloAccessToken({ backendUrl });
   if (!token) {
     throw new Error(
-      `Not signed in${backendUrl ? ` for ${backendUrl}` : ""}. Run \`hylo auth login${backendUrl ? ` --backend-url ${backendUrl}` : ""}\` first.`,
+      `Not signed in for ${backendUrl}. Run \`hylo auth login${options.local ? " --local" : ""}\` first.`,
     );
   }
   process.stdout.write(`${token}\n`);
@@ -210,7 +208,7 @@ async function fetchAuthClientConfig(
     }
     if (e instanceof TypeError) {
       throw new Error(
-        `Could not reach Hylo backend at ${backendUrl}. Start the local backend with \`pnpm dev\`, or use a reachable --backend-url.`,
+        `Could not reach Hylo backend at ${backendUrl}. Start the local backend with \`pnpm dev\` when using --local.`,
       );
     }
     throw e;
@@ -303,12 +301,8 @@ function parseAuthOptions(args: string[]): AuthOptions & { rest: string[] } {
       options.clientId = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--client-id=")) {
       options.clientId = arg.slice("--client-id=".length);
-    } else if (arg === "--backend" || arg === "--backend-url") {
-      options.backendUrl = requireArgValue(args, ++index, arg);
-    } else if (arg.startsWith("--backend=")) {
-      options.backendUrl = arg.slice("--backend=".length);
-    } else if (arg.startsWith("--backend-url=")) {
-      options.backendUrl = arg.slice("--backend-url=".length);
+    } else if (arg === "--local") {
+      options.local = true;
     } else if (arg === "--workos-api-hostname") {
       options.workosApiHostname = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--workos-api-hostname=")) {

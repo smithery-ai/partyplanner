@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 it("prefers the backend CLI WorkOS hostname for device authorization", async () => {
-  const backendUrl = "https://backend.example.com";
+  const backendUrl = "https://backend.flamecast.dev";
   const fetchMock = vi.fn(async (input: string | URL | Request) => {
     const url =
       typeof input === "string" || input instanceof URL
@@ -64,7 +64,7 @@ it("prefers the backend CLI WorkOS hostname for device authorization", async () 
   });
   vi.stubGlobal("fetch", fetchMock);
 
-  const authPromise = runAuth(["login", "--backend", backendUrl]);
+  const authPromise = runAuth(["login"]);
   await vi.advanceTimersByTimeAsync(1_000);
 
   await expect(authPromise).resolves.toBe(0);
@@ -81,7 +81,7 @@ it("prefers the backend CLI WorkOS hostname for device authorization", async () 
 });
 
 it("falls back to api.workos.com when backend auth config only exposes a browser hostname", async () => {
-  const backendUrl = "https://backend.example.com";
+  const backendUrl = "https://backend.flamecast.dev";
   const fetchMock = vi.fn(async (input: string | URL | Request) => {
     const url =
       typeof input === "string" || input instanceof URL
@@ -117,7 +117,7 @@ it("falls back to api.workos.com when backend auth config only exposes a browser
   });
   vi.stubGlobal("fetch", fetchMock);
 
-  const authPromise = runAuth(["login", "--backend", backendUrl]);
+  const authPromise = runAuth(["login"]);
   await vi.advanceTimersByTimeAsync(1_000);
 
   await expect(authPromise).resolves.toBe(0);
@@ -134,7 +134,7 @@ it("falls back to api.workos.com when backend auth config only exposes a browser
 });
 
 it("reports an unreachable backend with a local-dev hint", async () => {
-  const backendUrl = "http://127.0.0.1:8787";
+  const backendUrl = "https://api-worker.hylo.localhost";
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => {
@@ -145,10 +145,8 @@ it("reports an unreachable backend with a local-dev hint", async () => {
     .spyOn(process.stderr, "write")
     .mockImplementation(() => true);
 
-  await expect(runAuth(["login", "--backend-url", backendUrl])).resolves.toBe(
-    1,
-  );
+  await expect(runAuth(["login", "--local"])).resolves.toBe(1);
   expect(stderr).toHaveBeenCalledWith(
-    `Could not reach Hylo backend at ${backendUrl}. Start the local backend with \`pnpm dev\`, or use a reachable --backend-url.\n`,
+    `Could not reach Hylo backend at ${backendUrl}. Start the local backend with \`pnpm dev\` when using --local.\n`,
   );
 });
