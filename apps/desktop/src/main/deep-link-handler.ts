@@ -28,7 +28,7 @@ export function registerProtocol(): void {
 
 export function setupDeepLinkHandling(
   mainWindow: BrowserWindow,
-  onAuthComplete: (success: boolean) => void,
+  onAuthComplete: (success: boolean) => void | Promise<void>,
 ): void {
   const handleUrl = async (url: string): Promise<void> => {
     const params = new URL(url).searchParams;
@@ -37,21 +37,21 @@ export function setupDeepLinkHandling(
 
     if (error) {
       console.error("OAuth error:", error, params.get("error_description"));
-      onAuthComplete(false);
+      await onAuthComplete(false);
       return;
     }
     if (!code) {
       console.error("No authorization code in callback");
-      onAuthComplete(false);
+      await onAuthComplete(false);
       return;
     }
 
     try {
       await handleCallback(code);
-      onAuthComplete(true);
+      await onAuthComplete(true);
     } catch (authError) {
       console.error("Auth callback failed:", authError);
-      onAuthComplete(false);
+      await onAuthComplete(false);
     }
   };
   protocolUrlHandler = (url: string) => {

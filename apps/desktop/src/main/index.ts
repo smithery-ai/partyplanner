@@ -24,14 +24,14 @@ app.whenReady().then(async () => {
       mainWindow.restore();
     }
     mainWindow.focus();
-    notifyAuthChange(mainWindow, await getUser());
+    await notifyAuthChange(mainWindow);
   });
 
   try {
     const user = await getUser();
     if (user) {
       mainWindow.webContents.once("did-finish-load", () => {
-        notifyAuthChange(mainWindow, user);
+        void notifyAuthChange(mainWindow, user);
       });
     }
   } catch (error) {

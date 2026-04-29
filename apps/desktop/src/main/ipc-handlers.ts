@@ -8,6 +8,7 @@ import {
   clearSession,
   getAccessToken,
   getLogoutUrl,
+  getOrganizationId,
   getSignInUrl,
   getUser,
   handleCallback,
@@ -24,6 +25,19 @@ export function setupAuthIpcHandlers(mainWindow: BrowserWindow): void {
     }
   });
 
+  ipcMain.handle(
+    AUTH_CHANNELS.SWITCH_TO_ORGANIZATION,
+    async (_event, organizationId: string): Promise<AuthIpcResult> => {
+      try {
+        await openAuthWindow(mainWindow, { organizationId });
+        return { success: true };
+      } catch (error) {
+        console.error("Switch organization failed:", error);
+        return { success: false, error: errorMessage(error) };
+      }
+    },
+  );
+
   ipcMain.handle(AUTH_CHANNELS.SIGN_OUT, async (): Promise<AuthIpcResult> => {
     try {
       const logoutUrl = await getLogoutUrl();
@@ -31,7 +45,7 @@ export function setupAuthIpcHandlers(mainWindow: BrowserWindow): void {
       if (logoutUrl) {
         await shell.openExternal(logoutUrl);
       }
-      notifyAuthChange(mainWindow, null);
+      await notifyAuthChange(mainWindow, null);
       return { success: true };
     } catch (error) {
       console.error("Sign out failed:", error);
@@ -51,13 +65,21 @@ export function setupAuthIpcHandlers(mainWindow: BrowserWindow): void {
   ipcMain.handle(AUTH_CHANNELS.GET_ACCESS_TOKEN, async () => {
     return getAccessToken();
   });
+
+  ipcMain.handle(AUTH_CHANNELS.GET_ORGANIZATION_ID, async () => {
+    return getOrganizationId();
+  });
 }
 
-export function notifyAuthChange(
+export async function notifyAuthChange(
   mainWindow: BrowserWindow,
-  user: AuthChangePayload["user"],
-): void {
-  mainWindow.webContents.send(AUTH_CHANNELS.ON_AUTH_CHANGE, { user });
+  user?: AuthChangePayload["user"],
+): Promise<void> {
+  const nextUser = user === undefined ? await getUser() : user;
+  mainWindow.webContents.send(AUTH_CHANNELS.ON_AUTH_CHANGE, {
+    organizationId: nextUser ? await getOrganizationId() : null,
+    user: nextUser,
+  } satisfies AuthChangePayload);
 }
 
 function errorMessage(error: unknown): string {
@@ -66,13 +88,16 @@ function errorMessage(error: unknown): string {
 
 let authWindow: BrowserWindow | null = null;
 
-async function openAuthWindow(mainWindow: BrowserWindow): Promise<void> {
+async function openAuthWindow(
+  mainWindow: BrowserWindow,
+  options: { organizationId?: string } = {},
+): Promise<void> {
   if (authWindow && !authWindow.isDestroyed()) {
     authWindow.focus();
     return;
   }
 
-  const signInUrl = await getSignInUrl();
+  const signInUrl = await getSignInUrl(options);
   authWindow = new BrowserWindow({
     parent: mainWindow,
     modal: true,
@@ -111,8 +136,7 @@ async function openAuthWindow(mainWindow: BrowserWindow): Promise<void> {
 
     await handleCallback(code);
     closeAuthWindow();
-    const user = await getUser();
-    notifyAuthChange(mainWindow, user);
+    await notifyAuthChange(mainWindow);
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
     }

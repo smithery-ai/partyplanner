@@ -173,6 +173,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@hylo/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@workflow/frontend':
         specifier: workspace:*
         version: link:../../packages/frontend

@@ -18,6 +18,7 @@ type WorkOSClientConfig = {
 
 type StoredSession = {
   accessToken: string;
+  organizationId: string | null;
   refreshToken: string;
   user: AuthUser;
 };
@@ -39,8 +40,11 @@ const store = new Store<StoreSchema>({
 });
 
 let workosConfigPromise: Promise<WorkOSClientConfig> | undefined;
+let refreshSessionPromise: Promise<StoredSession | null> | undefined;
 
-export async function getSignInUrl(): Promise<string> {
+export async function getSignInUrl(
+  options: { organizationId?: string } = {},
+): Promise<string> {
   const { apiWorkOS, authkitWorkOS, config } = await loadWorkOS();
   const { codeVerifier, codeChallenge } = await apiWorkOS.pkce.generate();
   store.set("pkce", {
@@ -53,6 +57,9 @@ export async function getSignInUrl(): Promise<string> {
     codeChallenge,
     codeChallengeMethod: "S256",
     provider: "authkit",
+    ...(options.organizationId
+      ? { organizationId: options.organizationId }
+      : {}),
   });
 }
 
@@ -76,6 +83,8 @@ export async function handleCallback(code: string): Promise<AuthUser> {
   store.delete("pkce");
   const session = {
     accessToken: auth.accessToken,
+    organizationId:
+      auth.organizationId ?? organizationIdFromAccessToken(auth.accessToken),
     refreshToken: auth.refreshToken,
     user: toAuthUser(auth.user),
   } satisfies StoredSession;
@@ -96,6 +105,11 @@ export async function getAccessToken(): Promise<string> {
   return session.accessToken;
 }
 
+export async function getOrganizationId(): Promise<string | null> {
+  const session = await refreshSessionIfNeeded();
+  return session?.organizationId ?? null;
+}
+
 export function clearSession(): void {
   store.delete("pkce");
   store.delete("session");
@@ -109,6 +123,13 @@ export async function getLogoutUrl(): Promise<string | null> {
 }
 
 async function refreshSessionIfNeeded(): Promise<StoredSession | null> {
+  refreshSessionPromise ??= refreshSessionIfNeededOnce().finally(() => {
+    refreshSessionPromise = undefined;
+  });
+  return refreshSessionPromise;
+}
+
+async function refreshSessionIfNeededOnce(): Promise<StoredSession | null> {
   const session = readSession();
   if (!session?.accessToken) return null;
   if (!isTokenExpired(session.accessToken)) return session;
@@ -122,6 +143,9 @@ async function refreshSessionIfNeeded(): Promise<StoredSession | null> {
       });
     const nextSession = {
       accessToken: refreshed.accessToken,
+      organizationId:
+        refreshed.organizationId ??
+        organizationIdFromAccessToken(refreshed.accessToken),
       refreshToken: refreshed.refreshToken,
       user: toAuthUser(refreshed.user),
     } satisfies StoredSession;
@@ -134,7 +158,14 @@ async function refreshSessionIfNeeded(): Promise<StoredSession | null> {
 }
 
 function readSession(): StoredSession | null {
-  return deserializeSession(store.get("session"));
+  const session = deserializeSession(store.get("session"));
+  if (!session) return null;
+  return {
+    ...session,
+    organizationId:
+      session.organizationId ??
+      organizationIdFromAccessToken(session.accessToken),
+  };
 }
 
 function writeSession(session: StoredSession): void {
@@ -259,6 +290,22 @@ function getSessionId(session: StoredSession | null): string | null {
   try {
     const payload = decodeJwtPayload(session.accessToken) as { sid?: unknown };
     return typeof payload.sid === "string" ? payload.sid : null;
+  } catch {
+    return null;
+  }
+}
+
+function organizationIdFromAccessToken(accessToken: string): string | null {
+  try {
+    const payload = decodeJwtPayload(accessToken) as {
+      org_id?: unknown;
+      organization_id?: unknown;
+    };
+    if (typeof payload.org_id === "string") return payload.org_id;
+    if (typeof payload.organization_id === "string") {
+      return payload.organization_id;
+    }
+    return null;
   } catch {
     return null;
   }
