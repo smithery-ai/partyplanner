@@ -1,5 +1,5 @@
 {
-  "name": "@workflow/integrations-gmail",
+  "name": "@workflow/integrations-arcade",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,7 +17,6 @@
   },
   "dependencies": {
     "@workflow/core": "workspace:*",
-    "@workflow/integrations-arcade": "workspace:*",
     "zod": "^4.3.6"
   },
   "devDependencies": {

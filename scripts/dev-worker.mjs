@@ -11,10 +11,13 @@ const localWorkerDir = resolve(flamecastRoot, "worker");
 const env = { ...process.env, ...loadInfisicalDevEnv() };
 
 if (!existsSync(resolve(localWorkerDir, "package.json"))) {
-  console.error(
-    `No local worker found at ${localWorkerDir}. Run "pnpm hylo init" first, or run "pnpm dev" which scaffolds it for you.`,
+  console.log(
+    `No local worker found at ${localWorkerDir}; scaffolding it now...`,
   );
-  process.exit(1);
+  execSync("pnpm hylo init --force", {
+    env,
+    stdio: "inherit",
+  });
 }
 
 const child = spawn("pnpm", ["hylo", "dev", "--local", localWorkerDir], {

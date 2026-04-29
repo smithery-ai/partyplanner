@@ -96,6 +96,7 @@ async function main() {
       },
       dependencies: {
         "@workflow/core": "workspace:*",
+        "@workflow/integrations-arcade": "workspace:*",
         zod: "^4.3.6",
       },
       devDependencies: {
@@ -130,7 +131,7 @@ async function main() {
 
   await writeFile(
     path.join(opts.outDir, "src", "arcade.ts"),
-    renderArcadeRuntime(toolkitName, toolkitSlug),
+    renderArcadeReexport(),
   );
   await writeFile(
     path.join(opts.outDir, "src", `${toolkitSlug}.ts`),
@@ -249,7 +250,7 @@ function renderToolkit(
     "  createArcadeToolAction,\n",
     "  createArcadeToolAtom,\n",
     "  type MaybeHandle,\n",
-    '} from "./arcade";\n\n',
+    '} from "@workflow/integrations-arcade";\n\n',
   ];
 
   if (version) {
@@ -464,13 +465,13 @@ function renderIndex(
       .sort()
       .map((name) => `  ${name},`)
       .join("\n"),
-    '\n} from "./arcade";\n',
+    '\n} from "@workflow/integrations-arcade";\n',
     "export {\n",
     [...arcadeValueExports]
       .sort()
       .map((name) => `  ${name},`)
       .join("\n"),
-    '\n} from "./arcade";\n',
+    '\n} from "@workflow/integrations-arcade";\n',
     "export type {\n",
     [...toolkitTypeExports]
       .sort()
@@ -495,7 +496,28 @@ function renderIndex(
   return chunks.join("");
 }
 
-function renderArcadeRuntime(toolkitName: string, toolkitSlug: string): string {
+function renderArcadeReexport(): string {
+  return `${GENERATED_HEADER}export type {
+  ArcadeAuthorizationResponse,
+  ArcadeAuthorizationStatus,
+  ArcadeCredentials,
+  ArcadeToolOptions,
+  ArcadeToolResult,
+  MaybeHandle,
+  ResolvableInput,
+} from "@workflow/integrations-arcade";
+export {
+  arcade,
+  createArcadeToolAction,
+  createArcadeToolAtom,
+} from "@workflow/integrations-arcade";
+`;
+}
+
+function _renderArcadeRuntime(
+  toolkitName: string,
+  toolkitSlug: string,
+): string {
   return `${GENERATED_HEADER}import {
   type Action,
   type Atom,
@@ -503,6 +525,7 @@ function renderArcadeRuntime(toolkitName: string, toolkitSlug: string): string {
   atom,
   type Get,
   type Handle,
+  input as workflowInput,
   isHandle,
   type RequestIntervention,
   secret,
@@ -510,6 +533,11 @@ function renderArcadeRuntime(toolkitName: string, toolkitSlug: string): string {
 import { type ZodSchema, z } from "zod";
 
 export type ArcadeCredentials = {
+  /**
+   * Bearer token used for requests to baseUrl. The default arcade atom uses
+   * the Hylo backend app token; the Arcade project API key stays in the
+   * backend environment.
+   */
   apiKey: string;
   baseUrl: string;
 };
@@ -571,27 +599,42 @@ type CreateArcadeToolArgs<Input extends Record<string, unknown>, Value> = {
   opts?: ArcadeToolOptions;
 };
 
-const ARCADE_API_KEY = secret("ARCADE_API_KEY", envVar("ARCADE_API_KEY"), {
-  description: "Arcade project API key used to execute Arcade-hosted tools.",
-  errorMessage: "Set ARCADE_API_KEY in the worker environment.",
+const HYLO_BACKEND_URL = secret("HYLO_BACKEND_URL", envVar("HYLO_BACKEND_URL"), {
+  description: "Hylo backend URL hosting the Arcade proxy.",
+  errorMessage: "Set HYLO_BACKEND_URL in the worker environment.",
   internal: true,
 });
 
-const ARCADE_USER_ID = secret("ARCADE_USER_ID", envVar("ARCADE_USER_ID"), {
-  description: "Arcade user ID used for tool authorization.",
-  errorMessage: "Set ARCADE_USER_ID in the worker environment or pass userId to the Arcade tool.",
+// Stable dev default matches the backend OAuth/Arcade proxy default so local
+// setups work without coordinating app-token env vars.
+const DEV_API_KEY = "local-dev-hylo-api-key";
+
+const HYLO_API_KEY = secret("HYLO_API_KEY", resolveApiKey(), {
+  description: "Hylo backend app token used to call managed backend services.",
+  errorMessage: "Set HYLO_API_KEY in the worker environment.",
+  internal: true,
 });
 
-const ARCADE_BASE_URL = "https://api.arcade.dev";
+function resolveApiKey(): string | undefined {
+  const explicit = envVar("HYLO_API_KEY");
+  if (explicit) return explicit;
+  if (envVar("NODE_ENV") === "production") return undefined;
+  return DEV_API_KEY;
+}
+
+const HYLO_USER_ID = workflowInput("HYLO_USER_ID", z.string().min(1), {
+  description: "Signed-in Hylo user email used for Arcade tool authorization.",
+  internal: true,
+});
 
 export const arcade = atom<ArcadeCredentials>(
   (get) => ({
-    apiKey: get(ARCADE_API_KEY),
-    baseUrl: ARCADE_BASE_URL,
+    apiKey: get(HYLO_API_KEY),
+    baseUrl: arcadeProxyBaseUrl(get(HYLO_BACKEND_URL)),
   }),
   {
     name: "${camelCase(`${toolkitSlug}-arcade`)}",
-    description: "Arcade API credentials resolved from worker secrets.",
+    description: "Arcade proxy credentials resolved from the Hylo backend.",
     internal: true,
   },
 );
@@ -758,7 +801,7 @@ async function checkAuthorizationStatus(
   credentials: ArcadeCredentials,
   id: string,
 ): Promise<ArcadeAuthorizationResponse> {
-  const url = new URL("/v1/auth/status", credentials.baseUrl);
+  const url = arcadeUrl(credentials.baseUrl, "/v1/auth/status");
   url.searchParams.set("id", id);
   url.searchParams.set("wait", "1");
   const response = await fetch(url, {
@@ -766,7 +809,7 @@ async function checkAuthorizationStatus(
   });
   if (!response.ok) {
     throw new Error(
-      \`Arcade GET /v1/auth/status failed (\${response.status}): \${await response.text()}\`,
+      \`Arcade GET \${url.toString()} failed (\${response.status}): \${await response.text()}\`,
     );
   }
   return toAuthorizationResponse(await response.json());
@@ -777,7 +820,8 @@ async function arcadeRequest(args: {
   path: string;
   body: Record<string, unknown>;
 }): Promise<unknown> {
-  const response = await fetch(new URL(args.path, args.credentials.baseUrl), {
+  const url = arcadeUrl(args.credentials.baseUrl, args.path);
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: \`Bearer \${args.credentials.apiKey}\`,
@@ -787,10 +831,27 @@ async function arcadeRequest(args: {
   });
   if (!response.ok) {
     throw new Error(
-      \`Arcade \${args.path} failed (\${response.status}): \${await response.text()}\`,
+      \`Arcade \${url.toString()} failed (\${response.status}): \${await response.text()}\`,
     );
   }
   return response.json();
+}
+
+function arcadeProxyBaseUrl(backendUrl: string): string {
+  const url = new URL(backendUrl);
+  if (url.hostname.endsWith(".api-worker.hylo.localhost")) {
+    url.hostname = "api-worker.hylo.localhost";
+  }
+  url.pathname = \`\${url.pathname.replace(/\\/+$/, "")}/arcade\`;
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\\/+$/, "");
+}
+
+function arcadeUrl(baseUrl: string, path: string): URL {
+  return new URL(
+    \`\${baseUrl.replace(/\\/+$/, "")}/\${path.replace(/^\\/+/, "")}\`,
+  );
 }
 
 function toAuthorizationResponse(raw: unknown): ArcadeAuthorizationResponse {
@@ -820,7 +881,7 @@ function resolveInput<Input extends Record<string, unknown>>(
 }
 
 function resolveUserId(get: Get, userId: MaybeHandle<string> | undefined): string {
-  return userId === undefined ? get(ARCADE_USER_ID) : resolve(get, userId);
+  return userId === undefined ? get(HYLO_USER_ID) : resolve(get, userId);
 }
 
 function resolve<T>(get: Get, value: MaybeHandle<T>): T {

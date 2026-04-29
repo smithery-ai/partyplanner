@@ -32,26 +32,26 @@ export function listProjectsAndMyTickets(
     includeErrorStacktrace: opts.includeErrorStacktrace,
     authorize: opts.authorize,
   };
+  const projects = listProjects({
+    ...arcadeOpts,
+    actionName: `${opts.actionName ?? "linearProjectsAndMyTickets"}Projects`,
+    limit: opts.projectLimit ?? 50,
+    state: opts.projectState,
+    team: opts.team,
+  });
+  const ticketsAssignedToMe = listIssues({
+    ...arcadeOpts,
+    actionName: `${opts.actionName ?? "linearProjectsAndMyTickets"}TicketsAssignedToMe`,
+    assignee: "@me",
+    limit: opts.issueLimit ?? 10,
+    state: opts.issueState,
+    team: opts.team,
+  });
 
   return atom(
     (get) => ({
-      projects: get(
-        listProjects({
-          ...arcadeOpts,
-          limit: opts.projectLimit ?? 50,
-          state: opts.projectState,
-          team: opts.team,
-        }),
-      ),
-      ticketsAssignedToMe: get(
-        listIssues({
-          ...arcadeOpts,
-          assignee: "@me",
-          limit: opts.issueLimit ?? 10,
-          state: opts.issueState,
-          team: opts.team,
-        }),
-      ),
+      projects: get(projects),
+      ticketsAssignedToMe: get(ticketsAssignedToMe),
     }),
     { name: opts.actionName ?? "linearProjectsAndMyTickets" },
   );
