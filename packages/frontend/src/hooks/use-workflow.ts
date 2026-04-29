@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RunState } from "@workflow/core";
 import type { QueueSnapshot, RunEvent, RunSnapshot } from "@workflow/runtime";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkflowFrontendConfig } from "../config";
 import { collectUnresolvedWaitingOn } from "../lib/pending-wait";
 import type {
@@ -116,6 +116,9 @@ const queryKeys = {
     ["workflow-frontend", apiBaseUrl, "vault"] as const,
 };
 
+const ACTIVE_RUN_REFETCH_INTERVAL_MS = 1000;
+const WAITING_RUN_REFETCH_INTERVAL_MS = 5000;
+
 function useWorkflowManifestQuery() {
   const config = useWorkflowFrontendConfig();
   return useQuery({
@@ -147,20 +150,30 @@ function useWorkflowConfigurationQuery() {
 
 function useRunStateQuery(runId: string | undefined) {
   const config = useWorkflowFrontendConfig();
+  const queryClient = useQueryClient();
+  const queryKey = runId
+    ? queryKeys.runState(config.apiBaseUrl, runId)
+    : (["workflow-frontend", config.apiBaseUrl, "run-state", "none"] as const);
+
   return useQuery({
-    queryKey: runId
-      ? queryKeys.runState(config.apiBaseUrl, runId)
-      : ["workflow-frontend", config.apiBaseUrl, "run-state", "none"],
+    queryKey,
     enabled: Boolean(runId),
     queryFn: async () => {
       if (!runId) throw new Error("Cannot poll before a run exists.");
-      return documentResult(
+      const next = documentResult(
         await apiGet<RunStateDocument>(
           config.apiBaseUrl,
           `/state/${encodeURIComponent(runId)}`,
         ),
       );
+      const existing =
+        queryClient.getQueryData<WorkflowRuntimeResult>(queryKey);
+      return newestRunResult(existing, next);
     },
+    refetchInterval: (query) =>
+      runStateRefetchInterval(
+        query.state.data as WorkflowRuntimeResult | undefined,
+      ),
   });
 }
 
@@ -639,7 +652,8 @@ export function useWorkflowRunQuery(
     (result: WorkflowRuntimeResult) => {
       queryClient.setQueryData(
         queryKeys.runState(config.apiBaseUrl, result.state.runId),
-        result,
+        (existing: WorkflowRuntimeResult | undefined) =>
+          newestRunResult(existing, result),
       );
       queryClient.setQueryData(
         queryKeys.runs(config.apiBaseUrl),
@@ -649,6 +663,15 @@ export function useWorkflowRunQuery(
     },
     [config.apiBaseUrl, queryClient],
   );
+
+  useEffect(() => {
+    if (!stateQuery.data) return;
+    queryClient.setQueryData(
+      queryKeys.runs(config.apiBaseUrl),
+      (existing: RunSummary[] = []) =>
+        mergeRunSummary(existing, summarizeRunResult(stateQuery.data)),
+    );
+  }, [config.apiBaseUrl, queryClient, stateQuery.data]);
 
   const runMutation = useCallback(
     async <TArgs>(
@@ -778,6 +801,38 @@ export function useWorkflowRunQuery(
 function normalizeError(error: unknown): Error | undefined {
   if (!error) return undefined;
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function runStateRefetchInterval(
+  result: WorkflowRuntimeResult | undefined,
+): number | false {
+  switch (result?.snapshot?.status) {
+    case "completed":
+    case "failed":
+    case "canceled":
+      return false;
+    case "waiting":
+      return WAITING_RUN_REFETCH_INTERVAL_MS;
+    default:
+      return ACTIVE_RUN_REFETCH_INTERVAL_MS;
+  }
+}
+
+function newestRunResult(
+  existing: WorkflowRuntimeResult | undefined,
+  next: WorkflowRuntimeResult,
+): WorkflowRuntimeResult {
+  const existingVersion = existing?.snapshot?.version;
+  const nextVersion = next.snapshot?.version;
+  if (
+    existing &&
+    existingVersion !== undefined &&
+    nextVersion !== undefined &&
+    nextVersion < existingVersion
+  ) {
+    return existing;
+  }
+  return next;
 }
 
 function mergeRunSummary(
