@@ -10,6 +10,10 @@ From this directory:
 pnpm dev
 ```
 
+Gmail workflows use Arcade for authorization. Set `ARCADE_API_KEY` and
+`ARCADE_USER_ID` in the worker environment; when using Arcade's built-in user
+verifier, `ARCADE_USER_ID` should match the signed-in Arcade account email.
+
 To launch the backend, this worker, and the client from the repo root:
 
 ```sh

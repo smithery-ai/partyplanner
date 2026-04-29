@@ -6,6 +6,7 @@ import { parseBuildArgs } from "../args.js";
 import { resolveHyloBackendUrl } from "../config.js";
 import { info } from "../log.js";
 import { defaultProjectRoot, loadProject } from "../project.js";
+import { envSecretWranglerVars } from "../secrets.js";
 import { wranglerBin } from "../wrangler.js";
 import { buildWorkerBundle } from "./build.js";
 
@@ -47,6 +48,9 @@ export async function runDev(args: string[]): Promise<number> {
     DEFAULT_INSPECTOR_PORT,
     new Set([workerPort]),
   );
+  const envSecretVars = await envSecretWranglerVars(
+    resolve(project.root, "src"),
+  );
   const wranglerArgs = [
     "dev",
     ".hylo/build/src/index.ts",
@@ -60,6 +64,7 @@ export async function runDev(args: string[]): Promise<number> {
     inspectorPort,
     "--var",
     `INCIDENT_PUBLISHER_TOKEN:${process.env.INCIDENT_PUBLISHER_TOKEN ?? LOCAL_SECRET_VALUE}`,
+    ...envSecretVars,
     "--var",
     `HYLO_APP_URL:${appUrl}`,
   ];

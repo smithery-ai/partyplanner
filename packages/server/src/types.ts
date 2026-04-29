@@ -16,8 +16,8 @@ import type {
 } from "./manifest";
 
 export type StartWorkflowRunRequest = {
-  inputId: string;
-  payload: unknown;
+  inputId?: string;
+  payload?: unknown;
   additionalInputs?: {
     inputId: string;
     payload: unknown;

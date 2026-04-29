@@ -8,11 +8,12 @@ const flamecastRoot = process.env.FLAMECAST_LOG_DIR
   ? resolve(process.env.FLAMECAST_LOG_DIR)
   : resolve(homedir(), ".flamecast");
 const localWorkerDir = resolve(flamecastRoot, "worker");
+const env = { ...process.env, ...loadInfisicalDevEnv() };
 
 ensureLocalWorker();
 
 const child = spawn("pnpm", ["hylo", "dev", localWorkerDir], {
-  env: process.env,
+  env,
   stdio: "inherit",
 });
 
@@ -37,11 +38,55 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 
 function ensureLocalWorker() {
   const packageJsonPath = resolve(localWorkerDir, "package.json");
-  if (existsSync(packageJsonPath)) return;
+  const command = existsSync(packageJsonPath)
+    ? "pnpm hylo init --force"
+    : "pnpm hylo init";
+  const action = existsSync(packageJsonPath) ? "Refreshing" : "Initializing";
 
-  console.log(`Initializing ${localWorkerDir} with hylo init...`);
-  execSync("pnpm hylo init", {
-    env: process.env,
+  console.log(`${action} ${localWorkerDir} with ${command}...`);
+  execSync(command, {
+    env,
     stdio: "inherit",
   });
+}
+
+function loadInfisicalDevEnv() {
+  if (process.env.HYLO_SKIP_INFISICAL_ENV === "1") return {};
+  try {
+    const output = execSync(
+      "infisical export --path=/ --env=dev --format=dotenv",
+      {
+        env: process.env,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf8",
+      },
+    );
+    return parseDotenv(output);
+  } catch {
+    return {};
+  }
+}
+
+function parseDotenv(source) {
+  const result = {};
+  for (const line of source.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const equals = trimmed.indexOf("=");
+    if (equals <= 0) continue;
+    const key = trimmed.slice(0, equals).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    result[key] = unquoteDotenvValue(trimmed.slice(equals + 1).trim());
+  }
+  return result;
+}
+
+function unquoteDotenvValue(value) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
 }

@@ -113,6 +113,8 @@ type WorkflowNodeData = {
   inlineActions?: { approve: () => void; reject: () => void };
   /** Skipped node that's fading out before it's removed from the graph. */
   fadingOut?: boolean;
+  /** Runtime/helper node owned by the worker or an integration package. */
+  managed?: boolean;
 };
 
 /** How long a skipped node sticks around (greyed + fading) before the layout removes it. */
@@ -330,6 +332,11 @@ function WorkflowNode({ data }: { data: WorkflowNodeData }) {
               </span>
             </>
           )}
+          {data.managed && (
+            <span className="ml-1 inline-flex rounded-sm border border-muted-foreground/25 px-1 py-0 text-[9px] font-medium uppercase tracking-normal text-muted-foreground">
+              Managed
+            </span>
+          )}
         </NodeDescription>
       </NodeHeader>
       {pendingInline && data.inlineActions && (
@@ -431,14 +438,11 @@ function inputDefinition(
 /**
  * Build the set of node IDs that should be hidden from the graph.
  *
- * A node is internal if:
- * 1. It has `internal: true` in the registry or manifest, OR
- * 2. Its ID starts with `@workflow/integrations-` (package-internal atoms), OR
- * 3. It is a resolved secret whose ONLY consumers are themselves internal
- *    (transitive — covers infra secrets like HYLO_BACKEND_URL fed only into
- *    integration atoms).
+ * Managed/internal atoms stay visible so blocked steps can show the actual
+ * runtime helper they are waiting on. Secret inputs still hide once they are
+ * resolved and only feed managed/internal nodes.
  */
-function internalNodeIds(
+function hiddenNodeIds(
   registry: Registry,
   manifest: WorkflowManifest | undefined,
   runState: RunState | undefined,
@@ -457,19 +461,10 @@ function internalNodeIds(
     for (const id of Object.keys(runState.nodes)) allIds.add(id);
   }
 
-  // Pass 1: flag nodes that are explicitly internal or match the
-  // @workflow/integrations-* convention.
-  for (const id of allIds) {
-    if (isExplicitlyInternal(registry, manifest, id)) {
-      result.add(id);
-    } else if (id.startsWith("@workflow/integrations-")) {
-      result.add(id);
-    }
-  }
-
-  // Pass 2: resolved secrets consumed *only* by already-internal nodes.
+  // Hide resolved secrets consumed *only* by managed nodes or already-hidden
+  // secrets. This keeps values like ARCADE_API_KEY off the graph without
+  // removing the managed atom that explains the dependency.
   if (runState) {
-    // Build consumer map: nodeId → set of IDs that depend on it.
     const consumers = new Map<string, string[]>();
     for (const [nid, rec] of Object.entries(runState.nodes)) {
       for (const dep of rec?.deps ?? []) {
@@ -492,7 +487,13 @@ function internalNodeIds(
         const rec = runState.nodes[id];
         if (!rec || rec.status !== "resolved") continue;
         const deps = consumers.get(id);
-        if (deps && deps.length > 0 && deps.every((c) => result.has(c))) {
+        if (
+          deps &&
+          deps.length > 0 &&
+          deps.every(
+            (c) => result.has(c) || isManagedNode(registry, manifest, c),
+          )
+        ) {
           result.add(id);
           changed = true;
         }
@@ -503,11 +504,12 @@ function internalNodeIds(
   return result;
 }
 
-function isExplicitlyInternal(
+function isManagedNode(
   registry: Registry,
   manifest: WorkflowManifest | undefined,
   id: string,
 ): boolean {
+  if (id.startsWith("@workflow/integrations-")) return true;
   const regInput = registry.getInput(id);
   if (regInput) return Boolean(regInput.internal);
   const regAtom = registry.getAtom(id);
@@ -757,7 +759,7 @@ function visibleWorkflowNodeIds(
   queue: QueueSnapshot | undefined,
 ): string[] {
   if (!runState) return [];
-  const hidden = internalNodeIds(registry, manifest, runState);
+  const hidden = hiddenNodeIds(registry, manifest, runState);
   const queuedIds = new Set([
     ...(queue?.pending ?? []).map((item) => queueNodeId(item.event)),
     ...(queue?.running ?? []).map((item) => queueNodeId(item.event)),
@@ -847,6 +849,7 @@ function buildFlow(
           : (rec?.status ?? "not_reached"),
       handles: dagHandleSides(id, topology),
       fadingOut: fadingIds.has(id),
+      managed: isManagedNode(registry, manifest, id),
     };
     const actions = nodeInlineActions?.[id];
     if (actions) data.inlineActions = actions;

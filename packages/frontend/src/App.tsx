@@ -91,15 +91,6 @@ function buildInitialManifestInputValues(
   return values;
 }
 
-function firstManifestSeedInputId(
-  manifest: WorkflowManifest | undefined,
-): string {
-  const immediate = manifest?.inputs.filter((input) => input.kind === "input");
-  return (
-    immediate?.find((input) => !input.secret)?.id ?? immediate?.[0]?.id ?? ""
-  );
-}
-
 function findManifestInput(
   manifest: WorkflowManifest | undefined,
   inputId: string | undefined,
@@ -524,7 +515,6 @@ function WorkflowRunnerBody({
   const [inputValues, setInputValues] = useState<Record<string, unknown>>(() =>
     buildInitialManifestInputValues(undefined),
   );
-  const [seedInputId, setSeedInputId] = useState("");
   const [payloadError, setPayloadError] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [connectingManagedConnectionId, setConnectingManagedConnectionId] =
@@ -593,9 +583,6 @@ function WorkflowRunnerBody({
       ...buildInitialManifestInputValues(workflow.manifest),
       ...current,
     }));
-    setSeedInputId(
-      (current) => current || firstManifestSeedInputId(workflow.manifest),
-    );
   }, [workflow.manifest]);
 
   useEffect(() => {
@@ -701,7 +688,6 @@ function WorkflowRunnerBody({
     setClearingManagedConnectionId(undefined);
     setAwaitingManagedConnectionId(undefined);
     setInputValues(buildInitialManifestInputValues(workflow.manifest));
-    setSeedInputId(firstManifestSeedInputId(workflow.manifest));
     setPayloadError("");
     setPane(null);
     navigation.workflow(workflowId);
@@ -709,32 +695,36 @@ function WorkflowRunnerBody({
 
   function runWorkflow(seedOverride?: string) {
     setPayloadError("");
-    const immediate =
-      workflow.manifest?.inputs.filter((input) => input.kind === "input") ?? [];
-    const id =
-      seedOverride ??
-      (seedInputId || firstManifestSeedInputId(workflow.manifest));
-    const seed = immediate.find((input) => input.id === id) ?? immediate[0];
-    if (!seed) {
-      setPayloadError("No initial input is registered for this workflow.");
-      return;
-    }
-    let payload: unknown;
-    try {
-      payload = sanitizeJsonSchemaValue(seed.schema, inputValues[seed.id]);
-    } catch (e) {
-      setPayloadError(
-        errorMessage(e, "Validation failed for the initial inputs."),
-      );
-      return;
+    const seed = seedOverride
+      ? findManifestInput(workflow.manifest, seedOverride)
+      : undefined;
+    const args: Parameters<typeof workflow.start>[0] = {};
+
+    if (seedOverride) {
+      if (!seed) {
+        setPayloadError(`No input named "${seedOverride}" is registered.`);
+        return;
+      }
+
+      try {
+        args.inputId = seed.id;
+        args.payload = sanitizeJsonSchemaValue(
+          seed.schema,
+          inputValues[seed.id],
+        );
+      } catch (e) {
+        setPayloadError(
+          errorMessage(e, "Validation failed for the initial inputs."),
+        );
+        return;
+      }
     }
 
     try {
       const runId = newRunId();
       void workflow
         .start({
-          inputId: seed.id,
-          payload,
+          ...args,
           runId,
         })
         .catch((e) => {
@@ -1190,7 +1180,7 @@ function WorkflowRunnerBody({
                   connectingManagedConnectionId={connectingManagedConnectionId}
                   clearingManagedConnectionId={clearingManagedConnectionId}
                   error={payloadError || undefined}
-                  starting={workflowRun.isSubmittingPendingInput}
+                  starting={workflow.isPending}
                 />
                 <SchedulesPanel
                   schedules={workflow.manifest?.schedules ?? []}

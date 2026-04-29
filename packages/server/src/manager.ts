@@ -157,11 +157,15 @@ export class WorkflowManager {
     let snapshot = await scheduler.startRun({
       workflow: this.definition.ref,
       runId,
-      input: {
-        inputId: request.inputId,
-        payload: request.payload,
-      },
+      input: request.inputId
+        ? {
+            inputId: request.inputId,
+            payload: request.payload,
+          }
+        : undefined,
       additionalInputs: request.additionalInputs,
+      startAtoms:
+        !request.inputId && (request.additionalInputs?.length ?? 0) === 0,
     });
     await this.seedConfiguredManagedConnections(runId, snapshot.version);
     snapshot = await scheduler.snapshot(runId);

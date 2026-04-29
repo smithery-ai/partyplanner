@@ -25,6 +25,7 @@ describe("findPendingWait", () => {
       createdAt: Date.now(),
       inputs: [],
       managedConnections: [],
+      schedules: [],
       atoms: [],
       actions: [],
     };
@@ -107,6 +108,7 @@ describe("findPendingWait", () => {
         },
       ],
       managedConnections: [],
+      schedules: [],
       atoms: [],
       actions: [],
     };
