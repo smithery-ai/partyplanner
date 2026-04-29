@@ -14,7 +14,7 @@ const HELP = `hylo — workflow CLI
 Usage:
   hylo auth <command>                Sign in with WorkOS AuthKit
   hylo init [--force]                Create ~/.flamecast/worker example Worker
-  hylo dev [dir] [--local]           Run a Hylo Worker locally
+  hylo dev [dir]                     Run a Hylo Worker locally
   hylo build [dir] [--local]         Bundle into a Cloudflare Worker
   hylo deploy [dir] [--local]
                                       Build and deploy via Hylo API
