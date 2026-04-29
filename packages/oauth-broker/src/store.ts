@@ -18,6 +18,10 @@ export type PendingValue = {
   runtimeHandoffUrl?: string;
   runId?: string;
   interventionId?: string;
+  // Where to send the user after a standalone install completes (or fails).
+  // The broker appends `?installed=slack` on success or `?error=...` on
+  // failure. Ignored when runId/interventionId is present.
+  clientReturnUrl?: string;
   scopes: string[];
   extra: Record<string, string>;
   // Identity of the runtime that started this flow (today: opaque "anonymous"

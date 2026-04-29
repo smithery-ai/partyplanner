@@ -26,6 +26,14 @@ export function mountProviderWebhookApi(
       path: string,
       handler: (c: Context) => Promise<Response> | Response,
     ): void;
+    get(
+      path: string,
+      handler: (c: Context) => Promise<Response> | Response,
+    ): void;
+    delete(
+      path: string,
+      handler: (c: Context) => Promise<Response> | Response,
+    ): void;
   },
   installations: ProviderInstallationRegistry | undefined,
   providers: WebhookProviderSpec[],
@@ -33,6 +41,51 @@ export function mountProviderWebhookApi(
 ): void {
   const providersById = new Map(providers.map((p) => [p.id, p]));
   const forward = options.forward ?? ((request: Request) => fetch(request));
+
+  app.get("/integrations/:providerId/installations", async (c) => {
+    const providerId = c.req.param("providerId") ?? "";
+    if (!providersById.has(providerId)) {
+      return c.json({ error: "unknown_webhook_provider" }, 404);
+    }
+    if (!installations) {
+      return c.json(
+        { error: "provider_installation_registry_unavailable" },
+        503,
+      );
+    }
+    const records = await installations.list(providerId);
+    return c.json({
+      installations: records.map((record) => ({
+        installationKey: record.installationKey,
+        providerId: record.providerId,
+        identity: record.identity,
+        ...(record.runtimeHandoffUrl
+          ? { runtimeHandoffUrl: record.runtimeHandoffUrl }
+          : {}),
+        ...(record.deploymentId ? { deploymentId: record.deploymentId } : {}),
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+      })),
+    });
+  });
+
+  app.delete("/integrations/:providerId/installations/:key", async (c) => {
+    const providerId = c.req.param("providerId") ?? "";
+    if (!providersById.has(providerId)) {
+      return c.json({ error: "unknown_webhook_provider" }, 404);
+    }
+    if (!installations) {
+      return c.json(
+        { error: "provider_installation_registry_unavailable" },
+        503,
+      );
+    }
+    const key = decodeURIComponent(c.req.param("key") ?? "");
+    if (!key) return c.json({ error: "missing_installation_key" }, 400);
+    const deleted = await installations.deleteByKey(key);
+    if (!deleted) return c.json({ error: "installation_not_found" }, 404);
+    return c.json({ ok: true });
+  });
 
   app.post("/integrations/:providerId/events", async (c) => {
     const providerId = c.req.param("providerId") ?? "";
@@ -135,9 +188,9 @@ export function mountProviderWebhookApi(
     }
 
     if (!installation.runtimeHandoffUrl) {
-      // Standalone install (e.g. "Add to Slack" with no workflow bound).
-      // Acknowledge with 200 so the provider stops retrying, and log so the
-      // event is visible in worker logs as an unresolved webhook.
+      // Installation isn't bound to any worker (e.g. an "Add to Slack" install
+      // that didn't pick a target). Acknowledge so the provider stops
+      // retrying, and log so it's visible as an unresolved webhook.
       log.warn("installation_unresolved", {
         kind: parsed.kind,
         installationKey: installation.installationKey,

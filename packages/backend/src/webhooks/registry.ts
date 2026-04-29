@@ -37,6 +37,8 @@ export type ProviderInstallationRegistry = {
   upsert(
     installation: Omit<ProviderInstallationRecord, "createdAt" | "updatedAt">,
   ): Promise<void>;
+  list(providerId: string): Promise<ProviderInstallationRecord[]>;
+  deleteByKey(installationKey: string): Promise<boolean>;
 };
 
 export function createProviderInstallationRegistry(
@@ -70,6 +72,24 @@ export function createProviderInstallationRegistry(
 
       const row = (rows as ProviderInstallationRow[])[0];
       return row ? installationFromRow(row) : undefined;
+    },
+
+    async list(providerId: string): Promise<ProviderInstallationRecord[]> {
+      const rows = await asDb(db)
+        .select()
+        .from(providerInstallations)
+        .where(eq(providerInstallations.providerId, providerId))
+        .orderBy(desc(providerInstallations.updatedAt))
+        .limit(100);
+      return (rows as ProviderInstallationRow[]).map(installationFromRow);
+    },
+
+    async deleteByKey(installationKey: string): Promise<boolean> {
+      const rows = await asDb(db)
+        .delete(providerInstallations)
+        .where(eq(providerInstallations.installationKey, installationKey))
+        .returning();
+      return Array.isArray(rows) && rows.length > 0;
     },
 
     async upsert(
@@ -154,6 +174,7 @@ function asDb(db: WorkflowPostgresDb) {
       from: (table: unknown) => QueryBuilder;
     };
     insert: (table: unknown) => InsertBuilder;
+    delete: (table: unknown) => DeleteBuilder;
   };
 }
 
@@ -166,4 +187,10 @@ type QueryBuilder = {
 type InsertBuilder = {
   values(value: unknown): InsertBuilder;
   onConflictDoUpdate(args: unknown): Promise<unknown>;
+};
+
+type DeleteBuilder = {
+  where(condition: unknown): {
+    returning(): Promise<unknown[]>;
+  };
 };

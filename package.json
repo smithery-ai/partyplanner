@@ -2,6 +2,11 @@
   "name": "hylo",
   "private": true,
   "packageManager": "pnpm@10.26.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron"
+    ]
+  },
   "scripts": {
     "build": "turbo run build",
     "check": "biome ci --error-on-warnings .",

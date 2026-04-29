@@ -44,6 +44,15 @@ const startBodySchema = z.object({
 });
 
 const installUrlBodySchema = z.object({
+  // Optional target worker the install should bind to. The caller picked a
+  // worker in the UI; we point the runtimeHandoffUrl at that worker so
+  // downstream webhooks forward to its generic /webhooks endpoint. Omit for
+  // a fully unbound install.
+  runtimeHandoffUrl: z.string().url().optional(),
+  // Where the broker should redirect the user after the install completes
+  // (or fails). The broker appends ?installed=<providerId> on success or
+  // ?error=<code> on failure.
+  clientReturnUrl: z.string().url().optional(),
   scopes: z.array(z.string()).optional(),
   extra: z.record(z.string(), z.string()).optional(),
 });
@@ -117,17 +126,18 @@ export function createOAuthBrokerServer(
   });
 
   // POST /:providerId/install-url — public, unauthenticated entry point for
-  // standalone installs (e.g. an "Add to Slack" button on a marketing/empty
-  // page). Skips the runtime handoff dance: the callback persists the
-  // installation via onTokenIssued and shows a static "you may close this
-  // window" page. Incoming webhooks for these installs land in worker logs as
-  // installation_unresolved.
+  // installs that are not tied to a workflow run intervention. The caller
+  // optionally picks a target worker via `runtimeHandoffUrl`, so webhooks
+  // forward to that worker's generic /webhooks endpoint after install. The
+  // callback persists the installation via onTokenIssued and shows a static
+  // "you may close this window" page. If no worker is picked, incoming
+  // webhooks land in backend logs as installation_unresolved.
   app.post("/:providerId/install-url", async (c) => {
     const providerId = c.req.param("providerId");
     const registration = providers.get(providerId);
     if (!registration) return unknownProvider(providerId, c);
 
-    let body: { scopes?: string[]; extra?: Record<string, string> };
+    let body: z.infer<typeof installUrlBodySchema>;
     try {
       body = installUrlBodySchema.parse(await readJson(c.req.raw));
     } catch (e) {
@@ -141,6 +151,12 @@ export function createOAuthBrokerServer(
         : registration.spec.defaultScopes;
     await opts.store.putPending(state, {
       providerId,
+      ...(body.runtimeHandoffUrl
+        ? { runtimeHandoffUrl: body.runtimeHandoffUrl }
+        : {}),
+      ...(body.clientReturnUrl
+        ? { clientReturnUrl: body.clientReturnUrl }
+        : {}),
       scopes,
       extra: body.extra ?? {},
       appId: "standalone",
@@ -180,7 +196,13 @@ export function createOAuthBrokerServer(
 
     if (error || !code) {
       const errorCode = error ?? "missing_code";
-      if (!pending.runtimeHandoffUrl) {
+      if (!pending.runId || !pending.interventionId) {
+        if (pending.clientReturnUrl) {
+          return c.redirect(
+            appendQuery(pending.clientReturnUrl, { error: errorCode }),
+            302,
+          );
+        }
         return c.text(
           `Install failed: ${errorCode}. You may close this window.`,
           400,
@@ -189,12 +211,16 @@ export function createOAuthBrokerServer(
       // Redirect back to the runtime handoff route with `?error=`. Include
       // runId/interventionId so the handoff route can POST `{ error }` to
       // the intervention and the atom can `get.skip(...)`.
+      if (!pending.runtimeHandoffUrl) {
+        return c.text(
+          `Install failed: ${errorCode}. You may close this window.`,
+          400,
+        );
+      }
       const redirect = appendQuery(pending.runtimeHandoffUrl, {
         error: errorCode,
-        ...(pending.runId ? { runId: pending.runId } : {}),
-        ...(pending.interventionId
-          ? { interventionId: pending.interventionId }
-          : {}),
+        runId: pending.runId,
+        interventionId: pending.interventionId,
       });
       return c.redirect(redirect, 302);
     }
@@ -256,12 +282,20 @@ export function createOAuthBrokerServer(
       });
     }
 
-    // Standalone install: no workflow context, so there's no handoff to
-    // exchange and nowhere to redirect. The provider's
-    // registerOAuthInstallation has already persisted the install via the
-    // onTokenIssued hook above. Render a static "you may close this window"
-    // page.
-    if (!pending.runtimeHandoffUrl) {
+    // Standalone install: no workflow run/intervention to deliver a handoff
+    // to. registerOAuthInstallation has already persisted the install via
+    // the onTokenIssued hook above (binding it to runtimeHandoffUrl if one
+    // was provided, so webhooks forward to the picked worker). If the
+    // caller supplied a clientReturnUrl, redirect there with
+    // ?installed=<providerId>; otherwise render a static "you may close
+    // this window" page.
+    if (!pending.runId || !pending.interventionId) {
+      if (pending.clientReturnUrl) {
+        return c.redirect(
+          appendQuery(pending.clientReturnUrl, { installed: providerId }),
+          302,
+        );
+      }
       return c.html(
         `<!doctype html><meta charset="utf-8"><title>Installed</title>` +
           `<style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;color:#222}` +
@@ -271,13 +305,17 @@ export function createOAuthBrokerServer(
       );
     }
 
+    if (!pending.runtimeHandoffUrl) {
+      return c.text(
+        "Install completed but no runtime handoff URL was provided.",
+        500,
+      );
+    }
     const handoff = randomToken();
     await opts.store.putHandoff(handoff, {
       providerId,
-      ...(pending.runId ? { runId: pending.runId } : {}),
-      ...(pending.interventionId
-        ? { interventionId: pending.interventionId }
-        : {}),
+      runId: pending.runId,
+      interventionId: pending.interventionId,
       token: tokenWithSession,
       appId: pending.appId,
       createdAt: Date.now(),

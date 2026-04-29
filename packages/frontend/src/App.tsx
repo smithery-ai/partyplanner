@@ -46,6 +46,13 @@ import {
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 import { useWorkflowFrontendConfig, WorkflowFrontendRoot } from "./config";
 import { useSecretVault, useWorkflow } from "./hooks/use-workflow";
 import { useWorkflowRun, WorkflowRunProvider } from "./hooks/workflow-run";
@@ -356,19 +363,20 @@ export function SecretVaultApp({
             <label className="text-xs font-medium" htmlFor="vault-scope">
               Scope
             </label>
-            <select
-              id="vault-scope"
-              className="flex h-8 w-full rounded-lg border border-input bg-background px-2 text-sm dark:bg-input/30"
+            <Select
               value={scope}
-              onChange={(e) =>
-                setScope(
-                  e.target.value === "organization" ? "organization" : "user",
-                )
+              onValueChange={(value) =>
+                setScope(value === "organization" ? "organization" : "user")
               }
             >
-              <option value="user">User</option>
-              <option value="organization">Organization</option>
-            </select>
+              <SelectTrigger id="vault-scope">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="user">User</SelectItem>
+                <SelectItem value="organization">Organization</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <Button
             type="button"

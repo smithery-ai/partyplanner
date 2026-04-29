@@ -48,6 +48,7 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "./components/ui/combobox";
+import { SlackSettingsPage } from "./slack-settings-page";
 
 export type HyloWorkflowRegistry = {
   defaultWorkflow?: string;
@@ -136,6 +137,12 @@ const chatSessionRoute = createRoute({
   component: ChatSessionRouteComponent,
 });
 
+const slackSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/slack",
+  component: SlackSettingsRouteComponent,
+});
+
 const connectionInitializingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/connection/initializing",
@@ -160,6 +167,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   chatRoute,
   chatSessionRoute,
+  slackSettingsRoute,
   connectionInitializingRoute,
   runRoute,
   workerRunRoute,
@@ -207,6 +215,88 @@ function ChatSessionRouteComponent() {
   return <RoutedChatPage selectedSessionId={sessionId} />;
 }
 
+function SlackSettingsRouteComponent() {
+  const env = useClientEnvironment();
+  const navigate = useNavigate();
+  const search = useSearch({ from: rootRoute.id });
+  const registryConfig = env.getWorkflowRegistryConfig(search);
+  const registryQuery = useQuery({
+    queryKey: [
+      env.queryKeyPrefix ?? DEFAULT_QUERY_KEY_PREFIX,
+      "workflow-registry",
+      registryConfig.url,
+    ],
+    enabled: Boolean(registryConfig.url),
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const registryUrl = registryConfig.url;
+      if (!registryUrl) {
+        throw new Error("Workflow registry could not be loaded.");
+      }
+      const accessToken = await env.getAccessToken();
+      const response = await fetch(registryUrl, {
+        headers: workflowRegistryHeaders(
+          registryUrl,
+          accessToken,
+          registryConfig.backendUrl,
+        ),
+        signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Workflow registry failed with ${response.status}`);
+      }
+      return normalizeWorkflowRegistry(await response.json());
+    },
+  });
+  const registry = resolvedWorkflowRegistry(
+    registryConfig.url,
+    registryQuery,
+    env.getLocalWorkflowRegistry,
+  );
+  const workflowOptions = registry
+    ? Object.entries(registry.workflows).map(([id, workflow]) => ({
+        id,
+        label: workflow.label ?? id,
+        apiUrl: workflow.url,
+      }))
+    : [];
+  const backendUrl = registryConfig.backendUrl ?? LOCAL_BACKEND_URL;
+  return (
+    <ChatPage
+      localApiBase={env.chatLocalApiBase}
+      backendUrl={backendUrl}
+      mainContent={
+        <SlackSettingsPage
+          backendUrl={backendUrl}
+          workflowOptions={workflowOptions}
+          onBack={() => void navigate({ to: "/chat", search })}
+        />
+      }
+      onManageSlackClick={() =>
+        void navigate({ to: "/settings/slack", search })
+      }
+      onRunHistoryClick={() => {
+        void navigate({ to: "/", search });
+      }}
+      selectedSessionId={null}
+      onSelectedSessionIdChange={(nextSessionId, options) => {
+        if (nextSessionId) {
+          void navigate({
+            to: "/chat/$sessionId",
+            params: { sessionId: nextSessionId },
+            search,
+            replace: options?.replace,
+          });
+        } else {
+          void navigate({ to: "/chat", search, replace: options?.replace });
+        }
+      }}
+      sidebarFooter={env.sidebarFooter}
+      sidebarTopInset={env.sidebarTopInset}
+    />
+  );
+}
+
 function RoutedChatPage({
   selectedSessionId,
 }: {
@@ -216,10 +306,58 @@ function RoutedChatPage({
   const navigate = useNavigate();
   const search = useSearch({ from: rootRoute.id });
   const registryConfig = env.getWorkflowRegistryConfig(search);
+  const registryQuery = useQuery({
+    queryKey: [
+      env.queryKeyPrefix ?? DEFAULT_QUERY_KEY_PREFIX,
+      "workflow-registry",
+      registryConfig.url,
+    ],
+    enabled: Boolean(registryConfig.url),
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const registryUrl = registryConfig.url;
+      if (!registryUrl) {
+        throw new Error("Workflow registry could not be loaded.");
+      }
+      const accessToken = await env.getAccessToken();
+      const response = await fetch(registryUrl, {
+        headers: workflowRegistryHeaders(
+          registryUrl,
+          accessToken,
+          registryConfig.backendUrl,
+        ),
+        signal,
+      });
+      if (!response.ok) {
+        throw new Error(`Workflow registry failed with ${response.status}`);
+      }
+      return normalizeWorkflowRegistry(await response.json());
+    },
+  });
+  const registry = resolvedWorkflowRegistry(
+    registryConfig.url,
+    registryQuery,
+    env.getLocalWorkflowRegistry,
+  );
+  // Use the raw workflow.url (the worker's actual endpoint, e.g.
+  // https://{workflow}.localhost/api/workflow for the local worker in
+  // ~/.flamecast/worker) — NOT env.workflowApiUrl, which rewrites origin and
+  // appends ?backendUrl= for client-side CORS proxying.
+  const workflowOptions = registry
+    ? Object.entries(registry.workflows).map(([id, workflow]) => ({
+        id,
+        label: workflow.label ?? id,
+        apiUrl: workflow.url,
+      }))
+    : [];
   return (
     <ChatPage
       localApiBase={env.chatLocalApiBase}
       backendUrl={registryConfig.backendUrl ?? LOCAL_BACKEND_URL}
+      workflowOptions={workflowOptions}
+      onManageSlackClick={() =>
+        void navigate({ to: "/settings/slack", search })
+      }
       onRunHistoryClick={() => {
         void navigate({ to: "/", search });
       }}
