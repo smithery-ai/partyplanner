@@ -865,11 +865,12 @@ function WorkflowRunnerBody({
       });
       setPane(null);
     } catch (e) {
-      setExecutingNodeId(null);
       setRunning(false);
       setPayloadError(
         errorMessage(e, "Processing failed — check input values."),
       );
+    } finally {
+      setExecutingNodeId(null);
     }
   }
 

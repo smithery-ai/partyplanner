@@ -42,13 +42,11 @@ export function WorkflowRunProvider({
   const hasActiveQueueWork =
     (run.queue?.pending.length ?? 0) + (run.queue?.running.length ?? 0) > 0;
   const apiHasRunningWork = (run.queue?.running.length ?? 0) > 0;
-  const effectiveIsRunning = isRunning || hasActiveQueueWork;
+  const effectiveIsRunning =
+    isRunning || hasActiveQueueWork || executingNodeId !== null;
 
   useEffect(() => {
-    if (!run.isPending) {
-      setExecutingNodeId(null);
-      return;
-    }
+    if (!run.isPending) return;
     const head = run.queue?.running[0]?.event ?? run.queue?.pending[0]?.event;
     if (!head) return;
     const id = head.kind === "input" ? head.inputId : head.stepId;
@@ -132,9 +130,16 @@ export function WorkflowRunProvider({
   useEffect(() => {
     if (!effectiveIsRunning) return;
     if (!run.runState) return;
+    if (executingNodeId) return;
     if (hasActiveQueueWork || run.isPending) return;
     setRunning(false);
-  }, [effectiveIsRunning, run.runState, run.isPending, hasActiveQueueWork]);
+  }, [
+    effectiveIsRunning,
+    executingNodeId,
+    run.runState,
+    run.isPending,
+    hasActiveQueueWork,
+  ]);
 
   const value: WorkflowRunContextValue = {
     ...run,
