@@ -51,13 +51,13 @@ as the upstream API.
 
 In local dev, the bottom-right Backend switcher controls whether the workflow
 registry is loaded from the local backend Worker or from the hosted backend.
-The hosted option defaults to `https://hylo-backend.smithery.workers.dev`; set
+The hosted option defaults to `https://backend.flamecast.dev`; set
 `VITE_HYLO_HOSTED_BACKEND_URL` to point it at a different backend.
 
 For deployed environments, set the backend URL in Vercel:
 
 ```sh
-VITE_HYLO_BACKEND_URL=https://hylo-backend.smithery.workers.dev
+VITE_HYLO_BACKEND_URL=https://backend.flamecast.dev
 ```
 
 The app loads the signed-in user’s workflow registry from
@@ -73,16 +73,10 @@ the Vercel project with:
 - Framework preset: Vite
 - Build command: from `vercel.json`
 - Output directory: `dist`
-- Preview environment variable:
-  `VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE=https://{branch}-hylo-backend.smithery.workers.dev`
-
-For Preview deployments, the Vite build derives `VITE_HYLO_BACKEND_URL` from
-`VITE_HYLO_BACKEND_PREVIEW_URL_TEMPLATE` and Vercel's `VERCEL_GIT_COMMIT_REF`.
-The `{branch}` token is replaced with the same sanitized branch alias used by
-the Cloudflare backend preview command.
+- Preview environment variable: `VITE_HYLO_BACKEND_URL=https://backend.flamecast.dev`
 
 Set `VITE_HYLO_BACKEND_URL` directly for Production:
 
 ```sh
-VITE_HYLO_BACKEND_URL=https://hylo-backend.smithery.workers.dev
+VITE_HYLO_BACKEND_URL=https://backend.flamecast.dev
 ```

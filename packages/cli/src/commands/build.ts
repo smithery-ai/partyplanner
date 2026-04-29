@@ -1,6 +1,7 @@
 import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { type BuildOptions, parseBuildArgs } from "../args.js";
+import { resolveHyloBackendUrl } from "../config.js";
 import { info } from "../log.js";
 import { workerShimPath } from "../paths.js";
 import {
@@ -21,7 +22,8 @@ export async function runBuild(args: string[]): Promise<number> {
     ? resolve(process.cwd(), rest[0])
     : await defaultProjectRoot(process.cwd());
   const project = await loadProject(projectRoot);
-  const bundle = await buildWorkerBundle(project, options);
+  const backendUrl = resolveHyloBackendUrl({ local: options.local });
+  const bundle = await buildWorkerBundle(project, { ...options, backendUrl });
   info(`Built ${project.workerName} → ${bundle.outputDir}`);
   return 0;
 }

@@ -22,11 +22,11 @@ export async function runDeploy(args: string[]): Promise<number> {
       ? resolve(process.cwd(), rest[0])
       : await defaultProjectRoot(process.cwd());
     const project = await loadProject(projectRoot);
-    const backendUrl = resolveHyloBackendUrl(options.backendUrl);
+    const backendUrl = resolveHyloBackendUrl({ local: options.local });
     const accessToken = await getHyloAccessToken({ backendUrl });
     if (!accessToken) {
       throw new Error(
-        `Sign in with \`hylo auth login --backend-url ${backendUrl}\` before deploying.`,
+        `Sign in with \`hylo auth login${options.local ? " --local" : ""}\` before deploying.`,
       );
     }
 

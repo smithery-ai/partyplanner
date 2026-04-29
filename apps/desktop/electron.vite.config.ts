@@ -60,7 +60,7 @@ export default defineConfig({
 function hyloBackendUrl(): string {
   return (
     firstEnv(["VITE_HYLO_BACKEND_URL", "HYLO_BACKEND_URL"]) ??
-    "https://hylo-backend.smithery.workers.dev"
+    "https://backend.flamecast.dev"
   ).replace(/\/+$/, "");
 }
 

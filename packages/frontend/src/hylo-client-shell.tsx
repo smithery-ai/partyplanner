@@ -92,7 +92,8 @@ export type HyloClientShellProps = {
 
 type ClientEnvironment = HyloClientShellProps;
 
-const LOCAL_BACKEND_URL = "http://127.0.0.1:8787";
+const DEFAULT_BACKEND_URL = "https://backend.flamecast.dev";
+const LOCAL_BACKEND_URL = "https://api-worker.hylo.localhost";
 const DEFAULT_QUERY_KEY_PREFIX = "hylo-client-shell";
 
 const ClientEnvironmentContext = createContext<ClientEnvironment | null>(null);
@@ -827,16 +828,25 @@ function workflowDeployCommand(backendUrl: string | undefined): string {
 
 function deployBackendOption(backendUrl: string | undefined): string | null {
   const resolvedBackendUrl = backendUrl ?? LOCAL_BACKEND_URL;
-  return isDefaultBackendUrl(resolvedBackendUrl)
-    ? null
-    : `--backend-url ${resolvedBackendUrl}`;
+  if (isDefaultBackendUrl(resolvedBackendUrl)) return null;
+  if (isLocalBackendUrl(resolvedBackendUrl)) return "--local";
+  return null;
 }
 
 function isDefaultBackendUrl(backendUrl: string): boolean {
   try {
     return (
-      new URL(backendUrl, window.location.origin).origin ===
-      "https://hylo-backend.smithery.workers.dev"
+      new URL(backendUrl, window.location.origin).origin === DEFAULT_BACKEND_URL
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isLocalBackendUrl(backendUrl: string): boolean {
+  try {
+    return (
+      new URL(backendUrl, window.location.origin).origin === LOCAL_BACKEND_URL
     );
   } catch {
     return false;

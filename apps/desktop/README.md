@@ -21,7 +21,7 @@ desktop shell.
 If you want to run the app directly:
 
 ```sh
-VITE_HYLO_BACKEND_URL=https://hylo-backend.smithery.workers.dev pnpm --filter desktop dev
+VITE_HYLO_BACKEND_URL=https://backend.flamecast.dev pnpm --filter desktop dev
 ```
 
 ## WorkOS setup

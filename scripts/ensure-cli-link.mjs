@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,20 +19,24 @@ if (!existsSync(cliEntry)) {
   process.exit(1);
 }
 
-if (isAlreadyLinked()) {
+if (isLinkedToCurrentWorkspace()) {
   console.log("@hylo/cli is already linked globally — skipping pnpm link.");
 } else {
   execSync("pnpm link --global", { cwd: cliDir, stdio: "inherit" });
 }
 
-function isAlreadyLinked() {
+function isLinkedToCurrentWorkspace() {
   try {
     const output = execFileSync("pnpm", ["root", "-g"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
     if (!output) return false;
-    return existsSync(resolve(output, "@hylo/cli"));
+    const linkedCliDir = resolve(output, "@hylo/cli");
+    return (
+      existsSync(linkedCliDir) &&
+      realpathSync(linkedCliDir) === realpathSync(cliDir)
+    );
   } catch {
     return false;
   }

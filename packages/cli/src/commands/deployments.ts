@@ -4,8 +4,8 @@ import { getHyloAccessToken } from "./auth.js";
 
 type DeploymentCommandOptions = {
   apiKey?: string;
-  backendUrl?: string;
   deploymentId?: string;
+  local?: boolean;
   tenantId?: string;
 };
 
@@ -19,8 +19,8 @@ Usage:
 
 Options:
   --api-key <key>          API key for admin deployment APIs
-  --backend <url>          Hylo backend API URL
   --deployment <id>        Deployment ID
+  --local                  Use the portless local Hylo backend
   --tenant <id>            Tenant ID
 `;
 
@@ -98,14 +98,14 @@ async function deleteDeployment(args: string[]): Promise<void> {
 }
 
 async function deploymentApi(options: DeploymentCommandOptions) {
-  const backendUrl = resolveHyloBackendUrl(options.backendUrl);
+  const backendUrl = resolveHyloBackendUrl({ local: options.local });
   const adminApiKey = options.apiKey ?? process.env.HYLO_API_KEY?.trim();
   const accessToken = adminApiKey
     ? undefined
     : await getHyloAccessToken({ backendUrl });
   if (!adminApiKey && !accessToken) {
     throw new Error(
-      `Sign in with \`hylo auth login --backend-url ${backendUrl}\` or provide HYLO_API_KEY/--api-key.`,
+      `Sign in with \`hylo auth login${options.local ? " --local" : ""}\` or provide HYLO_API_KEY/--api-key.`,
     );
   }
   return createHyloApiClient({
@@ -126,12 +126,8 @@ function parseDeploymentArgs(args: string[]): {
       options.apiKey = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--api-key=")) {
       options.apiKey = arg.slice("--api-key=".length);
-    } else if (arg === "--backend" || arg === "--backend-url") {
-      options.backendUrl = requireArgValue(args, ++index, arg);
-    } else if (arg.startsWith("--backend=")) {
-      options.backendUrl = arg.slice("--backend=".length);
-    } else if (arg.startsWith("--backend-url=")) {
-      options.backendUrl = arg.slice("--backend-url=".length);
+    } else if (arg === "--local") {
+      options.local = true;
     } else if (arg === "--deployment" || arg === "--deployment-id") {
       options.deploymentId = requireArgValue(args, ++index, arg);
     } else if (arg.startsWith("--deployment=")) {
