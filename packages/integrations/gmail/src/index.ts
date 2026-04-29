@@ -2,12 +2,14 @@ export type {
   ArcadeAuthorizationResponse,
   ArcadeAuthorizationStatus,
   ArcadeCredentials,
+  ArcadeHandoffRoutesOptions,
   ArcadeToolOptions,
   ArcadeToolResult,
   MaybeHandle,
 } from "./arcade";
 export {
   arcade,
+  createArcadeHandoffRoutes,
   createArcadeToolAction,
   createArcadeToolAtom,
 } from "./arcade";

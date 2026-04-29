@@ -95,6 +95,7 @@ describe("Arcade Gmail tools", () => {
       recipient: "recipient@example.com",
       cc: ["cc@example.com"],
       contentType: "plain",
+      nextUri: "https://worker.test/arcade/handoff",
       actionName: "sendGmailEmail",
     });
     atom((get) => get(sent), { name: "sendGmailEmailResult" });
@@ -124,6 +125,7 @@ describe("Arcade Gmail tools", () => {
       tool_name: "Gmail.SendEmail",
       tool_version: GMAIL_TOOL_VERSION,
       user_id: "user@example.com",
+      next_uri: "https://worker.test/arcade/handoff",
     });
 
     const executeBody = JSON.parse(
@@ -194,6 +196,7 @@ describe("Arcade Gmail tools", () => {
       subject: "Quarterly update",
       body: "Hello",
       recipient: "recipient@example.com",
+      nextUri: "https://worker.test/arcade/handoff",
       actionName: "sendGmailEmail",
     });
     atom((get) => get(sent), { name: "sendGmailEmailResult" });

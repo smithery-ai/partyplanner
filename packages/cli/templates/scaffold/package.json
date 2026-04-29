@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@workflow/core": "workspace:*",
+    "@workflow/integrations-arcade": "workspace:*",
     "@workflow/integrations-gmail": "workspace:*",
     "@workflow/integrations-linear": "workspace:*",
     "@workflow/integrations-oauth": "workspace:*",

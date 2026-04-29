@@ -421,12 +421,14 @@ function renderIndex(
     "ArcadeAuthorizationResponse",
     "ArcadeAuthorizationStatus",
     "ArcadeCredentials",
+    "ArcadeHandoffRoutesOptions",
     "ArcadeToolOptions",
     "ArcadeToolResult",
     "MaybeHandle",
   ]);
   const arcadeValueExports = new Set<string>([
     "arcade",
+    "createArcadeHandoffRoutes",
     "createArcadeToolAction",
     "createArcadeToolAtom",
   ]);
@@ -501,6 +503,7 @@ function renderArcadeReexport(): string {
   ArcadeAuthorizationResponse,
   ArcadeAuthorizationStatus,
   ArcadeCredentials,
+  ArcadeHandoffRoutesOptions,
   ArcadeToolOptions,
   ArcadeToolResult,
   MaybeHandle,
@@ -508,6 +511,7 @@ function renderArcadeReexport(): string {
 } from "@workflow/integrations-arcade";
 export {
   arcade,
+  createArcadeHandoffRoutes,
   createArcadeToolAction,
   createArcadeToolAtom,
 } from "@workflow/integrations-arcade";
