@@ -526,8 +526,14 @@ function WorkflowRunnerBody({
   const managedConnectionPopups = useRef<Record<string, Window | null>>({});
   const frontendConfig = useWorkflowFrontendConfig();
 
-  const { isRunning, setRunning, executingNodeId, runComplete, runState } =
-    workflowRun;
+  const {
+    isRunning,
+    setRunning,
+    executingNodeId,
+    setExecutingNodeId,
+    runComplete,
+    runState,
+  } = workflowRun;
   const wait = findPendingWait(workflow.manifest, runState);
   const pendingInputId = wait?.kind === "input" ? wait.inputId : undefined;
   const pendingInterventionId =
@@ -850,6 +856,7 @@ function WorkflowRunnerBody({
     }
 
     setRunning(true);
+    setExecutingNodeId(inputId);
     try {
       await workflowRun.submitInput({
         state: runState,
@@ -862,6 +869,8 @@ function WorkflowRunnerBody({
       setPayloadError(
         errorMessage(e, "Processing failed — check input values."),
       );
+    } finally {
+      setExecutingNodeId(null);
     }
   }
 

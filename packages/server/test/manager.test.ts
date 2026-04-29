@@ -47,17 +47,25 @@ describe("WorkflowManager", () => {
     });
 
     expect(started.status).toBe("running");
-    expect(started.queue.pending).toHaveLength(1);
-    expect(started.queue.pending[0]?.event.kind).toBe("input");
+    expect(started.queue.pending).toHaveLength(0);
+    expect(started.queue.running).toHaveLength(1);
+    expect(started.queue.running[0]?.event.kind).toBe("input");
 
     const afterInput = await manager.advanceRun(started.runId);
 
     expect(afterInput.status).toBe("running");
-    expect(afterInput.queue.pending).toHaveLength(1);
-    expect(afterInput.queue.pending[0]?.event.kind).toBe("step");
+    expect(afterInput.queue.pending).toHaveLength(0);
+    expect(afterInput.queue.running).toHaveLength(1);
+    expect(afterInput.queue.running[0]?.event.kind).toBe("step");
     expect(
       afterInput.nodes.find((node) => node.id === "increment")?.status,
-    ).toBe("queued");
+    ).toBe("running");
+
+    const reloaded = await manager.getRun(started.runId);
+    expect(reloaded?.queue.running[0]?.event.kind).toBe("step");
+    expect(
+      reloaded?.nodes.find((node) => node.id === "increment")?.status,
+    ).toBe("running");
 
     const completed = await manager.advanceRun(started.runId);
 
@@ -87,8 +95,10 @@ describe("WorkflowManager", () => {
     const started = await manager.startRun({});
 
     expect(started.status).toBe("running");
-    expect(started.queue.pending.map((item) => item.event.kind)).toEqual([
+    expect(started.queue.running.map((item) => item.event.kind)).toEqual([
       "step",
+    ]);
+    expect(started.queue.pending.map((item) => item.event.kind)).toEqual([
       "step",
     ]);
 
@@ -103,6 +113,90 @@ describe("WorkflowManager", () => {
       completed.nodes.find((node) => node.id === "needsSeed")?.status,
     ).toBe("skipped");
     expect(completed.state.trigger).toBeUndefined();
+  });
+
+  it("presents next pending work as running even when a queue item is already running", async () => {
+    const stateStore = new TestWorkflowStateStore();
+    const manager = new WorkflowManager({
+      stateStore,
+      queue: new TestWorkflowQueue(),
+    });
+
+    await stateStore.saveRunDocument({
+      runId: "run_running_and_pending",
+      workflow: manager.definition.ref,
+      status: "running",
+      nodes: [
+        {
+          id: "claimed",
+          kind: "atom",
+          status: "queued",
+          deps: [],
+          attempts: 0,
+        },
+        {
+          id: "nextUp",
+          kind: "atom",
+          status: "queued",
+          deps: [],
+          attempts: 0,
+        },
+      ],
+      edges: [],
+      queue: {
+        pending: [
+          {
+            event: {
+              kind: "step",
+              eventId: "event_next",
+              runId: "run_running_and_pending",
+              stepId: "nextUp",
+            },
+            status: "pending",
+            enqueuedAt: 2,
+          },
+        ],
+        running: [
+          {
+            event: {
+              kind: "step",
+              eventId: "event_claimed",
+              runId: "run_running_and_pending",
+              stepId: "claimed",
+            },
+            status: "running",
+            enqueuedAt: 1,
+            startedAt: 1,
+          },
+        ],
+        completed: [],
+        failed: [],
+      },
+      state: {
+        runId: "run_running_and_pending",
+        startedAt: 1,
+        inputs: {},
+        interventions: {},
+        nodes: {},
+        waiters: {},
+        processedEventIds: {},
+      },
+      version: 1,
+      events: [],
+      publishedAt: 1,
+    });
+
+    const run = await manager.getRun("run_running_and_pending");
+
+    expect(run?.queue.pending).toHaveLength(0);
+    expect(run?.queue.running.map((item) => item.event.eventId)).toEqual([
+      "event_next",
+      "event_claimed",
+    ]);
+    expect(run?.nodes.map((node) => [node.id, node.status])).toEqual([
+      ["claimed", "running"],
+      ["nextUp", "running"],
+    ]);
   });
 
   it("matches all trigger inputs for a webhook-started run", async () => {
@@ -143,7 +237,7 @@ describe("WorkflowManager", () => {
       receivedAt: started.state.webhook?.receivedAt,
     });
     expect(
-      started.queue.pending
+      [...started.queue.running, ...started.queue.pending]
         .filter((item) => item.event.kind === "input")
         .map((item) => item.event.inputId),
     ).toEqual(["leadA", "leadB"]);
@@ -598,7 +692,7 @@ describe("WorkflowManager", () => {
       // Way outside the 03:00 cron window — runScheduleNow ignores cron.
       const run = await manager.runScheduleNow("us-nightly");
       expect(run.runId).toMatch(/^run_/);
-      expect(run.queue.pending[0]?.event.kind).toBe("input");
+      expect(run.queue.running[0]?.event.kind).toBe("input");
     });
 
     it("rejects unknown schedule ids", async () => {

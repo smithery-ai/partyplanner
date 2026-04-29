@@ -140,8 +140,9 @@ export class WorkflowManager {
     ).filter((run) => run.runId !== this.configurationRunId());
   }
 
-  getRun(runId: string): Promise<WorkflowRunDocument | undefined> {
-    return this.stateStore.getRunDocument(runId);
+  async getRun(runId: string): Promise<WorkflowRunDocument | undefined> {
+    const document = await this.stateStore.getRunDocument(runId);
+    return document ? presentRunDocument(document) : undefined;
   }
 
   async configuration(): Promise<WorkflowConfigurationDocument> {
@@ -799,8 +800,45 @@ export class WorkflowManager {
       publishedAt: Date.now(),
     };
     await this.stateStore.saveRunDocument(document);
-    return structuredClone(document);
+    return presentRunDocument(document);
   }
+}
+
+function presentRunDocument(
+  document: WorkflowRunDocument,
+): WorkflowRunDocument {
+  const projected = structuredClone(document);
+  const nextUp = projected.queue.pending[0];
+  if (!nextUp) {
+    for (const item of projected.queue.running) {
+      markNodeRunning(projected, queueNodeId(item.event));
+    }
+    return projected;
+  }
+
+  projected.status = "running";
+  projected.queue = {
+    ...projected.queue,
+    pending: projected.queue.pending.slice(1),
+    running: [{ ...nextUp, status: "running" }, ...projected.queue.running],
+  };
+  markNodeRunning(projected, queueNodeId(nextUp.event));
+  for (const item of projected.queue.running) {
+    markNodeRunning(projected, queueNodeId(item.event));
+  }
+  return projected;
+}
+
+function markNodeRunning(document: WorkflowRunDocument, nodeId: string): void {
+  document.nodes = document.nodes.map((node) =>
+    node.id === nodeId ? { ...node, status: "running" } : node,
+  );
+}
+
+function queueNodeId(
+  event: WorkflowRunDocument["queue"]["pending"][number]["event"],
+): string {
+  return event.kind === "input" ? event.inputId : event.stepId;
 }
 
 function isRunSaveConflictError(error: unknown): boolean {
