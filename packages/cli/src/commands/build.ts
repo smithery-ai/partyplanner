@@ -1,5 +1,15 @@
-import { copyFile, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { spawn } from "node:child_process";
+import {
+  access,
+  copyFile,
+  cp,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { relative, resolve } from "node:path";
 import { type BuildOptions, parseBuildArgs } from "../args.js";
 import { resolveHyloBackendUrl } from "../config.js";
 import { info } from "../log.js";
@@ -39,6 +49,7 @@ export async function buildWorkerBundle(
   project: ProjectInfo,
   options: BuildOptions = {},
 ): Promise<WorkerBundle> {
+  await buildLinkedDependencies(project.root);
   await prepareBuildDir(project, options);
   const code = await runWrangler(
     ["deploy", "--dry-run", "--outdir", "dist"],
@@ -56,6 +67,84 @@ export async function buildWorkerBundle(
     modulePath,
     outputDir,
   };
+}
+
+async function buildLinkedDependencies(
+  projectRoot: string,
+  seen = new Set<string>(),
+): Promise<void> {
+  const packageJsonPath = resolve(projectRoot, "package.json");
+  const raw = await readFile(packageJsonPath, "utf8");
+  const pkg = JSON.parse(raw) as {
+    dependencies?: Record<string, string>;
+    scripts?: Record<string, string>;
+  };
+
+  for (const [name, specifier] of Object.entries(pkg.dependencies ?? {})) {
+    const dependencyRoot = await linkedDependencyRoot(
+      projectRoot,
+      name,
+      specifier,
+    );
+    if (!dependencyRoot || seen.has(dependencyRoot)) continue;
+    seen.add(dependencyRoot);
+
+    await buildLinkedDependencies(dependencyRoot, seen);
+    const dependencyPackageJson = JSON.parse(
+      await readFile(resolve(dependencyRoot, "package.json"), "utf8"),
+    ) as { scripts?: Record<string, string> };
+    if (!dependencyPackageJson.scripts?.build) continue;
+
+    info(
+      `Building linked dependency ${name} (${relative(projectRoot, dependencyRoot)})`,
+    );
+    const code = await runCommand("pnpm", ["--dir", dependencyRoot, "build"]);
+    if (code !== 0) {
+      throw new Error(
+        `Build failed for linked dependency ${name} with exit code ${code}.`,
+      );
+    }
+  }
+}
+
+async function linkedDependencyRoot(
+  projectRoot: string,
+  packageName: string,
+  specifier: string,
+): Promise<string | undefined> {
+  const prefix = specifier.startsWith("link:")
+    ? "link:"
+    : specifier.startsWith("file:")
+      ? "file:"
+      : undefined;
+  if (!prefix && specifier !== "workspace:*") return undefined;
+
+  if (prefix) {
+    const target = specifier.slice(prefix.length);
+    if (!target || target.endsWith(".tgz")) return undefined;
+    return resolve(projectRoot, target);
+  }
+
+  const nodeModulePath = resolve(projectRoot, "node_modules", packageName);
+  const packageJsonPath = resolve(nodeModulePath, "package.json");
+  const exists = await access(packageJsonPath)
+    .then(() => true)
+    .catch(() => false);
+  if (!exists) return undefined;
+  return realpath(nodeModulePath);
+}
+
+function runCommand(command: string, args: string[]): Promise<number> {
+  return new Promise((resolveExit) => {
+    const child = spawn(command, args, { stdio: "inherit" });
+    child.on("error", (err) => {
+      process.stderr.write(`Failed to launch ${command}: ${err.message}\n`);
+      resolveExit(1);
+    });
+    child.on("exit", (code, signal) => {
+      resolveExit(signal ? 1 : (code ?? 1));
+    });
+  });
 }
 
 export async function prepareBuildDir(

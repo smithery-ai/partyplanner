@@ -74,6 +74,10 @@ it("scaffolds the flamecast home structure and example worker", async () => {
     join(workspace, ".flamecast", "worker", "src", "gmail.ts"),
     "utf8",
   );
+  const linearSource = await readFile(
+    join(workspace, ".flamecast", "worker", "src", "linear.ts"),
+    "utf8",
+  );
   const workerGitignore = await readFile(
     join(workspace, ".flamecast", "worker", ".gitignore"),
     "utf8",
@@ -94,9 +98,14 @@ it("scaffolds the flamecast home structure and example worker", async () => {
   expect(packageJson.dependencies["@workflow/integrations-gmail"]).toContain(
     "packages/integrations/gmail",
   );
+  expect(packageJson.dependencies["@workflow/integrations-linear"]).toContain(
+    "packages/integrations/linear",
+  );
   expect(source).toContain("incidentAlert");
   expect(source).toContain('export * from "./gmail"');
+  expect(source).toContain('export * from "./linear"');
   expect(gmailSource).toContain("gmailLastTenEmails");
+  expect(linearSource).toContain("linearProjectsAndMyTickets");
   expect(workerGitignore).toBe(".hylo\n.wrangler\nnode_modules\n.env*\n");
   expect(stdout).toHaveBeenCalledWith(
     expect.stringContaining("Initialized Hylo example worker"),

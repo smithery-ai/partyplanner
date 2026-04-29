@@ -12,6 +12,7 @@
   "dependencies": {
     "@workflow/core": "workspace:*",
     "@workflow/integrations-gmail": "workspace:*",
+    "@workflow/integrations-linear": "workspace:*",
     "@workflow/integrations-notion": "workspace:*",
     "@workflow/integrations-oauth": "workspace:*",
     "@workflow/integrations-slack": "workspace:*",
