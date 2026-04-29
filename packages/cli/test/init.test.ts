@@ -49,7 +49,7 @@ it("scaffolds the flamecast home structure and example worker", async () => {
     .spyOn(process.stdout, "write")
     .mockImplementation(() => true);
 
-  await expect(runInit([])).resolves.toBe(0);
+  await expect(runInit(["--no-empty-state-app"])).resolves.toBe(0);
 
   const flamecastEntries = await readdir(join(workspace, ".flamecast"));
   const rootGitignore = await readFile(
@@ -103,33 +103,33 @@ it("scaffolds the flamecast home structure and example worker", async () => {
   );
 });
 
-it("does not overwrite an existing ~/.flamecast/worker", async () => {
-  vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-  const stderr = vi
-    .spyOn(process.stderr, "write")
+it("leaves an existing ~/.flamecast/worker alone without --force", async () => {
+  const stdout = vi
+    .spyOn(process.stdout, "write")
     .mockImplementation(() => true);
+  vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-  await expect(runInit([])).resolves.toBe(0);
-  await expect(runInit([])).resolves.toBe(1);
+  await expect(runInit(["--no-empty-state-app"])).resolves.toBe(0);
+  await expect(runInit(["--no-empty-state-app"])).resolves.toBe(0);
 
-  expect(stderr).toHaveBeenCalledWith(
-    expect.stringContaining("Run hylo init --force to replace it"),
+  expect(stdout).toHaveBeenCalledWith(
+    expect.stringContaining("leaving it alone"),
   );
 });
 
-it("refuses to overwrite an existing ~/.flamecast/worker directory without --force", async () => {
+it("skips an existing ~/.flamecast/worker directory without --force", async () => {
   const worker = join(workspace, ".flamecast", "worker");
-  vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-  const stderr = vi
-    .spyOn(process.stderr, "write")
+  const stdout = vi
+    .spyOn(process.stdout, "write")
     .mockImplementation(() => true);
+  vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
   await mkdir(worker, { recursive: true });
 
-  await expect(runInit([])).resolves.toBe(1);
+  await expect(runInit(["--no-empty-state-app"])).resolves.toBe(0);
 
-  expect(stderr).toHaveBeenCalledWith(
-    expect.stringContaining("Run hylo init --force to replace it"),
+  expect(stdout).toHaveBeenCalledWith(
+    expect.stringContaining("leaving it alone"),
   );
 });
 
@@ -140,7 +140,7 @@ it("replaces an existing ~/.flamecast/worker with --force", async () => {
   await mkdir(worker, { recursive: true });
   await writeFile(join(worker, "custom.txt"), "keep me");
 
-  await expect(runInit(["--force"])).resolves.toBe(0);
+  await expect(runInit(["--force", "--no-empty-state-app"])).resolves.toBe(0);
 
   await expect(access(join(worker, "custom.txt"))).rejects.toThrow();
   await expect(
@@ -153,7 +153,7 @@ it("uses FLAMECAST_LOG_DIR when provided", async () => {
   vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   process.env.FLAMECAST_LOG_DIR = root;
 
-  await expect(runInit([])).resolves.toBe(0);
+  await expect(runInit(["--no-empty-state-app"])).resolves.toBe(0);
 
   await expect(
     readFile(join(root, "worker", "package.json"), "utf8"),

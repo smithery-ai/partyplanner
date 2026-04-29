@@ -1222,6 +1222,7 @@ function ChatShell({
               <EmptyState
                 onNew={() => void newChat()}
                 backendUrl={backendUrl}
+                localApiBase={localApiBase}
                 workflowOptions={workflowOptions}
                 onManageSlackClick={onManageSlackClick}
               />
@@ -1252,11 +1253,13 @@ function SlackIcon({ className }: { className?: string }) {
 function EmptyState({
   onNew,
   backendUrl,
+  localApiBase = DEFAULT_LOCAL_API_BASE,
   workflowOptions,
   onManageSlackClick,
 }: {
   onNew: () => void;
   backendUrl?: string;
+  localApiBase?: string;
   workflowOptions?: ChatWorkflowOption[];
   onManageSlackClick?: () => void;
 }) {
@@ -1265,6 +1268,26 @@ function EmptyState({
   >(null);
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState<string | null>(null);
+  const [embeddedAppUrl, setEmbeddedAppUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `${localApiBase.replace(/\/+$/, "")}/api/config`,
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { embeddedAppUrl?: string | null };
+        if (!cancelled) setEmbeddedAppUrl(data.embeddedAppUrl ?? null);
+      } catch {
+        // Best-effort.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [localApiBase]);
 
   useEffect(() => {
     if (!backendUrl || !onManageSlackClick) return;
@@ -1333,6 +1356,17 @@ function EmptyState({
       setInstalling(false);
     }
   };
+
+  if (embeddedAppUrl) {
+    return (
+      <iframe
+        src={embeddedAppUrl}
+        title="Empty state app"
+        sandbox="allow-scripts allow-same-origin allow-forms"
+        className="h-full w-full border-0 bg-off-white"
+      />
+    );
+  }
 
   return (
     <div className="grid h-full place-items-center bg-off-white p-8 text-center text-off-black">
