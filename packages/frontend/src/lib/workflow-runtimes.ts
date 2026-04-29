@@ -28,6 +28,7 @@ export type StartWorkflowArgs = {
   }[];
   secretBindings?: Record<string, string | { vaultEntryId: string }>;
   secretValues?: Record<string, string>;
+  runId?: string;
 };
 
 export type SubmitWorkflowInputArgs = {
@@ -85,6 +86,7 @@ export class BackendRuntime implements WorkflowRuntime {
         additionalInputs: args.additionalInputs,
         secretBindings: args.secretBindings,
         secretValues: args.secretValues,
+        runId: args.runId,
       },
     );
     return documentResult(document);

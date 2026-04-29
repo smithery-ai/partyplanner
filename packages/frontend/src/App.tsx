@@ -233,6 +233,12 @@ function runStatusClass(status: RunSummary["status"]): string {
   }
 }
 
+function newRunId(): string {
+  const id =
+    globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
+  return `run_${id}`;
+}
+
 export function SecretVaultApp({
   navigation = noopNavigation,
 }: {
@@ -687,7 +693,7 @@ function WorkflowRunnerBody({
     navigation.workflow(workflowId);
   }
 
-  async function runWorkflow(seedOverride?: string) {
+  function runWorkflow(seedOverride?: string) {
     setPayloadError("");
     const seed = seedOverride
       ? findManifestInput(workflow.manifest, seedOverride)
@@ -715,8 +721,18 @@ function WorkflowRunnerBody({
     }
 
     try {
-      const result = await workflow.start(args);
-      navigation.run(workflowId, result.state.runId);
+      const runId = newRunId();
+      void workflow
+        .start({
+          ...args,
+          runId,
+        })
+        .catch((e) => {
+          setPayloadError(
+            errorMessage(e, "Processing failed — check input values."),
+          );
+        });
+      navigation.run(workflowId, runId);
       setPane(null);
     } catch (e) {
       setPayloadError(
