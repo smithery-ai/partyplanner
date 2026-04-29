@@ -221,11 +221,13 @@ const nodeTypes = {
   workflow: WorkflowNode,
 };
 
+const DEFAULT_EDGE_COLOR = "var(--color-off-black)";
+
 const EDGE_MARKER = {
   type: MarkerType.ArrowClosed,
   width: 14,
   height: 14,
-  color: "var(--muted-foreground)",
+  color: DEFAULT_EDGE_COLOR,
 } as const;
 
 /** Edges touching a pending deferred input node (matches node yellow accent). */
@@ -1166,7 +1168,7 @@ function FlowInner({
       connectionLineComponent={ConnectionLine}
       defaultEdgeOptions={{
         markerEnd: EDGE_MARKER,
-        style: { stroke: "var(--border)", strokeWidth: 1.5 },
+        style: { stroke: DEFAULT_EDGE_COLOR, strokeWidth: 1.5 },
       }}
       fitView
       fitViewOptions={{ padding: 0.2 }}
