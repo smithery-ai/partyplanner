@@ -26,9 +26,9 @@ function createApp(sessions: SessionManager, logger: SessionLogger) {
     return c.json({ error: err.message }, 500);
   });
   app.use(
-    "/*",
+    "*",
     cors({
-      origin: "*",
+      origin: (origin) => origin || "*",
       allowHeaders: [
         "Content-Type",
         "Authorization",
