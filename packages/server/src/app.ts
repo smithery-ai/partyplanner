@@ -1,4 +1,5 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
+import type { Input, RouteContext, RouteDef } from "@workflow/core";
 import { RuntimeExecutor, type SecretResolver } from "@workflow/runtime";
 import { cors } from "hono/cors";
 import {
@@ -25,6 +26,16 @@ import type {
   SubmitWorkflowWebhookRequest,
 } from "./types";
 
+/**
+ * Per-request RouteContext fields the worker shim provides at boot.
+ * `getSecret` and `env` come from the worker's bound env (which only
+ * the shim has reference to); `startRun` is composed inside
+ * `createWorkflow` from the local manager. Keeping these orthogonal
+ * means user-declared route handlers don't have to know about the
+ * manager and the shim doesn't have to know about the manager either.
+ */
+export type ShimRouteContextFields = Pick<RouteContext, "getSecret" | "env">;
+
 export type CreateWorkflowOptions = Omit<
   WorkflowManagerOptions,
   "queue" | "stateStore"
@@ -32,6 +43,19 @@ export type CreateWorkflowOptions = Omit<
   backendApi: string | BackendApiClientOptions;
   basePath?: string;
   openApi?: false | WorkflowOpenApiOptions;
+  /**
+   * User-declared HTTP routes from `route(...)` calls — typically
+   * passed from `globalRegistry.allRoutes()` by the worker shim. Each
+   * is mounted on the Hono app at its `path`/`method` with a
+   * `RouteContext` whose `startRun` calls into the same manager that
+   * backs `/api/workflow` (no self-fetch, no sibling instances).
+   */
+  routes?: RouteDef[];
+  /**
+   * Returns the env-derived half of the RouteContext (getSecret + env).
+   * Called once per route invocation. Required when `routes` is set.
+   */
+  routeContext?: () => ShimRouteContextFields;
 };
 
 export function createWorkflow(options: CreateWorkflowOptions) {
@@ -256,6 +280,46 @@ export function createWorkflow(options: CreateWorkflowOptions) {
       basePath,
       definition: manager.definition,
     });
+  }
+
+  // Mount user-declared routes (from `route(...)` calls). Each handler
+  // gets a `RouteContext` whose `startRun` calls into the local
+  // manager — same manager that backs `/api/workflow`, so no
+  // self-fetch and the run is started in-process.
+  if (options.routes && options.routes.length > 0) {
+    if (!options.routeContext) {
+      throw new Error(
+        "createWorkflow: `routes` was provided but `routeContext` is missing — the worker shim must supply getSecret/env.",
+      );
+    }
+    const shimCtx = options.routeContext;
+    for (const r of options.routes) {
+      const method = r.method.toLowerCase() as
+        | "get"
+        | "post"
+        | "put"
+        | "delete"
+        | "patch"
+        | "options";
+      // OpenAPIHono inherits Hono's `on(method, path, handler)` for
+      // ad-hoc routes that aren't part of the OpenAPI surface. The cast
+      // is because `on` accepts a literal-method-string union and we
+      // build it dynamically.
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic method.
+      (app as any).on(method, r.path, async (c: { req: { raw: Request } }) => {
+        const ctx: RouteContext = {
+          ...shimCtx(),
+          startRun: async <T>(input: Input<T>, payload: T) => {
+            const run = await manager.startRun({
+              inputId: input.__id,
+              payload,
+            });
+            return { runId: run.runId };
+          },
+        };
+        return r.handler(c.req.raw, ctx);
+      });
+    }
   }
 
   return app;
