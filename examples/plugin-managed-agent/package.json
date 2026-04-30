@@ -1,0 +1,27 @@
+{
+  "name": "workflow-plugin-managed-agent-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "dev": "pnpm --dir ../.. hylo dev examples/plugin-managed-agent",
+    "deploy": "hylo deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@smithery/hylo-managed-agent": "https://github.com/smithery-ai/hylo-plugins/releases/download/managed-agent-v0.1.1/smithery-hylo-managed-agent-0.1.1.tgz",
+    "@workflow/core": "workspace:*",
+    "@workflow/integrations-oauth": "workspace:*",
+    "@workflow/integrations-slack": "workspace:*",
+    "@workflow/runtime": "workspace:*",
+    "@workflow/server": "workspace:*",
+    "hono": "^4.12.14",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "@hylo/cli": "workspace:*",
+    "typescript": "^5.7.0"
+  }
+}

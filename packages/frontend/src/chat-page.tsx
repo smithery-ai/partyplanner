@@ -772,7 +772,7 @@ function ChatShell({
                 ? lastEndTurnEventId
                 : chat.acknowledgedEndTurnEventId,
             hasUnacknowledgedEndTurn:
-              Boolean(m.isEndTurn && m.eventId) && !selected
+              m.isEndTurn && m.eventId && !selected
                 ? true
                 : selected
                   ? false
