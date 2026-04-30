@@ -1,6 +1,6 @@
 # @workflow/integrations-managed-agent
 
-Generic managed-agent primitives for hylo workflows. One package, composable adapters. Aligned with the [fireline RFC §6 "Managed-Agent Primitives"](https://github.com/gurdasnijor/fireline/blob/main/rfc/concepts/managed-agent-primitives.md) and [§18 "Provider and Resource Model"](https://github.com/gurdasnijor/fireline/blob/main/rfc/coding/providers-resources-sandboxes.md).
+Generic managed-agent primitives for hylo workflows. One package, composable adapters. Primitive selection follows [Anthropic's Managed Agents framework](https://www.anthropic.com/engineering/managed-agents) — Session, Orchestration, Harness, Sandbox, Resources, Tools — narrowed to what hylo workflows need today.
 
 The brain (Provider) and the hands (Sandbox) are independent axes. A workflow names a Provider and (when the provider isn't bundled) a Sandbox, declares Resources, and gets back a paired `(Action, Atom)` handle:
 
@@ -54,12 +54,12 @@ const factory = managedAgent({
 
 ## Primitives
 
-| primitive | RFC §  | interface | what it abstracts |
-|---|---|---|---|
-| `AgentProvider` | §6.1.3 + §18 | `prepareSession`, `configureEnv`, `sendPrompt`, `abort?` | the LLM execution plane (the brain) |
-| `Sandbox` | §6.1.4 + §18.3 | `provision`, `mount`, `stop?`, `cleanup?` | where tool calls execute (the hands) |
-| `Resource` | §6.1.5 | declarative `{ source_ref, mount_path }` | git repos, files, secrets, env vars |
-| `Tool` | §6.1.6 | `name` / `description` / `inputSchema` only | future — currently providers expose tools natively to the model |
+| primitive | interface | what it abstracts |
+|---|---|---|
+| `AgentProvider` | `prepareSession`, `configureEnv`, `sendPrompt`, `abort?` | the LLM execution plane (the brain) — the harness loop that turns a prompt into agent effects |
+| `Sandbox` | `provision`, `mount`, `stop?`, `cleanup?` | where tool calls execute (the hands) — local fs, Daytona, Docker, etc. |
+| `Resource` | declarative `{ source_ref, mount_path }` | git repos, files, secrets, env vars made available to the agent by reference |
+| `Tool` | `name` / `description` / `inputSchema` only | future — currently providers expose tools natively to the model |
 
 ## Adapters
 
@@ -95,18 +95,16 @@ The cloud-claude+daytona-sandbox combination today is the bundled path: cloud-cl
 - The prompt builder. The composer gives the builder `runId` and `webhookUrl` via `ctx`.
 - Telling the agent in the prompt to `curl ${webhookUrl}` with the result envelope. The agent owns its own back-pressure / retry loop while it runs.
 
-## RFC alignment
+## What's covered today vs. left to the substrate
 
-| RFC primitive | this package | deferred to substrate |
+| concern | covered here | left for hylo / future work |
 |---|---|---|
-| Session | hylo `runId` doubles as session id; deferred input substitutes for the durable event log | full per-session event log, replay, cursors |
-| Orchestration | hylo's queue serves as `wake(session_id)` | claim-first wake, restart recovery |
-| Harness | `AgentProvider` (`prepareSession` / `configureEnv` / `sendPrompt`) | replay-safe execution, claim fencing |
-| Sandbox | `Sandbox` interface | durable lifecycle events |
-| Resources | `Resource` discriminated union | durable mount records, artifact-by-digest |
-| Tools | descriptor type only — providers expose tools internally | declared topology, frozen catalog, descriptor-only exposure |
-
-The "deferred to substrate" column is what fireline's substrate gives you for free once we're on it.
+| Session | hylo's `runId` doubles as session id; the workflow's deferred input substitutes for a durable event log | full per-session event log, replayable cursors, snapshot reads |
+| Orchestration | hylo's run queue serves as `wake(session_id)` | claim-first wake, restart recovery, multi-worker fencing |
+| Harness | `AgentProvider` (`prepareSession` / `configureEnv` / `sendPrompt`) | replay-safe execution, claim fencing on externally visible effects |
+| Sandbox | `Sandbox` interface (provision / mount / stop / cleanup) | durable lifecycle events for audit |
+| Resources | `Resource` discriminated union | durable mount records, artifact-by-digest references |
+| Tools | descriptor type only — providers expose tools internally to the model today | declared topology, frozen tool catalog, descriptor-only exposure with credentials and transport resolved by reference |
 
 ## Endpoints
 

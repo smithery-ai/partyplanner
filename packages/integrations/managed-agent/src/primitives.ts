@@ -1,6 +1,7 @@
 // Managed-agent primitives — the abstract interfaces every adapter
-// implements. Aligned with the fireline RFC §6 "Managed-Agent Primitives"
-// (Session, Orchestration, Harness, Sandbox, Resources, Tools), narrowed
+// implements. Adopts the primitive selection from Anthropic's Managed
+// Agents framework (https://www.anthropic.com/engineering/managed-agents) —
+// Session, Orchestration, Harness, Sandbox, Resources, Tools — narrowed
 // to what hylo workflows need to wire LLM execution against arbitrary
 // brain (Provider) and hands (Sandbox) configurations.
 //
@@ -9,9 +10,9 @@
 // knits them together into the (Action, Atom) pair workflows consume.
 //
 // What this package does NOT enforce yet:
-//   - durable per-session event log (RFC §6.1.1 substrate invariant)
-//   - claim-first execution / replay-safety (RFC §6.1.3)
-//   - declared topology / frozen tool catalog (RFC §6.1.6)
+//   - a durable per-session event log
+//   - claim-first execution / replay-safety
+//   - a declared and frozen tool catalog
 // Those are substrate-level concerns we expect hylo to grow into. Until
 // then, hylo's `runId` doubles as the session id and the workflow's
 // deferred input substitutes for the durable event log.
@@ -19,7 +20,8 @@
 import type { Handle, Input } from "@workflow/core";
 
 // ---------------------------------------------------------------------
-// Provider — the brain. RFC §18.
+// Provider — the brain. Owns the LLM execution plane (the harness loop)
+// and, in some implementations (cloud-claude), also bundles a sandbox.
 // ---------------------------------------------------------------------
 
 /** Stable id for a provider (`"cloud-claude"`, `"anthropic"`, ...). */
@@ -33,10 +35,11 @@ export type SandboxId = string;
  * composer — adapters are free to carry whatever they need (session id,
  * container handle, tunnel descriptor, etc.).
  *
- * RFC §6.1.4 substrate invariant: provider handles are LIVE state, not
- * durable truth. Anything the composer needs across hylo runs (session
- * id for tracing, sandbox id for cleanup) is also returned in the
- * composer's `DispatchResult` and persisted in hylo's run state.
+ * Provider handles are LIVE state, not durable truth — restart-safe
+ * code MUST NOT depend on holding a handle across crashes. Anything the
+ * composer needs across hylo runs (session id for tracing, sandbox id
+ * for cleanup) is also returned in the composer's `DispatchResult` and
+ * persisted in hylo's run state.
  */
 export interface AgentSessionHandle {
   /** Session id from the provider; used in dispatch result + tracing. */
@@ -122,15 +125,18 @@ export interface AgentProvider<TEnvelope = unknown> {
 }
 
 // ---------------------------------------------------------------------
-// Sandbox — the hands. RFC §18.3.
+// Sandbox — the hands. The scoped execution environment where the
+// agent's tool calls run (filesystem, env vars, optional network policy).
+// May be local (a tmp dir) or remote (a Daytona VM, a Docker container).
 // ---------------------------------------------------------------------
 
 /**
  * Live handle to a provisioned sandbox. Opaque to the composer; adapters
  * carry whatever they need to mount/stop/cleanup.
  *
- * Per RFC §18: handles are NOT durable truth. The composer persists only
- * the sandbox id + the provider session id in hylo run state.
+ * Same invariant as `AgentSessionHandle`: NOT durable truth. The
+ * composer persists only the sandbox id + the provider session id in
+ * hylo run state.
  */
 export interface SandboxHandle {
   readonly sandboxId: string;
@@ -165,7 +171,10 @@ export interface Sandbox {
 }
 
 // ---------------------------------------------------------------------
-// Resource — declarative {source_ref, mount_path}. RFC §6.1.5.
+// Resource — declarative inputs made available to the agent by reference.
+// Each resource has a source reference and a mount path; the composer
+// dispatches each kind to the right channel (env var, filesystem mount,
+// or git clone).
 // ---------------------------------------------------------------------
 
 /**
@@ -198,13 +207,14 @@ export type Resource =
   | { kind: "env"; name: string; value: string };
 
 // ---------------------------------------------------------------------
-// Tool — descriptor only. RFC §6.1.6.
+// Tool — descriptor only. Tools are capabilities the agent can call by
+// name; the descriptor is the contract the agent sees.
 // ---------------------------------------------------------------------
 
 /**
- * Tool descriptor as exposed to the agent. Per RFC §6.1.6, only
- * `name`/`description`/`inputSchema` are agent-visible — transport,
- * credentials, and runtime ids are NEVER part of the descriptor.
+ * Tool descriptor as exposed to the agent. Only `name` / `description`
+ * / `inputSchema` are agent-visible — transport, credentials, and
+ * runtime ids MUST never appear in the descriptor.
  *
  * Most managed-agent providers (cloud-claude, anthropic, claude-agent-sdk)
  * expose tools natively to the model from their own catalogs. This

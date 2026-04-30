@@ -1,8 +1,15 @@
 // Public API of @workflow/integrations-managed-agent.
 //
-// One package, composable primitives. Aligned with the fireline RFC
-// §6 "Managed-Agent Primitives" — Provider/Sandbox/Resources/Tools as
-// orthogonal axes, with concrete adapters living as named exports.
+// One package, composable primitives. The brain (Provider) and the
+// hands (Sandbox) are orthogonal axes — a workflow names a provider,
+// optionally names a sandbox, declares resources, and gets back a
+// paired (Action, Atom) handle. Concrete adapters live as named
+// exports of this same package, not separate npm packages.
+//
+// Primitive selection follows Anthropic's Managed Agents framework
+// (https://www.anthropic.com/engineering/managed-agents) — Session,
+// Orchestration, Harness, Sandbox, Resources, Tools — narrowed to
+// what hylo workflows need today.
 //
 // Workflow consumer pattern:
 //
@@ -39,7 +46,7 @@ export {
   type PromptContext,
 } from "./compose";
 
-// ── Primitive interfaces (RFC §6.1) ──────────────────────────────────
+// ── Primitive interfaces ─────────────────────────────────────────────
 
 export type {
   AgentProvider,

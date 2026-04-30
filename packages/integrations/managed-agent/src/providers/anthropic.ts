@@ -34,8 +34,8 @@ export interface AnthropicProviderOptions {
   /** Optional override for the Anthropic API base URL. */
   baseUrl?: string;
   /**
-   * Tool definitions exposed to the model. RFC §6.1.6 descriptor shape
-   * (name/description/inputSchema only).
+   * Tool definitions exposed to the model — descriptor-only shape
+   * (name / description / inputSchema; no transport or credential leakage).
    */
   tools?: Array<{ name: string; description: string; inputSchema: unknown }>;
 }
