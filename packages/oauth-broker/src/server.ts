@@ -239,10 +239,11 @@ export function createOAuthBrokerServer(
     const tokenResp = await fetch(tokenRequest);
     if (!tokenResp.ok) {
       const text = await tokenResp.text();
-      return c.text(
+      const redirect = oauthErrorRedirect(
+        pending,
         `Token exchange failed (${tokenResp.status}): ${text.slice(0, 500)}`,
-        502,
       );
+      return c.redirect(redirect, 302);
     }
     const rawToken = await tokenResp.json();
     let shaped: unknown;
@@ -251,7 +252,11 @@ export function createOAuthBrokerServer(
       // Validate against the provider's tokenSchema before issuing handoff.
       registration.spec.tokenSchema.parse(shaped);
     } catch (e) {
-      return c.text(`Token shaping failed: ${errorMessage(e)}`, 502);
+      const redirect = oauthErrorRedirect(
+        pending,
+        `Token shaping failed: ${errorMessage(e)}`,
+      );
+      return c.redirect(redirect, 302);
     }
 
     const brokerSessionId = randomToken();
@@ -455,6 +460,17 @@ function appendQuery(baseUrl: string, params: Record<string, string>): string {
     url.searchParams.set(key, value);
   }
   return url.toString();
+}
+
+function oauthErrorRedirect(
+  pending: { runtimeHandoffUrl: string; runId: string; interventionId: string },
+  error: string,
+): string {
+  return appendQuery(pending.runtimeHandoffUrl, {
+    error,
+    runId: pending.runId,
+    interventionId: pending.interventionId,
+  });
 }
 
 function randomToken(): string {

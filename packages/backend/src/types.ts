@@ -10,6 +10,8 @@ export type BackendAppEnv = {
   HYLO_API_KEY?: string;
   HYLO_BACKEND_PUBLIC_URL?: string;
   HYLO_BROKER_BASE_URL?: string;
+  HYLO_OAUTH_HANDOFF_TTL_MS?: string;
+  HYLO_OAUTH_PENDING_TTL_MS?: string;
   HYLO_LOCAL_WORKFLOW_URL_TEMPLATE?: string;
   HYLO_SCHEDULER_DISABLED?: string;
   HYLO_SCHEDULER_INTERVAL_MS?: string;

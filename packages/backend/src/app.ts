@@ -81,6 +81,16 @@ export function createApp(
   ),
   oauthBrokerStore: BrokerStore = createPostgresBrokerStore(db, {
     autoMigrate: false,
+    oauthPendingTtlMs: resolveDurationMs(
+      env.HYLO_OAUTH_PENDING_TTL_MS,
+      DEFAULT_OAUTH_PENDING_TTL_MS,
+      "HYLO_OAUTH_PENDING_TTL_MS",
+    ),
+    oauthHandoffTtlMs: resolveDurationMs(
+      env.HYLO_OAUTH_HANDOFF_TTL_MS,
+      DEFAULT_OAUTH_HANDOFF_TTL_MS,
+      "HYLO_OAUTH_HANDOFF_TTL_MS",
+    ),
   }),
   providerInstallations:
     | ProviderInstallationRegistry
@@ -314,6 +324,8 @@ function collectCuratedProviders(
 }
 
 const DEV_API_KEY = "local-dev-hylo-api-key";
+const DEFAULT_OAUTH_PENDING_TTL_MS = 15 * 60_000;
+const DEFAULT_OAUTH_HANDOFF_TTL_MS = 60_000;
 
 function resolveApiKey(env: BackendAppEnv): string {
   const explicit = env.HYLO_API_KEY?.trim();
@@ -335,6 +347,18 @@ function resolveBrokerBaseUrl(env: BackendAppEnv): string {
   const backendUrl = env.HYLO_BACKEND_PUBLIC_URL?.trim();
   if (backendUrl) return `${backendUrl.replace(/\/+$/, "")}/oauth`;
   return "https://api-worker.hylo.localhost/oauth";
+}
+
+function resolveDurationMs(
+  raw: string | undefined,
+  fallback: number,
+  name: string,
+): number {
+  if (!raw?.trim()) return fallback;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  console.warn(`[oauth-broker] Ignoring invalid ${name}="${raw}".`);
+  return fallback;
 }
 
 export type AppType = ReturnType<typeof createApp>;

@@ -3,7 +3,7 @@
 // short-lived kinds of records:
 //
 //   - Pending: a `state` nonce → callback context. Created on /start, taken
-//     on /callback. TTL ~5 min (matches typical user OAuth latency).
+//     on /callback. TTL ~15 min (enough for real user consent flows).
 //   - Handoff: a one-time `handoff` code → resolved token + run context.
 //     Created on /callback, taken on /exchange. TTL ~60 s.
 //   - Refresh: long-lived `brokerSessionId` → refresh token. Used by /refresh
@@ -81,7 +81,7 @@ export type InMemoryBrokerStoreOptions = {
 export function createInMemoryBrokerStore(
   opts: InMemoryBrokerStoreOptions = {},
 ): BrokerStore {
-  const pendingTtlMs = opts.pendingTtlMs ?? 5 * 60_000;
+  const pendingTtlMs = opts.pendingTtlMs ?? 15 * 60_000;
   const handoffTtlMs = opts.handoffTtlMs ?? 60_000;
   const now = opts.now ?? Date.now;
   const pending = new Map<string, PendingValue>();
