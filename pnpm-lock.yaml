@@ -644,6 +644,25 @@ importers:
         specifier: ^3.1.0
         version: 3.2.4(@edge-runtime/vm@3.2.0)(@types/debug@4.1.13)(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
 
+  packages/integrations/managed-agent:
+    dependencies:
+      '@workflow/core':
+        specifier: workspace:*
+        version: link:../../core
+      '@workflow/integrations-oauth':
+        specifier: workspace:*
+        version: link:../_oauth
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4(@edge-runtime/vm@3.2.0)(@types/debug@4.1.13)(@types/node@24.12.2)(jiti@2.6.1)(lightningcss@1.32.0)(msw@2.13.4(@types/node@24.12.2)(typescript@5.9.3))(tsx@4.21.0)(yaml@2.8.3)
+
   packages/integrations/notion:
     dependencies:
       '@workflow/core':
