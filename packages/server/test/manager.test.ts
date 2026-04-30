@@ -115,6 +115,35 @@ describe("WorkflowManager", () => {
     expect(completed.state.trigger).toBeUndefined();
   });
 
+  it("starts atoms when a run is seeded with additional inputs", async () => {
+    const hyloUserId = input("HYLO_USER_ID", z.string());
+    atom((get) => `authorized:${get(hyloUserId)}`, { name: "needsHyloUser" });
+
+    const manager = new WorkflowManager({
+      stateStore: new TestWorkflowStateStore(),
+      queue: new TestWorkflowQueue(),
+    });
+
+    const started = await manager.startRun({
+      additionalInputs: [{ inputId: "HYLO_USER_ID", payload: "user_123" }],
+    });
+
+    expect(started.status).toBe("running");
+    expect(
+      [...started.queue.running, ...started.queue.pending].map((item) =>
+        item.event.kind === "input" ? item.event.inputId : item.event.stepId,
+      ),
+    ).toEqual(["HYLO_USER_ID", "needsHyloUser"]);
+
+    const completed = await manager.advanceUntilSettled(started.runId);
+
+    expect(completed.status).toBe("completed");
+    expect(completed.state.nodes.HYLO_USER_ID?.status).toBe("resolved");
+    expect(completed.state.nodes.needsHyloUser?.value).toBe(
+      "authorized:user_123",
+    );
+  });
+
   it("presents next pending work as running even when a queue item is already running", async () => {
     const stateStore = new TestWorkflowStateStore();
     const manager = new WorkflowManager({

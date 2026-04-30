@@ -165,8 +165,7 @@ export class WorkflowManager {
           }
         : undefined,
       additionalInputs: request.additionalInputs,
-      startAtoms:
-        !request.inputId && (request.additionalInputs?.length ?? 0) === 0,
+      startAtoms: !request.inputId,
     });
     await this.seedConfiguredManagedConnections(runId, snapshot.version);
     snapshot = await scheduler.snapshot(runId);
