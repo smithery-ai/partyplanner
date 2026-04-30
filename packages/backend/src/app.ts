@@ -21,7 +21,7 @@ import {
 } from "@workflow/remote";
 import type { Context } from "hono";
 import { cors } from "hono/cors";
-import { mountArcadeAuthApi } from "./arcade/routes";
+import { createArcadeProxyRoutes, mountArcadeAuthApi } from "./arcade/routes";
 import { mountAuthApi, registerAuthOpenApiRoutes } from "./auth/routes";
 import type { DeploymentBackend } from "./deployments/backend";
 import { createDefaultCloudflareDeploymentBackend } from "./deployments/cloudflare-backend";
@@ -90,6 +90,7 @@ export function createApp(
   const stateStore = createPostgresWorkflowStateStore(db, adapterOptions);
   const queue = createPostgresWorkflowQueue(db, adapterOptions);
   const app = new OpenAPIHono();
+  const apiKey = resolveApiKey(env);
 
   app.use(
     "/*",
@@ -101,6 +102,7 @@ export function createApp(
     }),
   );
   app.get("/health", (c) => c.json({ ok: true }));
+  app.route("/arcade", createArcadeProxyRoutes(env, apiKey));
   mountWorkerDispatchApi(app, deploymentBackend);
   mountRemoteRuntimeOpenApi(app, createBackendOpenApiOptions());
   app.route(
@@ -117,7 +119,6 @@ export function createApp(
   const webhookProviders: WebhookProviderSpec[] = [
     createSlackWebhookProvider(env),
   ];
-  const apiKey = resolveApiKey(env);
   mountAuthApi(app, env, apiKey, deploymentBackend);
   mountArcadeAuthApi(app, env);
   app.route(

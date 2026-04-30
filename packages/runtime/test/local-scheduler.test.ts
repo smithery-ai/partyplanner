@@ -553,7 +553,7 @@ describe("LocalScheduler", () => {
       { name: "wrap" },
     );
 
-    const { scheduler } = makeScheduler();
+    const { scheduler, stateStore } = makeScheduler();
     await scheduler.startRun({
       workflow,
       runId: "run-wait-propagation",
@@ -581,6 +581,18 @@ describe("LocalScheduler", () => {
     expect(snapshot.nodes.find((node) => node.id === "wrap")?.blockedOn).toBe(
       "review",
     );
+    expect(snapshot.state.waiters.review).toEqual(["wrap"]);
+
+    const stored = await stateStore.load("run-wait-propagation");
+    if (!stored) throw new Error("expected stored run");
+    const stateWithMissingBlockedWaiter = structuredClone(stored.state);
+    delete stateWithMissingBlockedWaiter.waiters.review;
+    const saved = await stateStore.save(
+      "run-wait-propagation",
+      stateWithMissingBlockedWaiter,
+      stored.version,
+    );
+    expect(saved.ok).toBe(true);
 
     await scheduler.submitIntervention({
       runId: "run-wait-propagation",

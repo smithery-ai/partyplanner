@@ -3,9 +3,74 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackendApp } from "../src/app";
 
-describe("Arcade custom user verifier", () => {
+const API_KEY = "test-api-key";
+
+describe("Arcade", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("proxies Arcade requests with the backend Arcade API key", async () => {
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        expect(String(input)).toBe("https://api.arcade.dev/v1/tools/execute");
+        const headers = new Headers(init?.headers);
+        expect(headers.get("authorization")).toBe("Bearer arcade-backend-key");
+        expect(headers.get("content-type")).toBe("application/json");
+        expect(init?.body).toBeInstanceOf(ArrayBuffer);
+        return Response.json({ ok: true });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createBackendApp({
+      db: fakeDb(),
+      env: {
+        ARCADE_API_KEY: "arcade-backend-key",
+        HYLO_API_KEY: API_KEY,
+      },
+    });
+
+    const response = await app.request(
+      "http://backend.test/arcade/v1/tools/execute",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${API_KEY}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ tool_name: "Linear.ListProjects" }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects proxy requests without the Hylo app token", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createBackendApp({
+      db: fakeDb(),
+      env: {
+        ARCADE_API_KEY: "arcade-backend-key",
+        HYLO_API_KEY: API_KEY,
+      },
+    });
+
+    const response = await app.request(
+      "http://backend.test/arcade/v1/tools/execute",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    );
+
+    expect(response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("confirms the Arcade flow with the signed-in WorkOS user email", async () => {

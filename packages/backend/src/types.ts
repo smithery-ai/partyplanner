@@ -18,6 +18,7 @@ export type BackendAppEnv = {
   POSTGRES_URL?: string;
   ARCADE_API_KEY?: string;
   ARCADE_API_BASE_URL?: string;
+  ARCADE_BASE_URL?: string;
   ARCADE_CLOUD_BASE_URL?: string;
   HYLO_WORKER_DISPATCH_BASE_URL?: string;
   DISPATCHER?: WorkerDispatchNamespace;
