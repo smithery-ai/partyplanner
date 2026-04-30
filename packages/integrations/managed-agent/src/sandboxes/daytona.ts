@@ -17,6 +17,7 @@
 //     upload via Daytona's filesystem API
 //   - stop / cleanup: tear down the sandbox
 
+import type { Handle } from "@workflow/core";
 import type {
   CleanupPolicy,
   MountResult,
@@ -27,8 +28,11 @@ import type {
 } from "../primitives";
 
 export interface DaytonaSandboxOptions {
-  /** Daytona API key. */
-  apiKey: string;
+  /**
+   * Daytona API key. Carries a hylo handle so the value flows through
+   * the dependency graph and gets resolved per-run.
+   */
+  apiKey: Handle<string>;
   /** Optional region / cluster id. */
   region?: string;
   /** Default container image when the spec doesn't override. */

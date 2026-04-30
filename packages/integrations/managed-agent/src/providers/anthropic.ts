@@ -20,6 +20,7 @@
 //           for non-shell tools), append tool_result
 //   - abort: flip a flag the loop reads between turns
 
+import type { Handle } from "@workflow/core";
 import type {
   AgentProvider,
   AgentSessionHandle,
@@ -29,7 +30,12 @@ import type {
 } from "../primitives";
 
 export interface AnthropicProviderOptions {
-  apiKey: string;
+  /**
+   * Anthropic API key. Carries a hylo input handle so the value flows
+   * through the dependency graph and gets resolved per-run rather than
+   * being captured at module load.
+   */
+  apiKey: Handle<string>;
   model: string;
   /** Optional override for the Anthropic API base URL. */
   baseUrl?: string;
