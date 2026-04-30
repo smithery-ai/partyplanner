@@ -43,6 +43,15 @@ function createCachedApp(env: Env, backendApi: string): WorkflowApp {
       organizationId: envSecretValue(env, "HYLO_ORGANIZATION_ID"),
       version: requireEnv(env, "HYLO_WORKFLOW_VERSION"),
     },
+    // User-declared HTTP routes from `route(...)` calls are picked up
+    // here. createWorkflow mounts them on the Hono app with a
+    // RouteContext built from the same manager that backs /api/workflow
+    // — no sibling instances, no self-fetch.
+    routes: globalRegistry.allRoutes(),
+    routeContext: () => ({
+      getSecret: (ref) => envSecretValue(env, ref.__id),
+      env: env as unknown as Record<string, unknown>,
+    }),
   });
   app.route(
     "/api/workflow/integrations",

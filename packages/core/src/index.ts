@@ -24,10 +24,18 @@ export type {
   InputDef,
   ManagedConnectionDef,
   ManagedConnectionRequirement,
+  RouteDef,
   ScheduleDef,
   StepDef,
 } from "./registry";
 export { globalRegistry, Registry } from "./registry";
+export type {
+  HttpMethod,
+  RouteContext,
+  RouteHandler,
+  RouteOpts,
+} from "./route";
+export { route } from "./route";
 export { createRuntime } from "./runtime";
 export type { ScheduleOpts } from "./schedule";
 export { schedule } from "./schedule";

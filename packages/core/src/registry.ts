@@ -1,4 +1,5 @@
 import type { ZodSchema } from "zod";
+import type { RouteHandler } from "./route";
 import type { AtomRuntimeContext, Get, RequestIntervention } from "./types";
 
 export type InputDef = {
@@ -56,11 +57,20 @@ export type ScheduleDef = {
   description?: string;
 };
 
+export type RouteDef = {
+  id: string;
+  path: string;
+  method: string;
+  handler: RouteHandler;
+  description?: string;
+};
+
 export class Registry {
   private _inputs = new Map<string, InputDef>();
   private _atoms = new Map<string, AtomDef>();
   private _actions = new Map<string, ActionDef>();
   private _schedules = new Map<string, ScheduleDef>();
+  private _routes = new Map<string, RouteDef>();
 
   registerInput(def: InputDef): void {
     this.assertUnique(def.id);
@@ -87,6 +97,11 @@ export class Registry {
     this._schedules.set(def.id, def);
   }
 
+  registerRoute(def: RouteDef): void {
+    this.assertUnique(def.id);
+    this._routes.set(def.id, def);
+  }
+
   getInput(id: string): InputDef | undefined {
     return this._inputs.get(id);
   }
@@ -101,6 +116,9 @@ export class Registry {
   }
   getSchedule(id: string): ScheduleDef | undefined {
     return this._schedules.get(id);
+  }
+  getRoute(id: string): RouteDef | undefined {
+    return this._routes.get(id);
   }
 
   allInputs(): InputDef[] {
@@ -118,12 +136,16 @@ export class Registry {
   allSchedules(): ScheduleDef[] {
     return [...this._schedules.values()];
   }
+  allRoutes(): RouteDef[] {
+    return [...this._routes.values()];
+  }
   allIds(): string[] {
     return [
       ...this._inputs.keys(),
       ...this._atoms.keys(),
       ...this._actions.keys(),
       ...this._schedules.keys(),
+      ...this._routes.keys(),
     ];
   }
 
@@ -132,6 +154,7 @@ export class Registry {
     this._atoms.clear();
     this._actions.clear();
     this._schedules.clear();
+    this._routes.clear();
   }
 
   private assertUnique(id: string): void {
@@ -139,7 +162,8 @@ export class Registry {
       this._inputs.has(id) ||
       this._atoms.has(id) ||
       this._actions.has(id) ||
-      this._schedules.has(id)
+      this._schedules.has(id) ||
+      this._routes.has(id)
     ) {
       throw new Error(`Duplicate registry ID: ${id}`);
     }
