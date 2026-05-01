@@ -221,19 +221,26 @@ class PostgresWorkflowStateStore implements WorkflowStateStore {
     runId: string,
   ): Promise<WorkflowRunDocument | undefined> {
     await this.ensureReady();
+    // Narrow projection: callers only consume documentJson. Selecting `*`
+    // also hauled summaryJson, doubling per-row egress on multi-MB blobs.
     const rows = await asDb(this.db)
-      .select()
+      .select({ documentJson: workflowRunDocuments.documentJson })
       .from(workflowRunDocuments)
       .where(eq(workflowRunDocuments.runId, runId))
       .limit(1);
-    const row = (rows as RunDocumentRow[])[0];
+    const row = (rows as DocumentJsonRow[])[0];
     if (!row) return undefined;
     return parseJson<WorkflowRunDocument>(row.documentJson);
   }
 
   async listRunSummaries(workflowId?: string): Promise<WorkflowRunSummary[]> {
     await this.ensureReady();
-    const baseQuery = asDb(this.db).select().from(workflowRunDocuments);
+    // Narrow projection: callers only consume summaryJson. Selecting `*`
+    // dragged the full documentJson (multi-MB per row) over the wire on
+    // every pump-path call, just to filter on summary.status. See SMI-1866.
+    const baseQuery = asDb(this.db)
+      .select({ summaryJson: workflowRunDocuments.summaryJson })
+      .from(workflowRunDocuments);
     const rows = await (workflowId
       ? baseQuery.where(eq(workflowRunDocuments.workflowId, workflowId))
       : baseQuery
@@ -241,7 +248,7 @@ class PostgresWorkflowStateStore implements WorkflowStateStore {
       sql`${workflowRunDocuments.startedAt} desc`,
       sql`${workflowRunDocuments.publishedAt} desc`,
     );
-    return (rows as RunDocumentRow[]).map((row) =>
+    return (rows as SummaryJsonRow[]).map((row) =>
       parseJson<WorkflowRunSummary>(row.summaryJson),
     );
   }
@@ -554,8 +561,11 @@ type RunStateRow = {
   stateJson: string;
 };
 
-type RunDocumentRow = {
+type DocumentJsonRow = {
   documentJson: string;
+};
+
+type SummaryJsonRow = {
   summaryJson: string;
 };
 
