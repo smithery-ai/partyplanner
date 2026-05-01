@@ -221,19 +221,29 @@ class PostgresWorkflowStateStore implements WorkflowStateStore {
     runId: string,
   ): Promise<WorkflowRunDocument | undefined> {
     await this.ensureReady();
+    // Project only documentJson — every other column on this row is
+    // unused at this call site and the document blob alone can be
+    // multi-MB. Selecting * here is a primary-egress hot path.
     const rows = await asDb(this.db)
-      .select()
+      .select({ documentJson: workflowRunDocuments.documentJson })
       .from(workflowRunDocuments)
       .where(eq(workflowRunDocuments.runId, runId))
       .limit(1);
-    const row = (rows as RunDocumentRow[])[0];
+    const row = (rows as Array<Pick<RunDocumentRow, "documentJson">>)[0];
     if (!row) return undefined;
     return parseJson<WorkflowRunDocument>(row.documentJson);
   }
 
   async listRunSummaries(workflowId?: string): Promise<WorkflowRunSummary[]> {
     await this.ensureReady();
-    const baseQuery = asDb(this.db).select().from(workflowRunDocuments);
+    // Critical: project only summaryJson. The full row carries documentJson,
+    // which holds the entire workflow run state and grows with each pump
+    // (commonly multi-MB). Selecting * here was hauling the full document
+    // for every list call — the dominant source of egress and buffer-cache
+    // pressure on the primary.
+    const baseQuery = asDb(this.db)
+      .select({ summaryJson: workflowRunDocuments.summaryJson })
+      .from(workflowRunDocuments);
     const rows = await (workflowId
       ? baseQuery.where(eq(workflowRunDocuments.workflowId, workflowId))
       : baseQuery
@@ -241,7 +251,7 @@ class PostgresWorkflowStateStore implements WorkflowStateStore {
       sql`${workflowRunDocuments.startedAt} desc`,
       sql`${workflowRunDocuments.publishedAt} desc`,
     );
-    return (rows as RunDocumentRow[]).map((row) =>
+    return (rows as Array<Pick<RunDocumentRow, "summaryJson">>).map((row) =>
       parseJson<WorkflowRunSummary>(row.summaryJson),
     );
   }
